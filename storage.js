@@ -44,6 +44,13 @@ async function savePizzaOrder({ storeSlug, storeName, date, content }) {
   if (error) throw error;
 }
 
+async function deletePizzaOrder(storeSlug, date) {
+  assertClient();
+  const { data, error } = await sb.from('pizza_orders').delete().eq('store_slug', storeSlug).eq('order_date', date).select();
+  if (error) throw error;
+  if (!data || data.length === 0) throw new Error('削除できませんでした(権限設定が反映されていない可能性があります)');
+}
+
 async function fetchPizzaOrdersByStore(storeSlug, limit) {
   assertClient();
   const { data, error } = await sb
@@ -97,6 +104,13 @@ async function saveOysterOrder({ storeSlug, storeName, date, mixedBoxes, sBoxes,
     { onConflict: 'store_slug,order_date' }
   );
   if (error) throw error;
+}
+
+async function deleteOysterOrder(storeSlug, date) {
+  assertClient();
+  const { data, error } = await sb.from('oyster_orders').delete().eq('store_slug', storeSlug).eq('order_date', date).select();
+  if (error) throw error;
+  if (!data || data.length === 0) throw new Error('削除できませんでした(権限設定が反映されていない可能性があります)');
 }
 
 async function fetchOysterOrdersByStore(storeSlug, limit) {

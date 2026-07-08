@@ -41,8 +41,21 @@
 - ログイン機能はありません。**URLを知っている人は誰でも閲覧・入力できます。** 店舗以外に
   URLを共有しないでください。
 - 1つの店舗が同じ日付でもう一度送信すると、その日の内容は上書きされます(内容の修正・再送信として使えます)。
+- 「これまでの発注」一覧をタップすると、その日の内容が発注フォームに読み込まれ、修正やキャンセル(削除)ができます。
 - 店舗や集計先を増やしたい場合は、`app.js` の先頭にある `PIZZA_STORES` / `OYSTER_STORES` /
   `ADMIN_SHOPS` にスラッグ(URL用の英数字ID)と店舗名を追加してください。
+
+## 5. 既存のSupabaseプロジェクトを更新する場合
+
+発注のキャンセル(削除)機能を追加した際、削除を許可するアクセス制御(ポリシー)が
+新たに必要になりました。すでにSupabaseプロジェクトを作成済みの場合は、
+**SQL Editor** で以下を追加実行してください(初めて作る場合は `supabase.sql` に
+含まれているので不要です)。
+
+```sql
+create policy "pizza anon delete" on pizza_orders for delete using (true);
+create policy "oyster anon delete" on oyster_orders for delete using (true);
+```
 
 ## 困ったときは
 

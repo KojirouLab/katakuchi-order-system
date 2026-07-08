@@ -120,29 +120,32 @@ async function renderOrderPage(slug) {
           <div class="field-row">
             <div class="field">
               <label for="mixedBoxes">混合(箱・15kg/箱)</label>
-              <input type="number" id="mixedBoxes" min="0" step="0.5" value="0">
+              <input type="number" id="mixedBoxes" min="0" step="1" value="0">
             </div>
             <div class="field">
               <label for="sBoxes">Sサイズ(箱)</label>
-              <input type="number" id="sBoxes" min="0" step="0.5" value="0">
+              <input type="number" id="sBoxes" min="0" step="1" value="0">
             </div>
             <div class="field">
               <label for="mBoxes">Mサイズ(箱)</label>
-              <input type="number" id="mBoxes" min="0" step="0.5" value="0">
+              <input type="number" id="mBoxes" min="0" step="1" value="0">
             </div>
           </div>`
         }
         <button id="submitBtn" class="primary">この内容で発注する</button>
+        <button id="cancelBtn" class="secondary" style="display:none">この日の発注をキャンセルする</button>
         <p id="orderMsg" class="msg"></p>
       </div>
       <div class="card">
-        <h2>これまでの発注(直近10件)</h2>
+        <h2>これまでの発注(直近10件・タップで選択)</h2>
         <div id="recentList">読み込み中…</div>
       </div>
     </div>`;
 
   const dateInput = document.getElementById('orderDate');
   const msgEl = document.getElementById('orderMsg');
+  const cancelBtn = document.getElementById('cancelBtn');
+  let hasExisting = false;
 
   async function loadForDate() {
     msgEl.textContent = '';
@@ -153,12 +156,15 @@ async function renderOrderPage(slug) {
       if (isPizza) {
         const row = await fetchPizzaOrder(store.slug, date);
         document.getElementById('pizzaContent').value = row ? row.content : '';
+        hasExisting = !!row;
       } else {
         const row = await fetchOysterOrder(store.slug, date);
         document.getElementById('mixedBoxes').value = row ? row.mixed_boxes : 0;
         document.getElementById('sBoxes').value = row ? row.s_boxes : 0;
         document.getElementById('mBoxes').value = row ? row.m_boxes : 0;
+        hasExisting = !!row;
       }
+      cancelBtn.style.display = hasExisting ? '' : 'none';
     } catch (e) {
       console.error(e);
       msgEl.textContent = '読み込みに失敗しました。通信状況を確認してください。';
@@ -179,15 +185,22 @@ async function renderOrderPage(slug) {
       listEl.innerHTML = `<ul class="recent-list">${rows
         .map((r) => {
           if (isPizza) {
-            return `<li><span class="recent-date">${formatDateJp(r.order_date)}</span><span class="recent-body">${escapeHtml(
-              r.content
-            ).replace(/\n/g, '<br>')}</span></li>`;
+            return `<li class="clickable" data-date="${r.order_date}"><span class="recent-date">${formatDateJp(
+              r.order_date
+            )}</span><span class="recent-body">${escapeHtml(r.content).replace(/\n/g, '<br>')}</span></li>`;
           }
-          return `<li><span class="recent-date">${formatDateJp(
+          return `<li class="clickable" data-date="${r.order_date}"><span class="recent-date">${formatDateJp(
             r.order_date
           )}</span><span class="recent-body">混合${r.mixed_boxes} / S${r.s_boxes} / M${r.m_boxes}</span></li>`;
         })
         .join('')}</ul>`;
+      listEl.querySelectorAll('li[data-date]').forEach((li) => {
+        li.addEventListener('click', () => {
+          dateInput.value = li.dataset.date;
+          loadForDate();
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+        });
+      });
     } catch (e) {
       console.error(e);
       listEl.innerHTML = '<p class="msg-error">履歴の読み込みに失敗しました。</p>';
@@ -219,6 +232,8 @@ async function renderOrderPage(slug) {
       }
       msgEl.textContent = `${formatDateJp(date)}の発注を保存しました。`;
       msgEl.className = 'msg msg-success';
+      hasExisting = true;
+      cancelBtn.style.display = '';
       loadRecent();
     } catch (e) {
       console.error(e);
@@ -226,6 +241,37 @@ async function renderOrderPage(slug) {
       msgEl.className = 'msg msg-error';
     } finally {
       btn.disabled = false;
+    }
+  });
+
+  cancelBtn.addEventListener('click', async () => {
+    const date = dateInput.value;
+    if (!date || !hasExisting) return;
+    if (!confirm(`${formatDateJp(date)}の発注をキャンセルします。よろしいですか？`)) return;
+    cancelBtn.disabled = true;
+    msgEl.textContent = 'キャンセル中…';
+    msgEl.className = 'msg';
+    try {
+      if (isPizza) {
+        await deletePizzaOrder(store.slug, date);
+        document.getElementById('pizzaContent').value = '';
+      } else {
+        await deleteOysterOrder(store.slug, date);
+        document.getElementById('mixedBoxes').value = 0;
+        document.getElementById('sBoxes').value = 0;
+        document.getElementById('mBoxes').value = 0;
+      }
+      hasExisting = false;
+      cancelBtn.style.display = 'none';
+      msgEl.textContent = `${formatDateJp(date)}の発注をキャンセルしました。`;
+      msgEl.className = 'msg msg-success';
+      loadRecent();
+    } catch (e) {
+      console.error(e);
+      msgEl.textContent = 'キャンセルに失敗しました。通信状況を確認してもう一度お試しください。';
+      msgEl.className = 'msg msg-error';
+    } finally {
+      cancelBtn.disabled = false;
     }
   });
 

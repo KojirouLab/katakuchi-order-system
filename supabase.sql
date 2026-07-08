@@ -36,3 +36,6 @@ create policy "pizza anon update" on pizza_orders for update using (true);
 create policy "oyster anon select" on oyster_orders for select using (true);
 create policy "oyster anon insert" on oyster_orders for insert with check (true);
 create policy "oyster anon update" on oyster_orders for update using (true);
+
+create policy "pizza anon delete" on pizza_orders for delete using (true);
+create policy "oyster anon delete" on oyster_orders for delete using (true);

@@ -108,6 +108,21 @@
   button.primary:disabled {
     opacity: 0.6;
   }
+  button.secondary {
+    width: 100%;
+    padding: 12px;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--danger);
+    background: #fff;
+    border: 1px solid var(--danger);
+    border-radius: 10px;
+    cursor: pointer;
+    margin-top: 8px;
+  }
+  button.secondary:disabled {
+    opacity: 0.5;
+  }
   .msg {
     min-height: 20px;
     font-size: 13px;
@@ -139,11 +154,17 @@
     margin: 0;
   }
   .recent-list li {
-    padding: 10px 0;
+    padding: 10px 4px;
     border-bottom: 1px solid var(--border);
   }
   .recent-list li:last-child {
     border-bottom: none;
+  }
+  .recent-list li.clickable {
+    cursor: pointer;
+  }
+  .recent-list li.clickable:active {
+    background: #f0f0ec;
   }
   .recent-date {
     display: block;
