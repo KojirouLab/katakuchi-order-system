@@ -341,7 +341,7 @@ async function renderAdminPage(slug) {
 }
 
 function renderPizzaSummary(rows, stores) {
-  const dates = [...new Set(rows.map((r) => r.order_date))].sort().reverse();
+  const dates = [...new Set(rows.map((r) => r.order_date))].sort();
   if (!dates.length) return '<div class="card"><p class="hint">この期間の発注はありません。</p></div>';
   const byKey = {};
   rows.forEach((r) => {
@@ -369,7 +369,7 @@ function renderPizzaSummary(rows, stores) {
 }
 
 function renderOysterSummary(rows, stores) {
-  const dates = [...new Set(rows.map((r) => r.order_date))].sort().reverse();
+  const dates = [...new Set(rows.map((r) => r.order_date))].sort();
   if (!dates.length) return '<div class="card"><p class="hint">この期間の発注はありません。</p></div>';
   const byKey = {};
   rows.forEach((r) => {
