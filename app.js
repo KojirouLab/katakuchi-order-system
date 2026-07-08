@@ -376,39 +376,47 @@ function renderOysterSummary(rows, stores) {
     byKey[`${r.order_date}__${r.store_slug}`] = r;
   });
 
-  let totalMixed = 0;
-  let totalS = 0;
-  let totalM = 0;
-  rows.forEach((r) => {
-    totalMixed += Number(r.mixed_boxes) || 0;
-    totalS += Number(r.s_boxes) || 0;
-    totalM += Number(r.m_boxes) || 0;
-  });
-
-  const tableRows = dates
+  const dailyTotalItems = dates
     .map((date) => {
-      const cells = stores
-        .map((s) => {
-          const r = byKey[`${date}__${s.slug}`];
-          if (!r) return '<td>-</td>';
-          return `<td>混合${r.mixed_boxes}/S${r.s_boxes}/M${r.m_boxes}</td>`;
-        })
-        .join('');
-      return `<tr><td>${formatDateJp(date)}</td>${cells}</tr>`;
+      let mixed = 0;
+      let s = 0;
+      let m = 0;
+      stores.forEach((st) => {
+        const r = byKey[`${date}__${st.slug}`];
+        if (!r) return;
+        mixed += Number(r.mixed_boxes) || 0;
+        s += Number(r.s_boxes) || 0;
+        m += Number(r.m_boxes) || 0;
+      });
+      return `<li><span class="recent-date">${formatDateJp(
+        date
+      )}</span><span class="recent-body">混合${mixed} / Sサイズ${s} / Mサイズ${m} / 合計${mixed + s + m}箱</span></li>`;
     })
+    .join('');
+
+  const detailItems = dates
+    .flatMap((date) =>
+      stores.map((st) => {
+        const r = byKey[`${date}__${st.slug}`];
+        if (!r) return '';
+        const total = (Number(r.mixed_boxes) || 0) + (Number(r.s_boxes) || 0) + (Number(r.m_boxes) || 0);
+        if (total === 0) return '';
+        return `<li><span class="recent-date">${formatDateJp(date)} ${escapeHtml(st.name)}</span><span class="recent-body">混合${
+          r.mixed_boxes
+        } / S${r.s_boxes} / M${r.m_boxes}</span></li>`;
+      })
+    )
+    .filter(Boolean)
     .join('');
 
   return `
     <div class="card">
-      <h2>期間合計(15kg/箱)</h2>
-      <p>混合 ${totalMixed}箱 / Sサイズ ${totalS}箱 / Mサイズ ${totalM}箱 / 合計 ${totalMixed + totalS + totalM}箱</p>
+      <h2>日別合計(15kg/箱)</h2>
+      <ul class="recent-list">${dailyTotalItems}</ul>
     </div>
     <div class="card">
-      <h2>店舗別・日別の発注箱数</h2>
-      <table class="agg">
-        <thead><tr><th>日付</th>${stores.map((s) => `<th>${escapeHtml(s.name)}</th>`).join('')}</tr></thead>
-        <tbody>${tableRows}</tbody>
-      </table>
+      <h2>注文内容一覧</h2>
+      <ul class="recent-list">${detailItems || '<li class="hint">注文内容はありません。</li>'}</ul>
     </div>`;
 }
 
