@@ -1,28 +1,26 @@
-const PIZZA_STORES = [
-  { slug: 'bansui', name: '晩翠通り店' },
-  { slug: 'pizzarokko', name: 'ピザろっこ' },
-  { slug: 'asakusa', name: '浅草店' },
+const STORES = [
+  { slug: 'bansui', name: '晩翠通り店', categories: ['pizza'] },
+  { slug: 'pizzarokko', name: 'ピザろっこ', categories: ['pizza'] },
+  { slug: 'asakusa', name: '浅草店', categories: ['pizza'] },
+  { slug: 'kaki-rokko', name: '牡蠣小屋ろっこ', categories: ['oyster', 'pizza'] },
+  { slug: 'kaki-mouikko', name: '牡蠣小屋もういっこ', categories: ['oyster'] },
+  { slug: 'kaki-higashiichi', name: '牡蠣小屋東一店', categories: ['oyster', 'whelk'] },
+  { slug: 'kai-hakko', name: '貝小屋はっこ', categories: ['oyster'] },
 ];
 
-const OYSTER_STORES = [
-  { slug: 'kaki-rokko', name: '牡蠣小屋ろっこ' },
-  { slug: 'kaki-mouikko', name: '牡蠣小屋もういっこ' },
-  { slug: 'kaki-higashiichi', name: '牡蠣小屋東一店' },
-  { slug: 'kai-hakko', name: '貝小屋はっこ' },
-];
+const PIZZA_STORES = STORES.filter((s) => s.categories.includes('pizza'));
+const OYSTER_STORES = STORES.filter((s) => s.categories.includes('oyster'));
+const WHELK_STORES = STORES.filter((s) => s.categories.includes('whelk'));
+const STORES_BY_CATEGORY = { pizza: PIZZA_STORES, oyster: OYSTER_STORES, whelk: WHELK_STORES };
 
 const ADMIN_SHOPS = {
-  katakuchi: { type: 'pizza', name: 'カタクチ商店' },
-  'kaki-juchu': { type: 'oyster', name: '牡蠣受注店' },
-  'haiso-juchu': { type: 'all', name: '配送受注店' },
+  katakuchi: { name: 'カタクチ商店', categories: ['pizza'] },
+  'kaki-juchu': { name: '牡蠣受注店', categories: ['oyster', 'whelk'] },
+  'haiso-juchu': { name: '配送受注店', categories: ['pizza', 'oyster', 'whelk'] },
 };
 
 function findStore(slug) {
-  const p = PIZZA_STORES.find((s) => s.slug === slug);
-  if (p) return { ...p, type: 'pizza' };
-  const o = OYSTER_STORES.find((s) => s.slug === slug);
-  if (o) return { ...o, type: 'oyster' };
-  return null;
+  return STORES.find((s) => s.slug === slug) || null;
 }
 
 function escapeHtml(str) {
@@ -54,6 +52,95 @@ function formatDateJp(dateStr) {
   return `${d.getMonth() + 1}/${d.getDate()}(${w})`;
 }
 
+// 商品カテゴリごとの入力欄・保存/取得ロジックの定義。
+// pizza / whelk は自由記述のcontent、oysterは箱数の3項目。
+const PRODUCT_DEFS = {
+  pizza: {
+    label: 'ピザ',
+    fieldsHtml: (id) => `
+      <div class="field">
+        <label for="${id}-content">注文内容(商品名・個数・キロ数など自由に記入)</label>
+        <textarea id="${id}-content" rows="6" placeholder="例) マルゲリータ 3枚&#10;シーフード 2枚"></textarea>
+      </div>`,
+    readValue: (id) => ({ content: document.getElementById(`${id}-content`).value.trim() }),
+    fillValue: (id, row) => {
+      document.getElementById(`${id}-content`).value = row ? row.content : '';
+    },
+    clearValue: (id) => {
+      document.getElementById(`${id}-content`).value = '';
+    },
+    hasValue: (row) => !!(row && row.content && row.content.trim()),
+    recentText: (row) => escapeHtml(row.content).replace(/\n/g, '<br>'),
+    fetchOne: fetchPizzaOrder,
+    save: (base, values) => savePizzaOrder({ ...base, ...values }),
+    fetchRecent: fetchPizzaOrdersByStore,
+    fetchRange: fetchPizzaOrdersRange,
+    del: deletePizzaOrder,
+  },
+  oyster: {
+    label: '牡蠣',
+    fieldsHtml: (id) => `
+      <div class="field-row">
+        <div class="field">
+          <label for="${id}-mixed">混合(箱・15kg/箱)</label>
+          <input type="number" id="${id}-mixed" min="0" step="1" value="0">
+        </div>
+        <div class="field">
+          <label for="${id}-s">Sサイズ(箱)</label>
+          <input type="number" id="${id}-s" min="0" step="1" value="0">
+        </div>
+        <div class="field">
+          <label for="${id}-m">Mサイズ(箱)</label>
+          <input type="number" id="${id}-m" min="0" step="1" value="0">
+        </div>
+      </div>`,
+    readValue: (id) => ({
+      mixedBoxes: Number(document.getElementById(`${id}-mixed`).value) || 0,
+      sBoxes: Number(document.getElementById(`${id}-s`).value) || 0,
+      mBoxes: Number(document.getElementById(`${id}-m`).value) || 0,
+    }),
+    fillValue: (id, row) => {
+      document.getElementById(`${id}-mixed`).value = row ? row.mixed_boxes : 0;
+      document.getElementById(`${id}-s`).value = row ? row.s_boxes : 0;
+      document.getElementById(`${id}-m`).value = row ? row.m_boxes : 0;
+    },
+    clearValue: (id) => {
+      document.getElementById(`${id}-mixed`).value = 0;
+      document.getElementById(`${id}-s`).value = 0;
+      document.getElementById(`${id}-m`).value = 0;
+    },
+    hasValue: (row) => !!row,
+    recentText: (row) => `混合${row.mixed_boxes} / S${row.s_boxes} / M${row.m_boxes}`,
+    fetchOne: fetchOysterOrder,
+    save: (base, values) => saveOysterOrder({ ...base, ...values }),
+    fetchRecent: fetchOysterOrdersByStore,
+    fetchRange: fetchOysterOrdersRange,
+    del: deleteOysterOrder,
+  },
+  whelk: {
+    label: 'つぶ貝',
+    fieldsHtml: (id) => `
+      <div class="field">
+        <label for="${id}-content">注文内容(商品名・個数・キロ数など自由に記入)</label>
+        <textarea id="${id}-content" rows="6" placeholder="例) つぶ貝 5キロ"></textarea>
+      </div>`,
+    readValue: (id) => ({ content: document.getElementById(`${id}-content`).value.trim() }),
+    fillValue: (id, row) => {
+      document.getElementById(`${id}-content`).value = row ? row.content : '';
+    },
+    clearValue: (id) => {
+      document.getElementById(`${id}-content`).value = '';
+    },
+    hasValue: (row) => !!(row && row.content && row.content.trim()),
+    recentText: (row) => escapeHtml(row.content).replace(/\n/g, '<br>'),
+    fetchOne: fetchWhelkOrder,
+    save: (base, values) => saveWhelkOrder({ ...base, ...values }),
+    fetchRecent: fetchWhelkOrdersByStore,
+    fetchRange: fetchWhelkOrdersRange,
+    del: deleteWhelkOrder,
+  },
+};
+
 const app = document.getElementById('app');
 
 function route() {
@@ -66,26 +153,24 @@ function route() {
 }
 
 function renderHome() {
-  const pizzaLinks = PIZZA_STORES.map((s) => `<li><a href="?store=${s.slug}">${escapeHtml(s.name)}</a></li>`).join('');
-  const oysterLinks = OYSTER_STORES.map((s) => `<li><a href="?store=${s.slug}">${escapeHtml(s.name)}</a></li>`).join('');
+  const storeLinks = STORES.map(
+    (s) =>
+      `<li><a href="?store=${s.slug}">${escapeHtml(s.name)}(${s.categories.map((c) => PRODUCT_DEFS[c].label).join('・')})</a></li>`
+  ).join('');
   app.innerHTML = `
     <div class="page">
       <h1>カタクチ商店 受発注システム</h1>
       <p class="hint">このページのリンクを各店舗・受注担当者に共有してください。URLを知っている人だけがアクセスできる運用です。</p>
       <div class="card">
-        <h2>ピザ発注(各店舗)</h2>
-        <ul class="home-links">${pizzaLinks}</ul>
-      </div>
-      <div class="card">
-        <h2>牡蠣発注(各店舗)</h2>
-        <ul class="home-links">${oysterLinks}</ul>
+        <h2>各店舗の発注</h2>
+        <ul class="home-links">${storeLinks}</ul>
       </div>
       <div class="card">
         <h2>受注集計</h2>
         <ul class="home-links">
           <li><a href="?shop=katakuchi">カタクチ商店(ピザ集計)</a></li>
-          <li><a href="?shop=kaki-juchu">牡蠣受注店(牡蠣集計)</a></li>
-          <li><a href="?shop=haiso-juchu">配送受注店(ピザ・牡蠣 全集計)</a></li>
+          <li><a href="?shop=kaki-juchu">牡蠣受注店(牡蠣・つぶ貝集計)</a></li>
+          <li><a href="?shop=haiso-juchu">配送受注店(全集計)</a></li>
         </ul>
       </div>
     </div>`;
@@ -98,53 +183,44 @@ function renderError(msg) {
 async function renderOrderPage(slug) {
   const store = findStore(slug);
   if (!store) return renderError('無効なURLです。店舗担当のURLを確認してください。');
-  const isPizza = store.type === 'pizza';
 
   app.innerHTML = `
     <div class="page">
       <h1>${escapeHtml(store.name)}</h1>
-      <p class="hint">${isPizza ? 'ピザの発注' : '牡蠣の発注'}</p>
-      <div class="card">
-        <div class="field">
-          <label for="orderDate">発注日</label>
-          <input type="date" id="orderDate" value="${todayStr()}">
-        </div>
-        ${
-          isPizza
-            ? `
-          <div class="field">
-            <label for="pizzaContent">注文内容(商品名・個数・キロ数など自由に記入)</label>
-            <textarea id="pizzaContent" rows="6" placeholder="例) マルゲリータ 3枚&#10;シーフード 2枚"></textarea>
-          </div>`
-            : `
-          <div class="field-row">
-            <div class="field">
-              <label for="mixedBoxes">混合(箱・15kg/箱)</label>
-              <input type="number" id="mixedBoxes" min="0" step="1" value="0">
-            </div>
-            <div class="field">
-              <label for="sBoxes">Sサイズ(箱)</label>
-              <input type="number" id="sBoxes" min="0" step="1" value="0">
-            </div>
-            <div class="field">
-              <label for="mBoxes">Mサイズ(箱)</label>
-              <input type="number" id="mBoxes" min="0" step="1" value="0">
-            </div>
-          </div>`
-        }
-        <button id="submitBtn" class="primary">この内容で発注する</button>
-        <button id="cancelBtn" class="secondary" style="display:none">この日の発注をキャンセルする</button>
-        <p id="orderMsg" class="msg"></p>
-      </div>
-      <div class="card">
-        <h2>これまでの発注(直近10件・タップで選択)</h2>
-        <div id="recentList">読み込み中…</div>
-      </div>
+      <p class="hint">発注</p>
     </div>`;
 
-  const dateInput = document.getElementById('orderDate');
-  const msgEl = document.getElementById('orderMsg');
-  const cancelBtn = document.getElementById('cancelBtn');
+  const page = app.querySelector('.page');
+  store.categories.forEach((category) => mountProductSection(page, store, category));
+}
+
+function mountProductSection(container, store, category) {
+  const def = PRODUCT_DEFS[category];
+  const id = category;
+
+  container.insertAdjacentHTML(
+    'beforeend',
+    `
+    <div class="card">
+      <h2>${def.label}の発注</h2>
+      <div class="field">
+        <label for="${id}-date">発注日</label>
+        <input type="date" id="${id}-date" value="${todayStr()}">
+      </div>
+      ${def.fieldsHtml(id)}
+      <button id="${id}-submitBtn" class="primary">この内容で発注する</button>
+      <button id="${id}-cancelBtn" class="secondary" style="display:none">この日の発注をキャンセルする</button>
+      <p id="${id}-msg" class="msg"></p>
+      <h3 style="margin:20px 0 12px;font-size:14px;">これまでの発注(直近10件・タップで選択)</h3>
+      <div id="${id}-recent">読み込み中…</div>
+    </div>`
+  );
+
+  const dateInput = document.getElementById(`${id}-date`);
+  const msgEl = document.getElementById(`${id}-msg`);
+  const cancelBtn = document.getElementById(`${id}-cancelBtn`);
+  const submitBtn = document.getElementById(`${id}-submitBtn`);
+  const recentEl = document.getElementById(`${id}-recent`);
   let hasExisting = false;
 
   async function loadForDate() {
@@ -153,17 +229,9 @@ async function renderOrderPage(slug) {
     const date = dateInput.value;
     if (!date) return;
     try {
-      if (isPizza) {
-        const row = await fetchPizzaOrder(store.slug, date);
-        document.getElementById('pizzaContent').value = row ? row.content : '';
-        hasExisting = !!row;
-      } else {
-        const row = await fetchOysterOrder(store.slug, date);
-        document.getElementById('mixedBoxes').value = row ? row.mixed_boxes : 0;
-        document.getElementById('sBoxes').value = row ? row.s_boxes : 0;
-        document.getElementById('mBoxes').value = row ? row.m_boxes : 0;
-        hasExisting = !!row;
-      }
+      const row = await def.fetchOne(store.slug, date);
+      def.fillValue(id, row);
+      hasExisting = def.hasValue(row);
       cancelBtn.style.display = hasExisting ? '' : 'none';
     } catch (e) {
       console.error(e);
@@ -173,28 +241,21 @@ async function renderOrderPage(slug) {
   }
 
   async function loadRecent() {
-    const listEl = document.getElementById('recentList');
     try {
-      const rows = isPizza
-        ? await fetchPizzaOrdersByStore(store.slug, 10)
-        : await fetchOysterOrdersByStore(store.slug, 10);
+      const rows = await def.fetchRecent(store.slug, 10);
       if (!rows.length) {
-        listEl.innerHTML = '<p class="hint">まだ発注履歴がありません。</p>';
+        recentEl.innerHTML = '<p class="hint">まだ発注履歴がありません。</p>';
         return;
       }
-      listEl.innerHTML = `<ul class="recent-list">${rows
-        .map((r) => {
-          if (isPizza) {
-            return `<li class="clickable" data-date="${r.order_date}"><span class="recent-date">${formatDateJp(
+      recentEl.innerHTML = `<ul class="recent-list">${rows
+        .map(
+          (r) =>
+            `<li class="clickable" data-date="${r.order_date}"><span class="recent-date">${formatDateJp(
               r.order_date
-            )}</span><span class="recent-body">${escapeHtml(r.content).replace(/\n/g, '<br>')}</span></li>`;
-          }
-          return `<li class="clickable" data-date="${r.order_date}"><span class="recent-date">${formatDateJp(
-            r.order_date
-          )}</span><span class="recent-body">混合${r.mixed_boxes} / S${r.s_boxes} / M${r.m_boxes}</span></li>`;
-        })
+            )}</span><span class="recent-body">${def.recentText(r)}</span></li>`
+        )
         .join('')}</ul>`;
-      listEl.querySelectorAll('li[data-date]').forEach((li) => {
+      recentEl.querySelectorAll('li[data-date]').forEach((li) => {
         li.addEventListener('click', () => {
           dateInput.value = li.dataset.date;
           loadForDate();
@@ -203,33 +264,25 @@ async function renderOrderPage(slug) {
       });
     } catch (e) {
       console.error(e);
-      listEl.innerHTML = '<p class="msg-error">履歴の読み込みに失敗しました。</p>';
+      recentEl.innerHTML = '<p class="msg-error">履歴の読み込みに失敗しました。</p>';
     }
   }
 
   dateInput.addEventListener('change', loadForDate);
 
-  document.getElementById('submitBtn').addEventListener('click', async () => {
+  submitBtn.addEventListener('click', async () => {
     const date = dateInput.value;
     if (!date) {
       msgEl.textContent = '発注日を選択してください。';
       msgEl.className = 'msg msg-error';
       return;
     }
-    const btn = document.getElementById('submitBtn');
-    btn.disabled = true;
+    submitBtn.disabled = true;
     msgEl.textContent = '送信中…';
     msgEl.className = 'msg';
     try {
-      if (isPizza) {
-        const content = document.getElementById('pizzaContent').value.trim();
-        await savePizzaOrder({ storeSlug: store.slug, storeName: store.name, date, content });
-      } else {
-        const mixedBoxes = Number(document.getElementById('mixedBoxes').value) || 0;
-        const sBoxes = Number(document.getElementById('sBoxes').value) || 0;
-        const mBoxes = Number(document.getElementById('mBoxes').value) || 0;
-        await saveOysterOrder({ storeSlug: store.slug, storeName: store.name, date, mixedBoxes, sBoxes, mBoxes });
-      }
+      const values = def.readValue(id);
+      await def.save({ storeSlug: store.slug, storeName: store.name, date }, values);
       msgEl.textContent = `${formatDateJp(date)}の発注を保存しました。`;
       msgEl.className = 'msg msg-success';
       hasExisting = true;
@@ -240,7 +293,7 @@ async function renderOrderPage(slug) {
       msgEl.textContent = '保存に失敗しました。通信状況を確認してもう一度お試しください。';
       msgEl.className = 'msg msg-error';
     } finally {
-      btn.disabled = false;
+      submitBtn.disabled = false;
     }
   });
 
@@ -252,15 +305,8 @@ async function renderOrderPage(slug) {
     msgEl.textContent = 'キャンセル中…';
     msgEl.className = 'msg';
     try {
-      if (isPizza) {
-        await deletePizzaOrder(store.slug, date);
-        document.getElementById('pizzaContent').value = '';
-      } else {
-        await deleteOysterOrder(store.slug, date);
-        document.getElementById('mixedBoxes').value = 0;
-        document.getElementById('sBoxes').value = 0;
-        document.getElementById('mBoxes').value = 0;
-      }
+      await def.del(store.slug, date);
+      def.clearValue(id);
       hasExisting = false;
       cancelBtn.style.display = 'none';
       msgEl.textContent = `${formatDateJp(date)}の発注をキャンセルしました。`;
@@ -282,7 +328,7 @@ async function renderOrderPage(slug) {
 async function renderAdminPage(slug) {
   const shop = ADMIN_SHOPS[slug];
   if (!shop) return renderError('無効なURLです。');
-  const subtitle = { pizza: 'ピザ受注集計', oyster: '牡蠣受注集計', all: 'ピザ・牡蠣 全受注集計' }[shop.type];
+  const subtitle = `${shop.categories.map((c) => PRODUCT_DEFS[c].label).join('・')}受注集計`;
   const defaultFrom = addDays(todayStr(), -13);
   const defaultTo = todayStr();
 
@@ -314,23 +360,17 @@ async function renderAdminPage(slug) {
     const summaryEl = document.getElementById('summary');
     summaryEl.innerHTML = '<p class="hint">読み込み中…</p>';
     try {
-      if (shop.type === 'pizza') {
-        const rows = await fetchPizzaOrdersRange(from, to);
-        summaryEl.innerHTML = renderPizzaSummary(rows, PIZZA_STORES);
-      } else if (shop.type === 'oyster') {
-        const rows = await fetchOysterOrdersRange(from, to);
-        summaryEl.innerHTML = renderOysterSummary(rows, OYSTER_STORES);
-      } else {
-        const [pizzaRows, oysterRows] = await Promise.all([
-          fetchPizzaOrdersRange(from, to),
-          fetchOysterOrdersRange(from, to),
-        ]);
-        summaryEl.innerHTML = `
-          <h2 class="section-title">ピザ</h2>
-          ${renderPizzaSummary(pizzaRows, PIZZA_STORES)}
-          <h2 class="section-title">牡蠣</h2>
-          ${renderOysterSummary(oysterRows, OYSTER_STORES)}`;
-      }
+      const sections = await Promise.all(
+        shop.categories.map(async (category) => {
+          const def = PRODUCT_DEFS[category];
+          const stores = STORES_BY_CATEGORY[category];
+          const rows = await def.fetchRange(from, to);
+          const heading = shop.categories.length > 1 ? `<h2 class="section-title">${def.label}</h2>` : '';
+          const body = category === 'oyster' ? renderOysterSummary(rows, stores) : renderTextOrderSummary(rows, stores);
+          return heading + body;
+        })
+      );
+      summaryEl.innerHTML = sections.join('');
     } catch (e) {
       console.error(e);
       summaryEl.innerHTML = '<p class="msg-error">読み込みに失敗しました。</p>';
@@ -340,7 +380,7 @@ async function renderAdminPage(slug) {
   load();
 }
 
-function renderPizzaSummary(rows, stores) {
+function renderTextOrderSummary(rows, stores) {
   const dates = [...new Set(rows.map((r) => r.order_date))].sort();
   if (!dates.length) return '<div class="card"><p class="hint">この期間の発注はありません。</p></div>';
   const byKey = {};
