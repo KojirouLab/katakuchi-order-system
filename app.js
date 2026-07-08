@@ -348,19 +348,6 @@ function renderPizzaSummary(rows, stores) {
     byKey[`${r.order_date}__${r.store_slug}`] = r;
   });
 
-  const tableRows = dates
-    .map((date) => {
-      const cells = stores
-        .map((s) => {
-          const r = byKey[`${date}__${s.slug}`];
-          const has = r && r.content && r.content.trim().length > 0;
-          return `<td class="${has ? 'badge-yes' : 'badge-no'}">${has ? 1 : 0}</td>`;
-        })
-        .join('');
-      return `<tr><td>${formatDateJp(date)}</td>${cells}</tr>`;
-    })
-    .join('');
-
   const detailItems = dates
     .flatMap((date) =>
       stores.map((s) => {
@@ -375,13 +362,6 @@ function renderPizzaSummary(rows, stores) {
     .join('');
 
   return `
-    <div class="card">
-      <h2>発注有無(1=発注あり / 0=発注なし)</h2>
-      <table class="agg">
-        <thead><tr><th>日付</th>${stores.map((s) => `<th>${escapeHtml(s.name)}</th>`).join('')}</tr></thead>
-        <tbody>${tableRows}</tbody>
-      </table>
-    </div>
     <div class="card">
       <h2>注文内容一覧</h2>
       <ul class="recent-list">${detailItems || '<li class="hint">注文内容はありません。</li>'}</ul>
