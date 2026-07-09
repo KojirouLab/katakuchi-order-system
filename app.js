@@ -39,13 +39,6 @@ function todayStr() {
   return new Date(d.getTime() - tz).toISOString().slice(0, 10);
 }
 
-function addDays(dateStr, n) {
-  const d = new Date(dateStr + 'T00:00:00');
-  d.setDate(d.getDate() + n);
-  const tz = d.getTimezoneOffset() * 60000;
-  return new Date(d.getTime() - tz).toISOString().slice(0, 10);
-}
-
 function formatDateJp(dateStr) {
   const d = new Date(dateStr + 'T00:00:00');
   const w = ['日', '月', '火', '水', '木', '金', '土'][d.getDay()];
@@ -329,7 +322,7 @@ async function renderAdminPage(slug) {
   const shop = ADMIN_SHOPS[slug];
   if (!shop) return renderError('無効なURLです。');
   const subtitle = `${shop.categories.map((c) => PRODUCT_DEFS[c].label).join('・')}受注集計`;
-  const defaultFrom = addDays(todayStr(), -13);
+  const defaultFrom = todayStr();
   const defaultTo = todayStr();
 
   app.innerHTML = `
