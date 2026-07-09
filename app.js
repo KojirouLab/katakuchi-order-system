@@ -393,9 +393,9 @@ function renderTextOrderSummary(rows, stores) {
       stores.map((s) => {
         const r = byKey[`${date}__${s.slug}`];
         if (!r || !r.content || !r.content.trim()) return '';
-        return `<li><span class="recent-date">${formatDateJp(date)} ${escapeHtml(s.name)}</span><span class="recent-body">${escapeHtml(
-          r.content
-        ).replace(/\n/g, '<br>')}</span></li>`;
+        return `<li><span class="recent-date">${formatDateJp(date)} <span class="recent-store">${escapeHtml(
+          s.name
+        )}</span></span><span class="recent-body">${escapeHtml(r.content).replace(/\n/g, '<br>')}</span></li>`;
       })
     )
     .filter(Boolean)
@@ -441,9 +441,9 @@ function renderOysterSummary(rows, stores) {
         if (!r) return '';
         const total = (Number(r.mixed_boxes) || 0) + (Number(r.s_boxes) || 0) + (Number(r.m_boxes) || 0);
         if (total === 0) return '';
-        return `<li><span class="recent-date">${formatDateJp(date)} ${escapeHtml(st.name)}</span><span class="recent-body">混合${
-          r.mixed_boxes
-        } / S${r.s_boxes} / M${r.m_boxes}</span></li>`;
+        return `<li><span class="recent-date">${formatDateJp(date)} <span class="recent-store">${escapeHtml(
+          st.name
+        )}</span></span><span class="recent-body">混合${r.mixed_boxes} / S${r.s_boxes} / M${r.m_boxes}</span></li>`;
       })
     )
     .filter(Boolean)
