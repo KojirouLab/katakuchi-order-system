@@ -75,7 +75,7 @@ const PRODUCT_DEFS = {
     fieldsHtml: (id) => `
       <div class="field-row">
         <div class="field">
-          <label for="${id}-mixed">混合(箱・15kg/箱)</label>
+          <label for="${id}-mixed">混合(15kg/箱)</label>
           <input type="number" id="${id}-mixed" min="0" step="1" value="0">
         </div>
         <div class="field">
