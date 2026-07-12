@@ -144,14 +144,17 @@ const PRODUCT_DEFS = {
         <div class="field">
           <label for="${id}-mixed">混合(ケース)</label>
           <input type="number" id="${id}-mixed" min="0" step="1" value="0">
+          <div class="field-kg" id="${id}-mixed-kg">0kg</div>
         </div>
         <div class="field">
           <label for="${id}-s">Sサイズ(ケース)</label>
           <input type="number" id="${id}-s" min="0" step="1" value="0">
+          <div class="field-kg" id="${id}-s-kg">0kg</div>
         </div>
         <div class="field">
           <label for="${id}-m">Mサイズ(ケース)</label>
           <input type="number" id="${id}-m" min="0" step="1" value="0">
+          <div class="field-kg" id="${id}-m-kg">0kg</div>
         </div>
       </div>`,
     readValue: (id) => {
@@ -176,11 +179,15 @@ const PRODUCT_DEFS = {
       document.getElementById(`${id}-m`).value = 0;
     },
     applyExtraFieldState: (id) => {
-      if (!document.getElementById(`${id}-noOrder`).checked) return;
+      const noOrder = document.getElementById(`${id}-noOrder`).checked;
       ['mixed', 's', 'm'].forEach((k) => {
         const el = document.getElementById(`${id}-${k}`);
-        el.disabled = true;
-        el.value = 0;
+        if (noOrder) {
+          el.disabled = true;
+          el.value = 0;
+        }
+        const kgEl = document.getElementById(`${id}-${k}-kg`);
+        kgEl.textContent = `${(Number(el.value) || 0) * 15}kg`;
       });
     },
     hasValue: (row) => !!row,
@@ -302,6 +309,12 @@ function mountProductSection(container, store, category) {
   const noOrderCheckbox = document.getElementById(`${id}-noOrder`);
   if (noOrderCheckbox) {
     noOrderCheckbox.addEventListener('change', applyLockState);
+  }
+
+  if (def.applyExtraFieldState) {
+    fieldsEl.querySelectorAll('input[type="number"]').forEach((el) => {
+      el.addEventListener('input', () => def.applyExtraFieldState(id));
+    });
   }
 
   async function loadForDate() {
