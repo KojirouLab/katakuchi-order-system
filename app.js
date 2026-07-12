@@ -381,15 +381,13 @@ async function renderAdminPage(slug) {
       <h1>${escapeHtml(shop.name)}</h1>
       <p class="hint">${subtitle}</p>
       <div class="card">
-        <div class="field-row">
-          <div class="field">
-            <label for="fromDate">開始日</label>
-            <input type="date" id="fromDate" value="${defaultFrom}">
-          </div>
-          <div class="field">
-            <label for="toDate">終了日</label>
-            <input type="date" id="toDate" value="${defaultTo}">
-          </div>
+        <div class="field">
+          <label for="fromDate">開始日</label>
+          <input type="date" id="fromDate" value="${defaultFrom}">
+        </div>
+        <div class="field">
+          <label for="toDate">終了日</label>
+          <input type="date" id="toDate" value="${defaultTo}">
         </div>
         <button id="applyBtn" class="primary">表示</button>
       </div>
