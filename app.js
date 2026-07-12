@@ -18,8 +18,23 @@ const ADMIN_SHOPS = {
   'haiso-juchu': { name: '配送受注店', categories: ['pizza', 'oyster'] },
 };
 
-// 発注の締切: 発注日の前日 朝6:00。それ以降はその日の発注を変更できない。
-const DEADLINE_HOUR = 6;
+// 日本の祝日(年ごとに更新が必要。内閣府 https://www8.cao.go.jp/chosei/shukujitsu/gaiyou.html を参照)
+const JP_HOLIDAYS = new Set([
+  '2026-01-01', '2026-01-12', '2026-02-11', '2026-02-23', '2026-03-20', '2026-04-29',
+  '2026-05-03', '2026-05-04', '2026-05-05', '2026-05-06', '2026-07-20', '2026-08-11',
+  '2026-09-21', '2026-09-22', '2026-09-23', '2026-10-12', '2026-11-03', '2026-11-23',
+  '2027-01-01', '2027-01-11', '2027-02-11', '2027-02-23', '2027-03-21', '2027-03-22',
+  '2027-04-29', '2027-05-03', '2027-05-04', '2027-05-05', '2027-07-19', '2027-08-11',
+  '2027-09-20', '2027-09-23', '2027-10-11', '2027-11-03', '2027-11-23',
+]);
+
+function isBusinessDay(d) {
+  const day = d.getDay();
+  if (day === 0 || day === 6) return false;
+  const tz = d.getTimezoneOffset() * 60000;
+  const dateStr = new Date(d.getTime() - tz).toISOString().slice(0, 10);
+  return !JP_HOLIDAYS.has(dateStr);
+}
 
 function findStore(slug) {
   return STORES.find((s) => s.slug === slug) || null;
@@ -47,19 +62,25 @@ function formatDateJp(dateStr) {
   return `${d.getMonth() + 1}/${d.getDate()}(${w})`;
 }
 
-function orderDeadline(dateStr) {
+function orderDeadline(dateStr, category) {
+  const def = PRODUCT_DEFS[category];
   const d = new Date(dateStr + 'T00:00:00');
   d.setDate(d.getDate() - 1);
-  d.setHours(DEADLINE_HOUR, 0, 0, 0);
+  if (def.skipNonBusinessDays) {
+    while (!isBusinessDay(d)) {
+      d.setDate(d.getDate() - 1);
+    }
+  }
+  d.setHours(def.deadlineHour, 0, 0, 0);
   return d;
 }
 
-function isPastDeadline(dateStr) {
-  return new Date() >= orderDeadline(dateStr);
+function isPastDeadline(dateStr, category) {
+  return new Date() >= orderDeadline(dateStr, category);
 }
 
-function formatDeadlineJp(dateStr) {
-  const d = orderDeadline(dateStr);
+function formatDeadlineJp(dateStr, category) {
+  const d = orderDeadline(dateStr, category);
   const w = ['日', '月', '火', '水', '木', '金', '土'][d.getDay()];
   return `${d.getMonth() + 1}/${d.getDate()}(${w}) ${String(d.getHours()).padStart(2, '0')}:00`;
 }
@@ -68,6 +89,9 @@ function formatDeadlineJp(dateStr) {
 const PRODUCT_DEFS = {
   pizza: {
     label: 'ピザ',
+    deadlineHour: 12,
+    skipNonBusinessDays: true,
+    deadlineLabel: '前営業日(土日祝を除く) 12:00',
     fieldsHtml: (id) => `
       <div class="field">
         <label for="${id}-content">注文内容(商品名・個数・キロ数など自由に記入)</label>
@@ -91,6 +115,9 @@ const PRODUCT_DEFS = {
   oyster: {
     label: '牡蠣',
     clearAfterSubmit: true,
+    deadlineHour: 6,
+    skipNonBusinessDays: false,
+    deadlineLabel: '前日 6:00',
     fieldsHtml: (id) => `
       <p class="hint" style="margin:-4px 0 10px;">1ケース=15kg</p>
       <label class="checkbox-label">
@@ -171,7 +198,7 @@ function renderHome() {
     <div class="page">
       <h1>カタクチ商店 受発注システム</h1>
       <p class="hint">このページのリンクを各店舗・受注担当者に共有してください。URLを知っている人だけがアクセスできる運用です。</p>
-      <p class="hint">発注は、発注日の前日 ${DEADLINE_HOUR}:00 で締め切られます。</p>
+      <p class="hint">発注には締切があります(商品によって締切時刻が異なります。各店舗ページをご確認ください)。</p>
       <div class="card">
         <h2>各店舗の発注</h2>
         <ul class="home-links">${storeLinks}</ul>
@@ -198,7 +225,7 @@ async function renderOrderPage(slug) {
   app.innerHTML = `
     <div class="page">
       <h1>${escapeHtml(store.name)}</h1>
-      <p class="hint">発注(発注日の前日 ${DEADLINE_HOUR}:00 締切)</p>
+      <p class="hint">発注</p>
     </div>`;
 
   const page = app.querySelector('.page');
@@ -214,6 +241,7 @@ function mountProductSection(container, store, category) {
     `
     <div class="card">
       <h2>${def.label}の発注</h2>
+      <p class="hint">締切: ${def.deadlineLabel}</p>
       <div class="field">
         <label for="${id}-date">発注日</label>
         <input type="date" id="${id}-date" value="${todayStr()}">
@@ -248,7 +276,7 @@ function mountProductSection(container, store, category) {
     submitBtn.disabled = locked;
     cancelBtn.style.display = hasExisting && !locked ? '' : 'none';
     if (locked) {
-      deadlineMsgEl.textContent = `締切(${formatDeadlineJp(dateInput.value)})を過ぎているため、この日の発注は変更できません。`;
+      deadlineMsgEl.textContent = `締切(${formatDeadlineJp(dateInput.value, category)})を過ぎているため、この日の発注は変更できません。`;
       deadlineMsgEl.style.display = '';
     } else {
       deadlineMsgEl.style.display = 'none';
@@ -265,7 +293,7 @@ function mountProductSection(container, store, category) {
     msgEl.className = 'msg';
     const date = dateInput.value;
     if (!date) return;
-    locked = isPastDeadline(date);
+    locked = isPastDeadline(date, category);
     try {
       const row = await def.fetchOne(store.slug, date);
       def.fillValue(id, row);
@@ -315,8 +343,8 @@ function mountProductSection(container, store, category) {
       msgEl.className = 'msg msg-error';
       return;
     }
-    if (isPastDeadline(date)) {
-      msgEl.textContent = `締切(${formatDeadlineJp(date)})を過ぎているため発注できません。`;
+    if (isPastDeadline(date, category)) {
+      msgEl.textContent = `締切(${formatDeadlineJp(date, category)})を過ぎているため発注できません。`;
       msgEl.className = 'msg msg-error';
       return;
     }
@@ -343,7 +371,7 @@ function mountProductSection(container, store, category) {
 
   cancelBtn.addEventListener('click', async () => {
     const date = dateInput.value;
-    if (!date || !hasExisting || isPastDeadline(date)) return;
+    if (!date || !hasExisting || isPastDeadline(date, category)) return;
     if (!confirm(`${formatDateJp(date)}の発注をキャンセルします。よろしいですか？`)) return;
     cancelBtn.disabled = true;
     msgEl.textContent = 'キャンセル中…';
