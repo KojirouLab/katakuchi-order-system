@@ -85,6 +85,22 @@ function formatDeadlineJp(dateStr, category) {
   return `${d.getMonth() + 1}/${d.getDate()}(${w}) ${String(d.getHours()).padStart(2, '0')}:00`;
 }
 
+function nextDateStr(dateStr) {
+  const d = new Date(dateStr + 'T00:00:00');
+  d.setDate(d.getDate() + 1);
+  const tz = d.getTimezoneOffset() * 60000;
+  return new Date(d.getTime() - tz).toISOString().slice(0, 10);
+}
+
+// 締切をまだ過ぎていない最短の発注可能日を返す(今日が締切済みなら翌日以降を探す)。
+function earliestOrderableDate(category) {
+  let d = todayStr();
+  for (let i = 0; i < 30 && isPastDeadline(d, category); i++) {
+    d = nextDateStr(d);
+  }
+  return d;
+}
+
 // 商品カテゴリごとの入力欄・保存/取得ロジックの定義。pizzaは自由記述のcontent、oysterはケース数の3項目。
 const PRODUCT_DEFS = {
   pizza: {
@@ -244,7 +260,7 @@ function mountProductSection(container, store, category) {
       <p class="hint">締切: ${def.deadlineLabel}</p>
       <div class="field">
         <label for="${id}-date">発注日</label>
-        <input type="date" id="${id}-date" value="${todayStr()}">
+        <input type="date" id="${id}-date" value="${earliestOrderableDate(category)}">
       </div>
       <p id="${id}-deadline-msg" class="deadline-msg" style="display:none"></p>
       <div id="${id}-fields">
