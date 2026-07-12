@@ -85,6 +85,14 @@ function formatDeadlineJp(dateStr, category) {
   return `${d.getMonth() + 1}/${d.getDate()}(${w}) ${String(d.getHours()).padStart(2, '0')}:00`;
 }
 
+function qtyOptionsHtml() {
+  let html = '';
+  for (let i = 0; i <= 10; i++) {
+    html += `<option value="${i}">${i}</option>`;
+  }
+  return html;
+}
+
 function nextDateStr(dateStr) {
   const d = new Date(dateStr + 'T00:00:00');
   d.setDate(d.getDate() + 1);
@@ -143,17 +151,17 @@ const PRODUCT_DEFS = {
       <div class="field-row">
         <div class="field">
           <label for="${id}-mixed">混合(ケース)</label>
-          <input type="number" id="${id}-mixed" min="0" step="1" value="0">
+          <select id="${id}-mixed">${qtyOptionsHtml()}</select>
           <div class="field-kg" id="${id}-mixed-kg">0kg</div>
         </div>
         <div class="field">
           <label for="${id}-s">Sサイズ(ケース)</label>
-          <input type="number" id="${id}-s" min="0" step="1" value="0">
+          <select id="${id}-s">${qtyOptionsHtml()}</select>
           <div class="field-kg" id="${id}-s-kg">0kg</div>
         </div>
         <div class="field">
           <label for="${id}-m">Mサイズ(ケース)</label>
-          <input type="number" id="${id}-m" min="0" step="1" value="0">
+          <select id="${id}-m">${qtyOptionsHtml()}</select>
           <div class="field-kg" id="${id}-m-kg">0kg</div>
         </div>
       </div>`,
@@ -312,8 +320,9 @@ function mountProductSection(container, store, category) {
   }
 
   if (def.applyExtraFieldState) {
-    fieldsEl.querySelectorAll('input[type="number"]').forEach((el) => {
+    fieldsEl.querySelectorAll('input[type="number"], select').forEach((el) => {
       el.addEventListener('input', () => def.applyExtraFieldState(id));
+      el.addEventListener('change', () => def.applyExtraFieldState(id));
     });
   }
 

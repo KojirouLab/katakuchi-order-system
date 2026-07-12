@@ -88,7 +88,7 @@
     color: var(--hint);
     margin-bottom: 6px;
   }
-  input, textarea {
+  input, textarea, select {
     width: 100%;
     font-size: 16px;
     padding: 10px 12px;
@@ -98,8 +98,9 @@
     color: var(--text);
     font-family: inherit;
   }
-  input[type="number"] {
+  input[type="number"], select {
     text-align: center;
+    text-align-last: center;
   }
   .field-kg {
     text-align: center;
@@ -108,7 +109,7 @@
     color: var(--primary);
     margin-top: 6px;
   }
-  input:disabled, textarea:disabled {
+  input:disabled, textarea:disabled, select:disabled {
     background: #f0f0ec;
     color: var(--hint);
   }
@@ -238,7 +239,7 @@
 </head>
 <body>
 <div id="app"></div>
-<script src="storage.js?v=202607121953"></script>
-<script src="app.js?v=202607121953"></script>
+<script src="storage.js?v=202607122004"></script>
+<script src="app.js?v=202607122004"></script>
 </body>
 </html>
