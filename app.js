@@ -90,10 +90,16 @@ const PRODUCT_DEFS = {
   },
   oyster: {
     label: '牡蠣',
+    clearAfterSubmit: true,
     fieldsHtml: (id) => `
+      <p class="hint" style="margin:-4px 0 10px;">1ケース=15kg</p>
+      <label class="checkbox-label">
+        <input type="checkbox" id="${id}-noOrder">
+        この日は発注なし
+      </label>
       <div class="field-row">
         <div class="field">
-          <label for="${id}-mixed">混合(ケース・15kg/ケース)</label>
+          <label for="${id}-mixed">混合(ケース)</label>
           <input type="number" id="${id}-mixed" min="0" step="1" value="0">
         </div>
         <div class="field">
@@ -105,23 +111,38 @@ const PRODUCT_DEFS = {
           <input type="number" id="${id}-m" min="0" step="1" value="0">
         </div>
       </div>`,
-    readValue: (id) => ({
-      mixedBoxes: Number(document.getElementById(`${id}-mixed`).value) || 0,
-      sBoxes: Number(document.getElementById(`${id}-s`).value) || 0,
-      mBoxes: Number(document.getElementById(`${id}-m`).value) || 0,
-    }),
+    readValue: (id) => {
+      const noOrder = document.getElementById(`${id}-noOrder`).checked;
+      return {
+        mixedBoxes: noOrder ? 0 : Number(document.getElementById(`${id}-mixed`).value) || 0,
+        sBoxes: noOrder ? 0 : Number(document.getElementById(`${id}-s`).value) || 0,
+        mBoxes: noOrder ? 0 : Number(document.getElementById(`${id}-m`).value) || 0,
+        noOrder,
+      };
+    },
     fillValue: (id, row) => {
+      document.getElementById(`${id}-noOrder`).checked = !!(row && row.no_order);
       document.getElementById(`${id}-mixed`).value = row ? row.mixed_boxes : 0;
       document.getElementById(`${id}-s`).value = row ? row.s_boxes : 0;
       document.getElementById(`${id}-m`).value = row ? row.m_boxes : 0;
     },
     clearValue: (id) => {
+      document.getElementById(`${id}-noOrder`).checked = false;
       document.getElementById(`${id}-mixed`).value = 0;
       document.getElementById(`${id}-s`).value = 0;
       document.getElementById(`${id}-m`).value = 0;
     },
+    applyExtraFieldState: (id) => {
+      if (!document.getElementById(`${id}-noOrder`).checked) return;
+      ['mixed', 's', 'm'].forEach((k) => {
+        const el = document.getElementById(`${id}-${k}`);
+        el.disabled = true;
+        el.value = 0;
+      });
+    },
     hasValue: (row) => !!row,
-    recentText: (row) => `混合${row.mixed_boxes}ケース / S${row.s_boxes}ケース / M${row.m_boxes}ケース`,
+    recentText: (row) =>
+      row.no_order ? '発注なし' : `混合${row.mixed_boxes}ケース / S${row.s_boxes}ケース / M${row.m_boxes}ケース`,
     fetchOne: fetchOysterOrder,
     save: (base, values) => saveOysterOrder({ ...base, ...values }),
     fetchRecent: fetchOysterOrdersByStore,
@@ -223,6 +244,7 @@ function mountProductSection(container, store, category) {
     fieldsEl.querySelectorAll('input, textarea').forEach((el) => {
       el.disabled = locked;
     });
+    if (def.applyExtraFieldState) def.applyExtraFieldState(id);
     submitBtn.disabled = locked;
     cancelBtn.style.display = hasExisting && !locked ? '' : 'none';
     if (locked) {
@@ -231,6 +253,11 @@ function mountProductSection(container, store, category) {
     } else {
       deadlineMsgEl.style.display = 'none';
     }
+  }
+
+  const noOrderCheckbox = document.getElementById(`${id}-noOrder`);
+  if (noOrderCheckbox) {
+    noOrderCheckbox.addEventListener('change', applyLockState);
   }
 
   async function loadForDate() {
@@ -299,9 +326,10 @@ function mountProductSection(container, store, category) {
     try {
       const values = def.readValue(id);
       await def.save({ storeSlug: store.slug, storeName: store.name, date }, values);
-      msgEl.textContent = `${formatDateJp(date)}の発注を保存しました。`;
+      msgEl.textContent = `✓ ${formatDateJp(date)}の発注を保存しました。`;
       msgEl.className = 'msg msg-success';
       hasExisting = true;
+      if (def.clearAfterSubmit) def.clearValue(id);
       applyLockState();
       loadRecent();
     } catch (e) {
@@ -459,12 +487,13 @@ function renderOysterSummary(rows, stores) {
         const r = byKey[`${date}__${st.slug}`];
         if (!r) return '';
         const total = (Number(r.mixed_boxes) || 0) + (Number(r.s_boxes) || 0) + (Number(r.m_boxes) || 0);
-        if (total === 0) return '';
+        if (!r.no_order && total === 0) return '';
+        const body = r.no_order
+          ? '発注なし'
+          : `混合${r.mixed_boxes}ケース / S${r.s_boxes}ケース / M${r.m_boxes}ケース(${total * 15}kg)`;
         return `<li><span class="recent-date">${formatDateJp(date)} <span class="recent-store">${escapeHtml(
           st.name
-        )}</span></span><span class="recent-body">混合${r.mixed_boxes}ケース / S${r.s_boxes}ケース / M${
-          r.m_boxes
-        }ケース(${total * 15}kg)</span></li>`;
+        )}</span></span><span class="recent-body">${body}</span></li>`;
       })
     )
     .filter(Boolean)

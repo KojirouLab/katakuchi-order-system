@@ -18,6 +18,7 @@ create table if not exists oyster_orders (
   mixed_boxes numeric not null default 0,
   s_boxes numeric not null default 0,
   m_boxes numeric not null default 0,
+  no_order boolean not null default false,
   updated_at timestamptz not null default now(),
   unique (store_slug, order_date)
 );

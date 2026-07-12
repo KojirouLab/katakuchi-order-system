@@ -89,7 +89,7 @@ async function fetchOysterOrder(storeSlug, date) {
   return data;
 }
 
-async function saveOysterOrder({ storeSlug, storeName, date, mixedBoxes, sBoxes, mBoxes }) {
+async function saveOysterOrder({ storeSlug, storeName, date, mixedBoxes, sBoxes, mBoxes, noOrder }) {
   assertClient();
   const { error } = await sb.from('oyster_orders').upsert(
     {
@@ -99,6 +99,7 @@ async function saveOysterOrder({ storeSlug, storeName, date, mixedBoxes, sBoxes,
       mixed_boxes: mixedBoxes,
       s_boxes: sBoxes,
       m_boxes: mBoxes,
+      no_order: !!noOrder,
       updated_at: new Date().toISOString(),
     },
     { onConflict: 'store_slug,order_date' }

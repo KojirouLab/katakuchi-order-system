@@ -90,8 +90,26 @@
     color: var(--text);
     font-family: inherit;
   }
+  input:disabled, textarea:disabled {
+    background: #f0f0ec;
+    color: var(--hint);
+  }
   textarea {
     resize: vertical;
+  }
+  .checkbox-label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 14px;
+    color: var(--text);
+    margin-bottom: 14px;
+    cursor: pointer;
+  }
+  .checkbox-label input[type="checkbox"] {
+    width: 18px;
+    height: 18px;
+    flex: none;
   }
   button.primary {
     width: 100%;
@@ -130,8 +148,14 @@
     font-size: 13px;
     margin-top: 10px;
   }
-  .msg-success { color: var(--success); }
-  .msg-error { color: var(--danger); }
+  .msg-success, .msg-error {
+    font-size: 15px;
+    font-weight: 700;
+    padding: 10px 12px;
+    border-radius: 8px;
+  }
+  .msg-success { color: var(--success); background: #e6f4ea; }
+  .msg-error { color: var(--danger); background: #fbe9e7; }
   .deadline-msg {
     font-size: 13px;
     color: var(--warning);
@@ -196,7 +220,7 @@
 </head>
 <body>
 <div id="app"></div>
-<script src="storage.js?v=202607121056"></script>
-<script src="app.js?v=202607121056"></script>
+<script src="storage.js?v=202607121116"></script>
+<script src="app.js?v=202607121116"></script>
 </body>
 </html>
