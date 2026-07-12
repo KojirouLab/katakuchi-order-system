@@ -532,7 +532,7 @@ function renderOysterSummary(rows, stores) {
         if (!r.no_order && total === 0) return '';
         const body = r.no_order
           ? '発注なし'
-          : `混合${r.mixed_boxes}ケース / S${r.s_boxes}ケース / M${r.m_boxes}ケース(${total * 15}kg)`;
+          : `混合${r.mixed_boxes}ケース / S${r.s_boxes}ケース / M${r.m_boxes}ケース`;
         return `<li><span class="recent-date">${formatDateJp(date)} <span class="recent-store">${escapeHtml(
           st.name
         )}</span></span><span class="recent-body">${body}</span></li>`;
