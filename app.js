@@ -300,7 +300,7 @@ function mountProductSection(container, store, category) {
   let locked = false;
 
   function applyLockState() {
-    fieldsEl.querySelectorAll('input, textarea').forEach((el) => {
+    fieldsEl.querySelectorAll('input, textarea, select').forEach((el) => {
       el.disabled = locked;
     });
     if (def.applyExtraFieldState) def.applyExtraFieldState(id);
