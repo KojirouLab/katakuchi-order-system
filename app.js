@@ -421,7 +421,7 @@ async function renderAdminPage(slug) {
   const defaultTo = todayStr();
 
   app.innerHTML = `
-    <div class="page">
+    <div class="page wide">
       <h1>${escapeHtml(shop.name)}</h1>
       <p class="hint">${subtitle}</p>
       <div class="card">
@@ -517,7 +517,7 @@ function renderOysterSummary(rows, stores) {
       const total = mixed + s + m;
       return `<li><span class="recent-date">${formatDateJp(
         date
-      )}</span><span class="recent-body">混合${mixed}ケース / Sサイズ${s}ケース / Mサイズ${m}ケース / 合計${total}ケース(${
+      )}</span><span class="recent-body">混合${mixed}CS / Sサイズ${s}CS / Mサイズ${m}CS<br>合計${total}CS(${
         total * 15
       }kg)</span></li>`;
     })
