@@ -16,6 +16,8 @@
     --hint: #767671;
     --danger: #c0392b;
     --success: #1e7a3d;
+    --warning: #9a6400;
+    --warning-bg: #fbf1dc;
   }
   * { box-sizing: border-box; }
   body {
@@ -130,6 +132,14 @@
   }
   .msg-success { color: var(--success); }
   .msg-error { color: var(--danger); }
+  .deadline-msg {
+    font-size: 13px;
+    color: var(--warning);
+    background: var(--warning-bg);
+    border-radius: 8px;
+    padding: 8px 10px;
+    margin-bottom: 14px;
+  }
   .home-links {
     list-style: none;
     padding: 0;
@@ -186,7 +196,7 @@
 </head>
 <body>
 <div id="app"></div>
-<script src="storage.js?v=202607091545"></script>
-<script src="app.js?v=202607091545"></script>
+<script src="storage.js?v=202607121056"></script>
+<script src="app.js?v=202607121056"></script>
 </body>
 </html>

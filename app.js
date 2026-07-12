@@ -4,20 +4,22 @@ const STORES = [
   { slug: 'asakusa', name: '浅草店', categories: ['pizza'] },
   { slug: 'kaki-rokko', name: '牡蠣小屋ろっこ', categories: ['oyster', 'pizza'] },
   { slug: 'kaki-mouikko', name: '牡蠣小屋もういっこ', categories: ['oyster'] },
-  { slug: 'kaki-higashiichi', name: '牡蠣小屋東一店', categories: ['oyster', 'whelk'] },
+  { slug: 'kaki-higashiichi', name: '牡蠣小屋東一店', categories: ['oyster'] },
   { slug: 'kai-hakko', name: '貝小屋はっこ', categories: ['oyster'] },
 ];
 
 const PIZZA_STORES = STORES.filter((s) => s.categories.includes('pizza'));
 const OYSTER_STORES = STORES.filter((s) => s.categories.includes('oyster'));
-const WHELK_STORES = STORES.filter((s) => s.categories.includes('whelk'));
-const STORES_BY_CATEGORY = { pizza: PIZZA_STORES, oyster: OYSTER_STORES, whelk: WHELK_STORES };
+const STORES_BY_CATEGORY = { pizza: PIZZA_STORES, oyster: OYSTER_STORES };
 
 const ADMIN_SHOPS = {
   katakuchi: { name: 'カタクチ商店', categories: ['pizza'] },
-  'kaki-juchu': { name: '牡蠣受注店', categories: ['oyster', 'whelk'] },
-  'haiso-juchu': { name: '配送受注店', categories: ['pizza', 'oyster', 'whelk'] },
+  'kaki-juchu': { name: '牡蠣受注店', categories: ['oyster'] },
+  'haiso-juchu': { name: '配送受注店', categories: ['pizza', 'oyster'] },
 };
+
+// 発注の締切: 発注日の前日 朝6:00。それ以降はその日の発注を変更できない。
+const DEADLINE_HOUR = 6;
 
 function findStore(slug) {
   return STORES.find((s) => s.slug === slug) || null;
@@ -45,8 +47,24 @@ function formatDateJp(dateStr) {
   return `${d.getMonth() + 1}/${d.getDate()}(${w})`;
 }
 
-// 商品カテゴリごとの入力欄・保存/取得ロジックの定義。
-// pizza / whelk は自由記述のcontent、oysterは箱数の3項目。
+function orderDeadline(dateStr) {
+  const d = new Date(dateStr + 'T00:00:00');
+  d.setDate(d.getDate() - 1);
+  d.setHours(DEADLINE_HOUR, 0, 0, 0);
+  return d;
+}
+
+function isPastDeadline(dateStr) {
+  return new Date() >= orderDeadline(dateStr);
+}
+
+function formatDeadlineJp(dateStr) {
+  const d = orderDeadline(dateStr);
+  const w = ['日', '月', '火', '水', '木', '金', '土'][d.getDay()];
+  return `${d.getMonth() + 1}/${d.getDate()}(${w}) ${String(d.getHours()).padStart(2, '0')}:00`;
+}
+
+// 商品カテゴリごとの入力欄・保存/取得ロジックの定義。pizzaは自由記述のcontent、oysterはケース数の3項目。
 const PRODUCT_DEFS = {
   pizza: {
     label: 'ピザ',
@@ -75,15 +93,15 @@ const PRODUCT_DEFS = {
     fieldsHtml: (id) => `
       <div class="field-row">
         <div class="field">
-          <label for="${id}-mixed">混合(15kg/箱)</label>
+          <label for="${id}-mixed">混合(ケース・15kg/ケース)</label>
           <input type="number" id="${id}-mixed" min="0" step="1" value="0">
         </div>
         <div class="field">
-          <label for="${id}-s">Sサイズ(箱)</label>
+          <label for="${id}-s">Sサイズ(ケース)</label>
           <input type="number" id="${id}-s" min="0" step="1" value="0">
         </div>
         <div class="field">
-          <label for="${id}-m">Mサイズ(箱)</label>
+          <label for="${id}-m">Mサイズ(ケース)</label>
           <input type="number" id="${id}-m" min="0" step="1" value="0">
         </div>
       </div>`,
@@ -103,34 +121,12 @@ const PRODUCT_DEFS = {
       document.getElementById(`${id}-m`).value = 0;
     },
     hasValue: (row) => !!row,
-    recentText: (row) => `混合${row.mixed_boxes} / S${row.s_boxes} / M${row.m_boxes}`,
+    recentText: (row) => `混合${row.mixed_boxes}ケース / S${row.s_boxes}ケース / M${row.m_boxes}ケース`,
     fetchOne: fetchOysterOrder,
     save: (base, values) => saveOysterOrder({ ...base, ...values }),
     fetchRecent: fetchOysterOrdersByStore,
     fetchRange: fetchOysterOrdersRange,
     del: deleteOysterOrder,
-  },
-  whelk: {
-    label: 'つぶ貝',
-    fieldsHtml: (id) => `
-      <div class="field">
-        <label for="${id}-content">注文内容(商品名・個数・キロ数など自由に記入)</label>
-        <textarea id="${id}-content" rows="6" placeholder="例) つぶ貝 5キロ"></textarea>
-      </div>`,
-    readValue: (id) => ({ content: document.getElementById(`${id}-content`).value.trim() }),
-    fillValue: (id, row) => {
-      document.getElementById(`${id}-content`).value = row ? row.content : '';
-    },
-    clearValue: (id) => {
-      document.getElementById(`${id}-content`).value = '';
-    },
-    hasValue: (row) => !!(row && row.content && row.content.trim()),
-    recentText: (row) => escapeHtml(row.content).replace(/\n/g, '<br>'),
-    fetchOne: fetchWhelkOrder,
-    save: (base, values) => saveWhelkOrder({ ...base, ...values }),
-    fetchRecent: fetchWhelkOrdersByStore,
-    fetchRange: fetchWhelkOrdersRange,
-    del: deleteWhelkOrder,
   },
 };
 
@@ -154,6 +150,7 @@ function renderHome() {
     <div class="page">
       <h1>カタクチ商店 受発注システム</h1>
       <p class="hint">このページのリンクを各店舗・受注担当者に共有してください。URLを知っている人だけがアクセスできる運用です。</p>
+      <p class="hint">発注は、発注日の前日 ${DEADLINE_HOUR}:00 で締め切られます。</p>
       <div class="card">
         <h2>各店舗の発注</h2>
         <ul class="home-links">${storeLinks}</ul>
@@ -162,7 +159,7 @@ function renderHome() {
         <h2>受注集計</h2>
         <ul class="home-links">
           <li><a href="?shop=katakuchi">カタクチ商店(ピザ集計)</a></li>
-          <li><a href="?shop=kaki-juchu">牡蠣受注店(牡蠣・つぶ貝集計)</a></li>
+          <li><a href="?shop=kaki-juchu">牡蠣受注店(牡蠣集計)</a></li>
           <li><a href="?shop=haiso-juchu">配送受注店(全集計)</a></li>
         </ul>
       </div>
@@ -180,7 +177,7 @@ async function renderOrderPage(slug) {
   app.innerHTML = `
     <div class="page">
       <h1>${escapeHtml(store.name)}</h1>
-      <p class="hint">発注</p>
+      <p class="hint">発注(発注日の前日 ${DEADLINE_HOUR}:00 締切)</p>
     </div>`;
 
   const page = app.querySelector('.page');
@@ -200,9 +197,12 @@ function mountProductSection(container, store, category) {
         <label for="${id}-date">発注日</label>
         <input type="date" id="${id}-date" value="${todayStr()}">
       </div>
-      ${def.fieldsHtml(id)}
-      <button id="${id}-submitBtn" class="primary">この内容で発注する</button>
-      <button id="${id}-cancelBtn" class="secondary" style="display:none">この日の発注をキャンセルする</button>
+      <p id="${id}-deadline-msg" class="deadline-msg" style="display:none"></p>
+      <div id="${id}-fields">
+        ${def.fieldsHtml(id)}
+        <button id="${id}-submitBtn" class="primary">この内容で発注する</button>
+        <button id="${id}-cancelBtn" class="secondary" style="display:none">この日の発注をキャンセルする</button>
+      </div>
       <p id="${id}-msg" class="msg"></p>
       <h3 style="margin:20px 0 12px;font-size:14px;">これまでの発注(直近10件・タップで選択)</h3>
       <div id="${id}-recent">読み込み中…</div>
@@ -211,21 +211,39 @@ function mountProductSection(container, store, category) {
 
   const dateInput = document.getElementById(`${id}-date`);
   const msgEl = document.getElementById(`${id}-msg`);
+  const deadlineMsgEl = document.getElementById(`${id}-deadline-msg`);
+  const fieldsEl = document.getElementById(`${id}-fields`);
   const cancelBtn = document.getElementById(`${id}-cancelBtn`);
   const submitBtn = document.getElementById(`${id}-submitBtn`);
   const recentEl = document.getElementById(`${id}-recent`);
   let hasExisting = false;
+  let locked = false;
+
+  function applyLockState() {
+    fieldsEl.querySelectorAll('input, textarea').forEach((el) => {
+      el.disabled = locked;
+    });
+    submitBtn.disabled = locked;
+    cancelBtn.style.display = hasExisting && !locked ? '' : 'none';
+    if (locked) {
+      deadlineMsgEl.textContent = `締切(${formatDeadlineJp(dateInput.value)})を過ぎているため、この日の発注は変更できません。`;
+      deadlineMsgEl.style.display = '';
+    } else {
+      deadlineMsgEl.style.display = 'none';
+    }
+  }
 
   async function loadForDate() {
     msgEl.textContent = '';
     msgEl.className = 'msg';
     const date = dateInput.value;
     if (!date) return;
+    locked = isPastDeadline(date);
     try {
       const row = await def.fetchOne(store.slug, date);
       def.fillValue(id, row);
       hasExisting = def.hasValue(row);
-      cancelBtn.style.display = hasExisting ? '' : 'none';
+      applyLockState();
     } catch (e) {
       console.error(e);
       msgEl.textContent = '読み込みに失敗しました。通信状況を確認してください。';
@@ -270,6 +288,11 @@ function mountProductSection(container, store, category) {
       msgEl.className = 'msg msg-error';
       return;
     }
+    if (isPastDeadline(date)) {
+      msgEl.textContent = `締切(${formatDeadlineJp(date)})を過ぎているため発注できません。`;
+      msgEl.className = 'msg msg-error';
+      return;
+    }
     submitBtn.disabled = true;
     msgEl.textContent = '送信中…';
     msgEl.className = 'msg';
@@ -279,20 +302,20 @@ function mountProductSection(container, store, category) {
       msgEl.textContent = `${formatDateJp(date)}の発注を保存しました。`;
       msgEl.className = 'msg msg-success';
       hasExisting = true;
-      cancelBtn.style.display = '';
+      applyLockState();
       loadRecent();
     } catch (e) {
       console.error(e);
       msgEl.textContent = '保存に失敗しました。通信状況を確認してもう一度お試しください。';
       msgEl.className = 'msg msg-error';
     } finally {
-      submitBtn.disabled = false;
+      submitBtn.disabled = locked;
     }
   });
 
   cancelBtn.addEventListener('click', async () => {
     const date = dateInput.value;
-    if (!date || !hasExisting) return;
+    if (!date || !hasExisting || isPastDeadline(date)) return;
     if (!confirm(`${formatDateJp(date)}の発注をキャンセルします。よろしいですか？`)) return;
     cancelBtn.disabled = true;
     msgEl.textContent = 'キャンセル中…';
@@ -301,9 +324,9 @@ function mountProductSection(container, store, category) {
       await def.del(store.slug, date);
       def.clearValue(id);
       hasExisting = false;
-      cancelBtn.style.display = 'none';
       msgEl.textContent = `${formatDateJp(date)}の発注をキャンセルしました。`;
       msgEl.className = 'msg msg-success';
+      applyLockState();
       loadRecent();
     } catch (e) {
       console.error(e);
@@ -421,9 +444,12 @@ function renderOysterSummary(rows, stores) {
         s += Number(r.s_boxes) || 0;
         m += Number(r.m_boxes) || 0;
       });
+      const total = mixed + s + m;
       return `<li><span class="recent-date">${formatDateJp(
         date
-      )}</span><span class="recent-body">混合${mixed} / Sサイズ${s} / Mサイズ${m} / 合計${mixed + s + m}箱</span></li>`;
+      )}</span><span class="recent-body">混合${mixed}ケース / Sサイズ${s}ケース / Mサイズ${m}ケース / 合計${total}ケース(${
+        total * 15
+      }kg)</span></li>`;
     })
     .join('');
 
@@ -436,7 +462,9 @@ function renderOysterSummary(rows, stores) {
         if (total === 0) return '';
         return `<li><span class="recent-date">${formatDateJp(date)} <span class="recent-store">${escapeHtml(
           st.name
-        )}</span></span><span class="recent-body">混合${r.mixed_boxes} / S${r.s_boxes} / M${r.m_boxes}</span></li>`;
+        )}</span></span><span class="recent-body">混合${r.mixed_boxes}ケース / S${r.s_boxes}ケース / M${
+          r.m_boxes
+        }ケース(${total * 15}kg)</span></li>`;
       })
     )
     .filter(Boolean)
@@ -444,7 +472,7 @@ function renderOysterSummary(rows, stores) {
 
   return `
     <div class="card">
-      <h2>日別合計(15kg/箱)</h2>
+      <h2>日別合計(1ケース=15kg)</h2>
       <ul class="recent-list">${dailyTotalItems}</ul>
     </div>
     <div class="card">

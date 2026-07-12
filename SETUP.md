@@ -29,13 +29,11 @@
 
 - ピザ発注(各店舗が入力): 晩翠通り店 / ピザろっこ / 浅草店 / 牡蠣小屋ろっこ
 - 牡蠣発注(各店舗が入力): 牡蠣小屋ろっこ / 牡蠣小屋もういっこ / 牡蠣小屋東一店 / 貝小屋はっこ
-- つぶ貝発注(各店舗が入力): 牡蠣小屋東一店
 - ピザ受注集計(カタクチ商店が閲覧): `?shop=katakuchi`
-- 牡蠣・つぶ貝受注集計(牡蠣受注店が閲覧): `?shop=kaki-juchu`
-- ピザ・牡蠣・つぶ貝 全受注集計(配送受注店が閲覧): `?shop=haiso-juchu`
+- 牡蠣受注集計(牡蠣受注店が閲覧): `?shop=kaki-juchu`
+- ピザ・牡蠣 全受注集計(配送受注店が閲覧): `?shop=haiso-juchu`
 
-牡蠣小屋ろっこと牡蠣小屋東一店は、1つのURLの中に複数の発注フォーム(牡蠣+ピザ、
-牡蠣+つぶ貝)が並んで表示されます。
+牡蠣小屋ろっこは、1つのURLの中に牡蠣とピザ2つの発注フォームが並んで表示されます。
 
 店舗ごとのURLはブックマークやホーム画面追加(Safariの共有ボタン→「ホーム画面に追加」)
 しておくと、次回から一発で開けます。
@@ -44,11 +42,14 @@
 
 - ログイン機能はありません。**URLを知っている人は誰でも閲覧・入力できます。** 店舗以外に
   URLを共有しないでください。
+- 発注の締切は、発注日の**前日の朝6:00**です。締切を過ぎた日付は入力欄がロックされ、
+  内容の確認はできますが変更・キャンセルはできなくなります。
 - 1つの店舗が同じ日付でもう一度送信すると、その日の内容は上書きされます(内容の修正・再送信として使えます)。
 - 「これまでの発注」一覧をタップすると、その日の内容が発注フォームに読み込まれ、修正やキャンセル(削除)ができます。
 - 店舗や集計先を増やしたい場合は、`app.js` の先頭にある `STORES` / `ADMIN_SHOPS` を編集してください。
-  `STORES` の各店舗は `categories` に `pizza` / `oyster` / `whelk` を好きな数だけ指定でき、
+  `STORES` の各店舗は `categories` に `pizza` / `oyster` を好きな数だけ指定でき、
   指定した分だけ発注フォームがその店舗のページに並びます。
+- 締切時刻を変更したい場合は、`app.js` の `DEADLINE_HOUR`(現在は `6`)を書き換えてください。
 
 ## 5. 既存のSupabaseプロジェクトを更新する場合
 
@@ -59,24 +60,12 @@
 ```sql
 create policy "pizza anon delete" on pizza_orders for delete using (true);
 create policy "oyster anon delete" on oyster_orders for delete using (true);
-
-create table if not exists whelk_orders (
-  id uuid primary key default gen_random_uuid(),
-  store_slug text not null,
-  store_name text not null,
-  order_date date not null,
-  content text not null default '',
-  updated_at timestamptz not null default now(),
-  unique (store_slug, order_date)
-);
-
-alter table whelk_orders enable row level security;
-
-create policy "whelk anon select" on whelk_orders for select using (true);
-create policy "whelk anon insert" on whelk_orders for insert with check (true);
-create policy "whelk anon update" on whelk_orders for update using (true);
-create policy "whelk anon delete" on whelk_orders for delete using (true);
 ```
+
+つぶ貝(whelk)機能は廃止しました。過去に追加した場合、`whelk_orders` テーブルは
+アプリからは使われなくなります。不要であれば **SQL Editor** で
+`drop table whelk_orders;` を実行して削除できます(元に戻せない操作なので、
+削除前に必要なデータが残っていないか確認してください)。
 
 ## 困ったときは
 
