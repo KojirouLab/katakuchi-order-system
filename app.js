@@ -217,6 +217,8 @@ function route() {
   const params = new URLSearchParams(location.search);
   const storeSlug = params.get('store');
   const shopSlug = params.get('shop');
+  const isParent = params.get('parent') === '1';
+  if (isParent) return renderParentOrderPage();
   if (storeSlug) return renderOrderPage(storeSlug);
   if (shopSlug) return renderAdminPage(shopSlug);
   renderHome();
@@ -244,6 +246,13 @@ function renderHome() {
           <li><a href="?shop=haiso-juchu">配送受注店(全集計)</a></li>
         </ul>
       </div>
+      <div class="card">
+        <h2>発注代行(締切後も変更・キャンセル可)</h2>
+        <p class="hint">店舗からの電話連絡などで、締切後にカタクチ商店・牡蠣受注店側が代わりに発注内容を直す場合に使います。取り扱いにご注意ください。</p>
+        <ul class="home-links">
+          <li><a href="?parent=1">発注代行ページを開く</a></li>
+        </ul>
+      </div>
     </div>`;
 }
 
@@ -265,7 +274,36 @@ async function renderOrderPage(slug) {
   store.categories.forEach((category) => mountProductSection(page, store, category));
 }
 
-function mountProductSection(container, store, category) {
+function renderParentOrderPage() {
+  app.innerHTML = `
+    <div class="page">
+      <h1>発注代行</h1>
+      <p class="hint">締切に関係なく、どの店舗の発注でも追加・変更・キャンセルできます。取り扱いにご注意ください。</p>
+      <div class="card">
+        <div class="field">
+          <label for="parent-store">店舗を選択</label>
+          <select id="parent-store">
+            <option value="">選んでください</option>
+            ${STORES.map((s) => `<option value="${s.slug}">${escapeHtml(s.name)}</option>`).join('')}
+          </select>
+        </div>
+      </div>
+      <div id="parent-sections"></div>
+    </div>`;
+
+  const select = document.getElementById('parent-store');
+  const sectionsEl = document.getElementById('parent-sections');
+
+  select.addEventListener('change', () => {
+    sectionsEl.innerHTML = '';
+    const store = findStore(select.value);
+    if (!store) return;
+    store.categories.forEach((category) => mountProductSection(sectionsEl, store, category, { bypassDeadline: true }));
+  });
+}
+
+function mountProductSection(container, store, category, options = {}) {
+  const bypassDeadline = !!options.bypassDeadline;
   const def = PRODUCT_DEFS[category];
   const id = category;
 
@@ -277,7 +315,7 @@ function mountProductSection(container, store, category) {
       <p class="hint">締切: ${def.deadlineLabel}</p>
       <div class="field">
         <label for="${id}-date">発注日</label>
-        <input type="date" id="${id}-date" value="${earliestOrderableDate(category)}">
+        <input type="date" id="${id}-date" value="${bypassDeadline ? todayStr() : earliestOrderableDate(category)}">
       </div>
       <p id="${id}-deadline-msg" class="deadline-msg" style="display:none"></p>
       <div id="${id}-fields">
@@ -333,7 +371,7 @@ function mountProductSection(container, store, category) {
     msgEl.className = 'msg';
     const date = dateInput.value;
     if (!date) return;
-    locked = isPastDeadline(date, category);
+    locked = !bypassDeadline && isPastDeadline(date, category);
     try {
       const row = await def.fetchOne(store.slug, date);
       def.fillValue(id, row);
@@ -383,7 +421,7 @@ function mountProductSection(container, store, category) {
       msgEl.className = 'msg msg-error';
       return;
     }
-    if (isPastDeadline(date, category)) {
+    if (!bypassDeadline && isPastDeadline(date, category)) {
       msgEl.textContent = `締切(${formatDeadlineJp(date, category)})を過ぎているため発注できません。`;
       msgEl.className = 'msg msg-error';
       return;
@@ -411,7 +449,7 @@ function mountProductSection(container, store, category) {
 
   cancelBtn.addEventListener('click', async () => {
     const date = dateInput.value;
-    if (!date || !hasExisting || isPastDeadline(date, category)) return;
+    if (!date || !hasExisting || (!bypassDeadline && isPastDeadline(date, category))) return;
     if (!confirm(`${formatDateJp(date)}の発注をキャンセルします。よろしいですか？`)) return;
     cancelBtn.disabled = true;
     msgEl.textContent = 'キャンセル中…';
