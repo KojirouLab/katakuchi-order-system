@@ -65,10 +65,11 @@ function formatDateJp(dateStr) {
 function orderDeadline(dateStr, category) {
   const def = PRODUCT_DEFS[category];
   const d = new Date(dateStr + 'T00:00:00');
-  d.setDate(d.getDate() - 1);
-  if (def.skipNonBusinessDays) {
-    while (!isBusinessDay(d)) {
-      d.setDate(d.getDate() - 1);
+  let remaining = def.deadlineDaysBefore || 1;
+  while (remaining > 0) {
+    d.setDate(d.getDate() - 1);
+    if (!def.skipNonBusinessDays || isBusinessDay(d)) {
+      remaining--;
     }
   }
   d.setHours(def.deadlineHour, 0, 0, 0);
@@ -114,8 +115,9 @@ const PRODUCT_DEFS = {
   pizza: {
     label: 'ピザ',
     deadlineHour: 12,
+    deadlineDaysBefore: 2,
     skipNonBusinessDays: true,
-    deadlineLabel: '前営業日(土日祝を除く) 12:00',
+    deadlineLabel: '2営業日前(土日祝を除く) 12:00',
     fieldsHtml: (id) => `
       <div class="field">
         <label for="${id}-content">注文内容(商品名・個数・キロ数など自由に記入)</label>
