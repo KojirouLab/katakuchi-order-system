@@ -247,10 +247,10 @@ function renderHome() {
         </ul>
       </div>
       <div class="card">
-        <h2>発注代行(締切後も変更・キャンセル可)</h2>
+        <h2>管理者ページ(締切後も変更・キャンセル可)</h2>
         <p class="hint">店舗からの電話連絡などで、締切後にカタクチ商店・牡蠣受注店側が代わりに発注内容を直す場合に使います。取り扱いにご注意ください。</p>
         <ul class="home-links">
-          <li><a href="?parent=1">発注代行ページを開く</a></li>
+          <li><a href="?parent=1">管理者ページを開く</a></li>
         </ul>
       </div>
     </div>`;
@@ -277,7 +277,7 @@ async function renderOrderPage(slug) {
 function renderParentOrderPage() {
   app.innerHTML = `
     <div class="page">
-      <h1>発注代行</h1>
+      <h1>管理者ページ</h1>
       <p class="hint">締切に関係なく、どの店舗の発注でも追加・変更・キャンセルできます。取り扱いにご注意ください。</p>
       <div class="card">
         <div class="field">
