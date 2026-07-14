@@ -6,6 +6,7 @@ create table if not exists pizza_orders (
   store_name text not null,
   order_date date not null,
   content text not null default '',
+  confirmed_at timestamptz,
   updated_at timestamptz not null default now(),
   unique (store_slug, order_date)
 );

@@ -62,6 +62,12 @@ function formatDateJp(dateStr) {
   return `${d.getMonth() + 1}/${d.getDate()}(${w})`;
 }
 
+function formatDateTimeJp(isoString) {
+  const d = new Date(isoString);
+  const w = ['日', '月', '火', '水', '木', '金', '土'][d.getDay()];
+  return `${d.getMonth() + 1}/${d.getDate()}(${w}) ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+}
+
 function orderDeadline(dateStr, category) {
   const def = PRODUCT_DEFS[category];
   const d = new Date(dateStr + 'T00:00:00');
@@ -131,7 +137,13 @@ const PRODUCT_DEFS = {
       document.getElementById(`${id}-content`).value = '';
     },
     hasValue: (row) => !!(row && row.content && row.content.trim()),
-    recentText: (row) => escapeHtml(row.content).replace(/\n/g, '<br>'),
+    recentText: (row) => {
+      const content = escapeHtml(row.content).replace(/\n/g, '<br>');
+      const status = row.confirmed_at
+        ? `<span class="confirm-badge confirmed">✓ カタクチ商店 確認済み(${formatDateTimeJp(row.confirmed_at)})</span>`
+        : `<span class="confirm-badge pending">未確認</span>`;
+      return `${status}<br>${content}`;
+    },
     fetchOne: fetchPizzaOrder,
     save: (base, values) => savePizzaOrder({ ...base, ...values }),
     fetchRecent: fetchPizzaOrdersByStore,
@@ -519,6 +531,21 @@ async function renderAdminPage(slug) {
         })
       );
       summaryEl.innerHTML = sections.join('');
+      summaryEl.querySelectorAll('.confirm-btn').forEach((btn) => {
+        btn.addEventListener('click', async () => {
+          btn.disabled = true;
+          btn.textContent = '更新中…';
+          try {
+            await confirmPizzaOrder(btn.dataset.store, btn.dataset.date);
+            load();
+          } catch (e) {
+            console.error(e);
+            btn.textContent = '確認済みにする';
+            btn.disabled = false;
+            alert('更新に失敗しました。通信状況を確認してもう一度お試しください。');
+          }
+        });
+      });
     } catch (e) {
       console.error(e);
       summaryEl.innerHTML = '<p class="msg-error">読み込みに失敗しました。</p>';
@@ -541,9 +568,12 @@ function renderTextOrderSummary(rows, stores) {
       stores.map((s) => {
         const r = byKey[`${date}__${s.slug}`];
         if (!r || !r.content || !r.content.trim()) return '';
+        const status = r.confirmed_at
+          ? `<span class="confirm-badge confirmed">✓ 確認済み(${formatDateTimeJp(r.confirmed_at)})</span>`
+          : `<button class="confirm-btn" data-store="${s.slug}" data-date="${date}">確認済みにする</button>`;
         return `<li><span class="recent-date">${formatDateJp(date)} <span class="recent-store">${escapeHtml(
           s.name
-        )}</span></span><span class="recent-body">${escapeHtml(r.content).replace(/\n/g, '<br>')}</span></li>`;
+        )}</span></span><span class="recent-body">${escapeHtml(r.content).replace(/\n/g, '<br>')}</span>${status}</li>`;
       })
     )
     .filter(Boolean)

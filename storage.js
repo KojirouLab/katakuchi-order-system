@@ -37,11 +37,24 @@ async function savePizzaOrder({ storeSlug, storeName, date, content }) {
       store_name: storeName,
       order_date: date,
       content,
+      confirmed_at: null,
       updated_at: new Date().toISOString(),
     },
     { onConflict: 'store_slug,order_date' }
   );
   if (error) throw error;
+}
+
+async function confirmPizzaOrder(storeSlug, date) {
+  assertClient();
+  const { data, error } = await sb
+    .from('pizza_orders')
+    .update({ confirmed_at: new Date().toISOString() })
+    .eq('store_slug', storeSlug)
+    .eq('order_date', date)
+    .select();
+  if (error) throw error;
+  if (!data || data.length === 0) throw new Error('更新できませんでした(権限設定が反映されていない可能性があります)');
 }
 
 async function deletePizzaOrder(storeSlug, date) {
