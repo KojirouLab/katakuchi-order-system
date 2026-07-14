@@ -57,6 +57,18 @@ async function confirmPizzaOrder(storeSlug, date) {
   if (!data || data.length === 0) throw new Error('更新できませんでした(権限設定が反映されていない可能性があります)');
 }
 
+async function unconfirmPizzaOrder(storeSlug, date) {
+  assertClient();
+  const { data, error } = await sb
+    .from('pizza_orders')
+    .update({ confirmed_at: null })
+    .eq('store_slug', storeSlug)
+    .eq('order_date', date)
+    .select();
+  if (error) throw error;
+  if (!data || data.length === 0) throw new Error('更新できませんでした(権限設定が反映されていない可能性があります)');
+}
+
 async function deletePizzaOrder(storeSlug, date) {
   assertClient();
   const { data, error } = await sb.from('pizza_orders').delete().eq('store_slug', storeSlug).eq('order_date', date).select();

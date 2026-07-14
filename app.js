@@ -310,12 +310,12 @@ function renderParentOrderPage() {
     sectionsEl.innerHTML = '';
     const store = findStore(select.value);
     if (!store) return;
-    store.categories.forEach((category) => mountProductSection(sectionsEl, store, category, { bypassDeadline: true }));
+    store.categories.forEach((category) => mountProductSection(sectionsEl, store, category, { bypassLock: true }));
   });
 }
 
 function mountProductSection(container, store, category, options = {}) {
-  const bypassDeadline = !!options.bypassDeadline;
+  const bypassLock = !!options.bypassLock;
   const def = PRODUCT_DEFS[category];
   const id = category;
 
@@ -327,7 +327,7 @@ function mountProductSection(container, store, category, options = {}) {
       <p class="hint">締切: ${def.deadlineLabel}</p>
       <div class="field">
         <label for="${id}-date">発注日</label>
-        <input type="date" id="${id}-date" value="${bypassDeadline ? todayStr() : earliestOrderableDate(category)}">
+        <input type="date" id="${id}-date" value="${bypassLock ? todayStr() : earliestOrderableDate(category)}">
       </div>
       <p id="${id}-deadline-msg" class="deadline-msg" style="display:none"></p>
       <div id="${id}-fields">
@@ -350,6 +350,7 @@ function mountProductSection(container, store, category, options = {}) {
   const recentEl = document.getElementById(`${id}-recent`);
   let hasExisting = false;
   let locked = false;
+  let lockReason = null; // 'deadline' | 'confirmed' | null
 
   function applyLockState() {
     fieldsEl.querySelectorAll('input, textarea, select').forEach((el) => {
@@ -358,7 +359,10 @@ function mountProductSection(container, store, category, options = {}) {
     if (def.applyExtraFieldState) def.applyExtraFieldState(id);
     submitBtn.disabled = locked;
     cancelBtn.style.display = hasExisting && !locked ? '' : 'none';
-    if (locked) {
+    if (locked && lockReason === 'confirmed') {
+      deadlineMsgEl.textContent = 'カタクチ商店が確認済みのため、この日の発注は変更できません。修正が必要な場合はカタクチ商店にご連絡ください。';
+      deadlineMsgEl.style.display = '';
+    } else if (locked) {
       deadlineMsgEl.textContent = `締切(${formatDeadlineJp(dateInput.value, category)})を過ぎているため、この日の発注は変更できません。`;
       deadlineMsgEl.style.display = '';
     } else {
@@ -383,11 +387,14 @@ function mountProductSection(container, store, category, options = {}) {
     msgEl.className = 'msg';
     const date = dateInput.value;
     if (!date) return;
-    locked = !bypassDeadline && isPastDeadline(date, category);
     try {
       const row = await def.fetchOne(store.slug, date);
       def.fillValue(id, row);
       hasExisting = def.hasValue(row);
+      const isConfirmed = !!(row && row.confirmed_at);
+      const deadlinePassed = isPastDeadline(date, category);
+      locked = !bypassLock && (deadlinePassed || isConfirmed);
+      lockReason = !bypassLock && isConfirmed ? 'confirmed' : 'deadline';
       applyLockState();
     } catch (e) {
       console.error(e);
@@ -433,8 +440,11 @@ function mountProductSection(container, store, category, options = {}) {
       msgEl.className = 'msg msg-error';
       return;
     }
-    if (!bypassDeadline && isPastDeadline(date, category)) {
-      msgEl.textContent = `締切(${formatDeadlineJp(date, category)})を過ぎているため発注できません。`;
+    if (locked) {
+      msgEl.textContent =
+        lockReason === 'confirmed'
+          ? 'カタクチ商店が確認済みのため発注できません。修正が必要な場合はカタクチ商店にご連絡ください。'
+          : `締切(${formatDeadlineJp(date, category)})を過ぎているため発注できません。`;
       msgEl.className = 'msg msg-error';
       return;
     }
@@ -461,7 +471,7 @@ function mountProductSection(container, store, category, options = {}) {
 
   cancelBtn.addEventListener('click', async () => {
     const date = dateInput.value;
-    if (!date || !hasExisting || (!bypassDeadline && isPastDeadline(date, category))) return;
+    if (!date || !hasExisting || locked) return;
     if (!confirm(`${formatDateJp(date)}の発注をキャンセルします。よろしいですか？`)) return;
     cancelBtn.disabled = true;
     msgEl.textContent = 'キャンセル中…';
@@ -531,21 +541,25 @@ async function renderAdminPage(slug) {
         })
       );
       summaryEl.innerHTML = sections.join('');
-      summaryEl.querySelectorAll('.confirm-btn').forEach((btn) => {
-        btn.addEventListener('click', async () => {
-          btn.disabled = true;
-          btn.textContent = '更新中…';
-          try {
-            await confirmPizzaOrder(btn.dataset.store, btn.dataset.date);
-            load();
-          } catch (e) {
-            console.error(e);
-            btn.textContent = '確認済みにする';
-            btn.disabled = false;
-            alert('更新に失敗しました。通信状況を確認してもう一度お試しください。');
-          }
+      const bindConfirmToggle = (selector, action, resetLabel) => {
+        summaryEl.querySelectorAll(selector).forEach((btn) => {
+          btn.addEventListener('click', async () => {
+            btn.disabled = true;
+            btn.textContent = '更新中…';
+            try {
+              await action(btn.dataset.store, btn.dataset.date);
+              load();
+            } catch (e) {
+              console.error(e);
+              btn.textContent = resetLabel;
+              btn.disabled = false;
+              alert('更新に失敗しました。通信状況を確認してもう一度お試しください。');
+            }
+          });
         });
-      });
+      };
+      bindConfirmToggle('.confirm-btn', confirmPizzaOrder, '確認済みにする');
+      bindConfirmToggle('.unconfirm-btn', unconfirmPizzaOrder, '未確認に戻す');
     } catch (e) {
       console.error(e);
       summaryEl.innerHTML = '<p class="msg-error">読み込みに失敗しました。</p>';
@@ -569,7 +583,7 @@ function renderTextOrderSummary(rows, stores) {
         const r = byKey[`${date}__${s.slug}`];
         if (!r || !r.content || !r.content.trim()) return '';
         const status = r.confirmed_at
-          ? `<span class="confirm-badge confirmed">✓ 確認済み(${formatDateTimeJp(r.confirmed_at)})</span>`
+          ? `<span class="confirm-badge confirmed">✓ 確認済み(${formatDateTimeJp(r.confirmed_at)})</span> <button class="unconfirm-btn" data-store="${s.slug}" data-date="${date}">未確認に戻す</button>`
           : `<button class="confirm-btn" data-store="${s.slug}" data-date="${date}">確認済みにする</button>`;
         return `<li><span class="recent-date">${formatDateJp(date)} <span class="recent-store">${escapeHtml(
           s.name
