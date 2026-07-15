@@ -214,7 +214,11 @@ const PRODUCT_DEFS = {
     },
     hasValue: (row) => !!row,
     recentText: (row) =>
-      row.no_order ? '発注なし' : `混合${row.mixed_boxes}ケース / S${row.s_boxes}ケース / M${row.m_boxes}ケース`,
+      row.no_order
+        ? '発注なし'
+        : `混合${row.mixed_boxes}ケース / S${row.s_boxes}ケース / M${row.m_boxes}ケース<span class="recent-kg">混合${
+            row.mixed_boxes * 15
+          }kg / S${row.s_boxes * 15}kg / M${row.m_boxes * 15}kg</span>`,
     fetchOne: fetchOysterOrder,
     save: (base, values) => saveOysterOrder({ ...base, ...values }),
     fetchRecent: fetchOysterOrdersByStore,
