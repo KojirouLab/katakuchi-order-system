@@ -415,7 +415,9 @@ function mountProductSection(container, store, category, options = {}) {
           (r) =>
             `<li class="clickable" data-date="${r.order_date}"><span class="recent-date">${formatDateJp(
               r.order_date
-            )}</span><span class="recent-body">${def.recentText(r)}</span></li>`
+            )}${
+              bypassLock ? `<span class="recent-submitted">発注日時: ${formatDateTimeJp(r.updated_at)}</span>` : ''
+            }</span><span class="recent-body">${def.recentText(r)}</span></li>`
         )
         .join('')}</ul>`;
       recentEl.querySelectorAll('li[data-date]').forEach((li) => {
