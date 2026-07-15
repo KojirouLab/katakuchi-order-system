@@ -41,7 +41,7 @@ const PRODUCT_DEFS: Record<
   { label: string; deadlineHour: number; deadlineDaysBefore: number; skipNonBusinessDays: boolean }
 > = {
   pizza: { label: "ピザ", deadlineHour: 12, deadlineDaysBefore: 2, skipNonBusinessDays: true },
-  oyster: { label: "牡蠣", deadlineHour: 6, deadlineDaysBefore: 1, skipNonBusinessDays: false },
+  oyster: { label: "牡蠣", deadlineHour: 6, deadlineDaysBefore: 2, skipNonBusinessDays: false },
 };
 
 function isBusinessDay(dateStr: string): boolean {

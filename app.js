@@ -154,8 +154,9 @@ const PRODUCT_DEFS = {
     label: '牡蠣',
     clearAfterSubmit: true,
     deadlineHour: 6,
+    deadlineDaysBefore: 2,
     skipNonBusinessDays: false,
-    deadlineLabel: '前日 6:00',
+    deadlineLabel: '前々日 6:00',
     fieldsHtml: (id) => `
       <p class="hint" style="margin:-4px 0 10px;">1ケース=15kg</p>
       <label class="checkbox-label">
@@ -180,13 +181,12 @@ const PRODUCT_DEFS = {
         </div>
       </div>`,
     readValue: (id) => {
-      const noOrder = document.getElementById(`${id}-noOrder`).checked;
-      return {
-        mixedBoxes: noOrder ? 0 : Number(document.getElementById(`${id}-mixed`).value) || 0,
-        sBoxes: noOrder ? 0 : Number(document.getElementById(`${id}-s`).value) || 0,
-        mBoxes: noOrder ? 0 : Number(document.getElementById(`${id}-m`).value) || 0,
-        noOrder,
-      };
+      let noOrder = document.getElementById(`${id}-noOrder`).checked;
+      const mixedBoxes = noOrder ? 0 : Number(document.getElementById(`${id}-mixed`).value) || 0;
+      const sBoxes = noOrder ? 0 : Number(document.getElementById(`${id}-s`).value) || 0;
+      const mBoxes = noOrder ? 0 : Number(document.getElementById(`${id}-m`).value) || 0;
+      if (!noOrder && mixedBoxes === 0 && sBoxes === 0 && mBoxes === 0) noOrder = true;
+      return { mixedBoxes, sBoxes, mBoxes, noOrder };
     },
     fillValue: (id, row) => {
       document.getElementById(`${id}-noOrder`).checked = !!(row && row.no_order);
