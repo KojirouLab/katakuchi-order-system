@@ -54,21 +54,8 @@ Deno.serve(async (req) => {
         replyToken,
         `友だち追加ありがとうございます。\nあなたのユーザーIDです。担当者に伝えてください:\n${source.userId}`
       );
-    } else if (type === "message") {
-      if (source.type === "group" || source.type === "room") {
-        if (groupOrRoomId) {
-          await reply(
-            replyToken,
-            `このグループのIDです。担当者に伝えてください:\n${groupOrRoomId}`
-          );
-        }
-      } else if (source.userId) {
-        await reply(
-          replyToken,
-          `あなたのユーザーIDです。担当者に伝えてください:\n${source.userId}`
-        );
-      }
     }
+    // "message"イベントには反応しない(通知専用Botのため、グループ内の通常のやり取りには応答しない)
   }
 
   return new Response("OK", { status: 200 });
