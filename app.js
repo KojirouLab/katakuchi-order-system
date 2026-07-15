@@ -154,9 +154,9 @@ const PRODUCT_DEFS = {
     label: '牡蠣',
     clearAfterSubmit: true,
     deadlineHour: 6,
-    deadlineDaysBefore: 2,
+    deadlineDaysBefore: 1,
     skipNonBusinessDays: false,
-    deadlineLabel: '前々日 6:00',
+    deadlineLabel: '前日 6:00',
     fieldsHtml: (id) => `
       <p class="hint" style="margin:-4px 0 10px;">1ケース=15kg</p>
       <label class="checkbox-label">
