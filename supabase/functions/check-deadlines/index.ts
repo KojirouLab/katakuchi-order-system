@@ -149,7 +149,7 @@ Deno.serve(async (req) => {
 
         const label = PRODUCT_DEFS[category].label;
         const list = toNotify.get(groupId) ?? [];
-        list.push(`${store.name}(${label} ${orderDate.slice(5).replace("-", "/")}締切分)`);
+        list.push(`${store.name}(${label} ${orderDate.slice(5).replace("-", "/")}配送分)`);
         toNotify.set(groupId, list);
         sentKeys.push({ store_slug: store.slug, category, order_date: orderDate });
       }
