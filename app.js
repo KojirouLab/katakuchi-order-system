@@ -689,7 +689,7 @@ function printDeliverySlip(storeName, date, content) {
   win.document.write(`<!DOCTYPE html>
 <html lang="ja"><head><meta charset="UTF-8"><title>納品明細書 ${escapeHtml(storeName)} ${escapeHtml(date)}</title>
 <style>
-  @page { size: A5; margin: 14mm; }
+  @page { size: A5 landscape; margin: 14mm; }
   body { font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Yu Gothic", sans-serif; padding: 32px; color: #1a1a1a; background: #fff; }
   h1 { font-size: 22px; text-align: center; margin: 0 0 32px; letter-spacing: 6px; }
   .to { font-size: 20px; font-weight: 700; margin: 0 0 20px; border-bottom: 2px solid #333; padding-bottom: 10px; }
