@@ -536,11 +536,17 @@ async function renderAdminPage(slug) {
     const summaryEl = document.getElementById('summary');
     summaryEl.innerHTML = '<p class="hint">読み込み中…</p>';
     try {
+      const pizzaRowsByKey = {};
       const sections = await Promise.all(
         shop.categories.map(async (category) => {
           const def = PRODUCT_DEFS[category];
           const stores = STORES_BY_CATEGORY[category];
           const rows = await def.fetchRange(from, to);
+          if (category === 'pizza') {
+            rows.forEach((r) => {
+              pizzaRowsByKey[`${r.order_date}__${r.store_slug}`] = r;
+            });
+          }
           const heading = shop.categories.length > 1 ? `<h2 class="section-title">${def.label}</h2>` : '';
           const body = category === 'oyster' ? renderOysterSummary(rows, stores) : renderTextOrderSummary(rows, stores);
           return heading + body;
@@ -566,6 +572,12 @@ async function renderAdminPage(slug) {
       };
       bindConfirmToggle('.confirm-btn', confirmPizzaOrder, '確認済みにする');
       bindConfirmToggle('.unconfirm-btn', unconfirmPizzaOrder, '未確認に戻す');
+      summaryEl.querySelectorAll('.print-btn').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const row = pizzaRowsByKey[`${btn.dataset.date}__${btn.dataset.store}`];
+          if (row) printDeliverySlip(btn.dataset.storename, btn.dataset.date, row.content);
+        });
+      });
     } catch (e) {
       console.error(e);
       summaryEl.innerHTML = '<p class="msg-error">読み込みに失敗しました。</p>';
@@ -591,9 +603,12 @@ function renderTextOrderSummary(rows, stores) {
         const status = r.confirmed_at
           ? `<span class="confirm-badge confirmed">✓ 確認済み(${formatDateTimeJp(r.confirmed_at)})</span> <button class="unconfirm-btn" data-store="${s.slug}" data-date="${date}">未確認に戻す</button>`
           : `<button class="confirm-btn" data-store="${s.slug}" data-date="${date}">確認済みにする</button>`;
+        const printBtn = `<button class="print-btn" data-store="${s.slug}" data-date="${date}" data-storename="${escapeHtml(
+          s.name
+        )}">納品明細書を印刷</button>`;
         return `<li><span class="recent-date">${formatDateJp(date)} <span class="recent-store">${escapeHtml(
           s.name
-        )}</span></span><span class="recent-body">${escapeHtml(r.content).replace(/\n/g, '<br>')}</span>${status}</li>`;
+        )}</span></span><span class="recent-body">${escapeHtml(r.content).replace(/\n/g, '<br>')}</span>${status} ${printBtn}</li>`;
       })
     )
     .filter(Boolean)
@@ -662,6 +677,35 @@ function renderOysterSummary(rows, stores) {
       <h2>注文内容一覧</h2>
       <ul class="recent-list">${detailItems || '<li class="hint">注文内容はありません。</li>'}</ul>
     </div>`;
+}
+
+function printDeliverySlip(storeName, date, content) {
+  const win = window.open('', '_blank', 'width=650,height=800');
+  if (!win) {
+    alert('ポップアップがブロックされました。ブラウザの設定でポップアップを許可してください。');
+    return;
+  }
+  const bodyHtml = escapeHtml(content).replace(/\n/g, '<br>');
+  win.document.write(`<!DOCTYPE html>
+<html lang="ja"><head><meta charset="UTF-8"><title>納品明細書 ${escapeHtml(storeName)} ${escapeHtml(date)}</title>
+<style>
+  body { font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Yu Gothic", sans-serif; padding: 32px; color: #1a1a1a; background: #fff; }
+  h1 { font-size: 22px; text-align: center; margin: 0 0 32px; letter-spacing: 6px; }
+  .to { font-size: 20px; font-weight: 700; margin: 0 0 20px; border-bottom: 2px solid #333; padding-bottom: 10px; }
+  .row { display: flex; justify-content: space-between; font-size: 14px; margin-bottom: 20px; color: #444; }
+  .content { font-size: 16px; line-height: 2; white-space: pre-wrap; border: 1px solid #ccc; border-radius: 6px; padding: 20px; min-height: 240px; }
+  .footer { margin-top: 40px; font-size: 13px; text-align: right; color: #555; }
+</style></head>
+<body>
+  <h1>納品明細書</h1>
+  <div class="to">${escapeHtml(storeName)} 御中</div>
+  <div class="row"><span>発注日: ${formatDateJp(date)}</span><span>発行日: ${formatDateJp(todayStr())}</span></div>
+  <div class="content">${bodyHtml}</div>
+  <div class="footer">カタクチ商店</div>
+</body></html>`);
+  win.document.close();
+  win.focus();
+  win.print();
 }
 
 route();
