@@ -454,6 +454,7 @@ function mountProductSection(container, store, category, options = {}) {
       msgEl.className = 'msg msg-error';
       return;
     }
+    if (bypassLock && !confirm(`${formatDateJp(date)}の発注を保存します。よろしいですか？`)) return;
     submitBtn.disabled = true;
     msgEl.textContent = '送信中…';
     msgEl.className = 'msg';
