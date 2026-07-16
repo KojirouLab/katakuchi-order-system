@@ -689,13 +689,13 @@ function printDeliverySlip(storeName, date, content) {
   win.document.write(`<!DOCTYPE html>
 <html lang="ja"><head><meta charset="UTF-8"><title>納品明細書 ${escapeHtml(storeName)} ${escapeHtml(date)}</title>
 <style>
-  @page { size: A5 landscape; margin: 14mm; }
-  body { font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Yu Gothic", sans-serif; padding: 32px; color: #1a1a1a; background: #fff; }
-  h1 { font-size: 22px; text-align: center; margin: 0 0 32px; letter-spacing: 6px; }
-  .to { font-size: 20px; font-weight: 700; margin: 0 0 20px; border-bottom: 2px solid #333; padding-bottom: 10px; }
-  .row { display: flex; justify-content: space-between; font-size: 14px; margin-bottom: 20px; color: #444; }
-  .content { font-size: 16px; line-height: 2; white-space: pre-wrap; border: 1px solid #ccc; border-radius: 6px; padding: 20px; min-height: 240px; }
-  .footer { margin-top: 40px; font-size: 13px; text-align: right; color: #555; }
+  @page { size: A5 landscape; margin: 10mm; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Yu Gothic", sans-serif; padding: 6mm 10mm; color: #1a1a1a; background: #fff; }
+  h1 { font-size: 20px; text-align: center; margin: 0 0 4mm; letter-spacing: 6px; }
+  .to { font-size: 18px; font-weight: 700; margin: 0 0 4mm; border-bottom: 2px solid #333; padding-bottom: 3mm; }
+  .row { display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 4mm; color: #444; }
+  .content { font-size: 15px; line-height: 1.7; white-space: pre-wrap; border: 1px solid #ccc; border-radius: 6px; padding: 4mm 6mm; min-height: 40mm; }
+  .footer { margin-top: 4mm; font-size: 12px; text-align: right; color: #555; }
 </style></head>
 <body>
   <h1>納品明細書</h1>
