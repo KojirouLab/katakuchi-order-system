@@ -549,7 +549,10 @@ async function renderAdminPage(slug) {
             });
           }
           const heading = shop.categories.length > 1 ? `<h2 class="section-title">${def.label}</h2>` : '';
-          const body = category === 'oyster' ? renderOysterSummary(rows, stores) : renderTextOrderSummary(rows, stores);
+          const body =
+            category === 'oyster'
+              ? renderOysterSummary(rows, stores)
+              : renderTextOrderSummary(rows, stores, { showActions: slug === 'katakuchi' });
           return heading + body;
         })
       );
@@ -588,7 +591,8 @@ async function renderAdminPage(slug) {
   load();
 }
 
-function renderTextOrderSummary(rows, stores) {
+function renderTextOrderSummary(rows, stores, options = {}) {
+  const showActions = options.showActions !== false;
   const dates = [...new Set(rows.map((r) => r.order_date))].sort();
   if (!dates.length) return '<div class="card"><p class="hint">この期間の発注はありません。</p></div>';
   const byKey = {};
@@ -601,15 +605,29 @@ function renderTextOrderSummary(rows, stores) {
       stores.map((s) => {
         const r = byKey[`${date}__${s.slug}`];
         if (!r || !r.content || !r.content.trim()) return '';
-        const status = r.confirmed_at
-          ? `<span class="confirm-badge confirmed">✓ 確認済み(${formatDateTimeJp(r.confirmed_at)})</span> <button class="unconfirm-btn" data-store="${s.slug}" data-date="${date}">未確認に戻す</button>`
-          : `<button class="confirm-btn" data-store="${s.slug}" data-date="${date}">確認済みにする</button>`;
-        const printBtn = `<button class="print-btn" data-store="${s.slug}" data-date="${date}" data-storename="${escapeHtml(
-          s.name
-        )}">納品明細書を印刷</button>`;
-        return `<li><span class="recent-date">${formatDateJp(date)} <span class="recent-store">${escapeHtml(
-          s.name
-        )}</span></span><span class="recent-body">${escapeHtml(r.content).replace(/\n/g, '<br>')}</span>${status} ${printBtn}</li>`;
+        const status = showActions
+          ? r.confirmed_at
+            ? `<span class="confirm-badge confirmed">✓ 確認済み(${formatDateTimeJp(r.confirmed_at)})</span> <button class="unconfirm-btn" data-store="${s.slug}" data-date="${date}">未確認に戻す</button>`
+            : `<button class="confirm-btn" data-store="${s.slug}" data-date="${date}">確認済みにする</button>`
+          : r.confirmed_at
+          ? `<span class="confirm-badge confirmed">✓ 確認済み(${formatDateTimeJp(r.confirmed_at)})</span>`
+          : `<span class="confirm-badge pending">未確認</span>`;
+        const printBtn = showActions
+          ? `<button class="print-btn" data-store="${s.slug}" data-date="${date}" data-storename="${escapeHtml(
+              s.name
+            )}">納品明細書を印刷</button>`
+          : '';
+        const storeLabel = showActions
+          ? `<span class="recent-store">${escapeHtml(s.name)}</span>`
+          : `<span class="recent-store">${escapeHtml(s.name)}</span><span class="recent-submitted">発注日時: ${formatDateTimeJp(
+              r.updated_at
+            )}</span>`;
+        return `<li><span class="recent-date">${formatDateJp(
+          date
+        )} ${storeLabel}</span><span class="recent-body">${escapeHtml(r.content).replace(
+          /\n/g,
+          '<br>'
+        )}</span>${status} ${printBtn}</li>`;
       })
     )
     .filter(Boolean)
