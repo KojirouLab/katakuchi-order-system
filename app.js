@@ -609,9 +609,7 @@ function renderTextOrderSummary(rows, stores, options = {}) {
           ? r.confirmed_at
             ? `<span class="confirm-badge confirmed">✓ 確認済み(${formatDateTimeJp(r.confirmed_at)})</span> <button class="unconfirm-btn" data-store="${s.slug}" data-date="${date}">未確認に戻す</button>`
             : `<button class="confirm-btn" data-store="${s.slug}" data-date="${date}">確認済みにする</button>`
-          : r.confirmed_at
-          ? `<span class="confirm-badge confirmed">✓ 確認済み(${formatDateTimeJp(r.confirmed_at)})</span>`
-          : `<span class="confirm-badge pending">未確認</span>`;
+          : '';
         const printBtn = showActions
           ? `<button class="print-btn" data-store="${s.slug}" data-date="${date}" data-storename="${escapeHtml(
               s.name
@@ -681,6 +679,8 @@ function renderOysterSummary(rows, stores) {
           : `混合${r.mixed_boxes}ケース / S${r.s_boxes}ケース / M${r.m_boxes}ケース`;
         return `<li><span class="recent-date">${formatDateJp(date)} <span class="recent-store">${escapeHtml(
           st.name
+        )}</span><span class="recent-submitted">発注日時: ${formatDateTimeJp(
+          r.updated_at
         )}</span></span><span class="recent-body">${body}</span></li>`;
       })
     )
