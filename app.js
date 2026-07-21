@@ -125,16 +125,35 @@ const PRODUCT_DEFS = {
     skipNonBusinessDays: true,
     deadlineLabel: '2営業日前(土日祝を除く) 12:00',
     fieldsHtml: (id) => `
+      <label class="checkbox-label">
+        <input type="checkbox" id="${id}-noOrder">
+        この日は発注なし
+      </label>
       <div class="field">
         <label for="${id}-content">注文内容(商品名・個数・キロ数など自由に記入)</label>
         <textarea id="${id}-content" rows="6" placeholder="例) マルゲリータ 3枚&#10;シーフード 2枚"></textarea>
       </div>`,
-    readValue: (id) => ({ content: document.getElementById(`${id}-content`).value.trim() }),
+    readValue: (id) => {
+      const noOrder = document.getElementById(`${id}-noOrder`).checked;
+      const content = document.getElementById(`${id}-content`).value.trim();
+      return { content: noOrder ? '発注なし' : content };
+    },
     fillValue: (id, row) => {
-      document.getElementById(`${id}-content`).value = row ? row.content : '';
+      const isNoOrder = !!(row && row.content === '発注なし');
+      document.getElementById(`${id}-noOrder`).checked = isNoOrder;
+      document.getElementById(`${id}-content`).value = row && !isNoOrder ? row.content : '';
     },
     clearValue: (id) => {
+      document.getElementById(`${id}-noOrder`).checked = false;
       document.getElementById(`${id}-content`).value = '';
+    },
+    applyExtraFieldState: (id) => {
+      const noOrder = document.getElementById(`${id}-noOrder`).checked;
+      const el = document.getElementById(`${id}-content`);
+      if (noOrder) {
+        el.disabled = true;
+        el.value = '';
+      }
     },
     hasValue: (row) => !!(row && row.content && row.content.trim()),
     recentText: (row) => {
