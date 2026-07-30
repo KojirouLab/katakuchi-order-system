@@ -740,55 +740,61 @@ function renderOysterSummary(rows, stores) {
     byKey[`${r.order_date}__${r.store_slug}`] = r;
   });
 
-  const dailyTotalItems = dates
+  const storeTotals = stores.map(() => ({ mixed: 0, s: 0, m: 0 }));
+  let grandTotal = 0;
+
+  const bodyRows = dates
     .map((date) => {
-      let mixed = 0;
-      let s = 0;
-      let m = 0;
-      stores.forEach((st) => {
-        const r = byKey[`${date}__${st.slug}`];
-        if (!r) return;
-        mixed += Number(r.mixed_boxes) || 0;
-        s += Number(r.s_boxes) || 0;
-        m += Number(r.m_boxes) || 0;
-      });
-      const total = mixed + s + m;
-      return `<li><span class="recent-date">${formatDateJp(
-        date
-      )}</span><span class="recent-body">混合${mixed}CS / Sサイズ${s}CS / Mサイズ${m}CS<br>合計${total}CS(${
-        total * 15
-      }kg)</span></li>`;
+      let rowTotal = 0;
+      const cells = stores
+        .map((st, i) => {
+          const r = byKey[`${date}__${st.slug}`];
+          if (!r || r.no_order) {
+            return '<td class="cell-empty">-</td><td class="cell-empty">-</td><td class="cell-empty">-</td><td class="cell-empty">-</td>';
+          }
+          const mixed = Number(r.mixed_boxes) || 0;
+          const s = Number(r.s_boxes) || 0;
+          const m = Number(r.m_boxes) || 0;
+          const subtotal = mixed + s + m;
+          storeTotals[i].mixed += mixed;
+          storeTotals[i].s += s;
+          storeTotals[i].m += m;
+          rowTotal += subtotal;
+          return `<td>${mixed}</td><td>${s}</td><td>${m}</td><td class="subtotal">${subtotal}</td>`;
+        })
+        .join('');
+      grandTotal += rowTotal;
+      return `<tr><td class="row-label">${formatDateJp(date)}</td>${cells}<td class="grand">${rowTotal}</td></tr>`;
     })
     .join('');
 
-  const detailItems = dates
-    .flatMap((date) =>
-      stores.map((st) => {
-        const r = byKey[`${date}__${st.slug}`];
-        if (!r) return '';
-        const total = (Number(r.mixed_boxes) || 0) + (Number(r.s_boxes) || 0) + (Number(r.m_boxes) || 0);
-        if (!r.no_order && total === 0) return '';
-        const body = r.no_order
-          ? '発注なし'
-          : `混合${r.mixed_boxes}ケース / S${r.s_boxes}ケース / M${r.m_boxes}ケース`;
-        return `<li><span class="recent-date">${formatDateJp(date)} <span class="recent-store">${escapeHtml(
-          st.name
-        )}</span><span class="recent-submitted">発注日時: ${formatDateTimeJp(
-          r.updated_at
-        )}</span></span><span class="recent-body">${body}</span></li>`;
-      })
-    )
-    .filter(Boolean)
+  const footerCells = stores
+    .map((st, i) => {
+      const t = storeTotals[i];
+      const subtotal = t.mixed + t.s + t.m;
+      return `<td>${t.mixed}</td><td>${t.s}</td><td>${t.m}</td><td class="subtotal">${subtotal}</td>`;
+    })
     .join('');
+
+  const headerRow1 = stores.map((s) => `<th colspan="4">${escapeHtml(s.name)}</th>`).join('');
+  const headerRow2 = stores.map(() => `<th>混合</th><th>S</th><th>M</th><th>小計</th>`).join('');
 
   return `
     <div class="card">
-      <h2>日別合計(1ケース=15kg)</h2>
-      <ul class="recent-list">${dailyTotalItems}</ul>
-    </div>
-    <div class="card">
-      <h2>注文内容一覧</h2>
-      <ul class="recent-list">${detailItems || '<li class="hint">注文内容はありません。</li>'}</ul>
+      <h2>店舗別集計(1ケース=15kg)</h2>
+      <div class="table-scroll">
+        <table class="agg-table">
+          <thead>
+            <tr><th rowspan="2">日付</th>${headerRow1}<th rowspan="2">全体合計</th></tr>
+            <tr>${headerRow2}</tr>
+          </thead>
+          <tbody>${bodyRows}</tbody>
+          <tfoot>
+            <tr><td class="row-label">合計</td>${footerCells}<td class="grand">${grandTotal}</td></tr>
+          </tfoot>
+        </table>
+      </div>
+      <p class="hint">数値は箱数(ケース)。1ケース=15kg。「小計」は店舗ごとのサイズ合計、右端は全店舗合計。「-」は未発注/発注なし。</p>
     </div>`;
 }
 
