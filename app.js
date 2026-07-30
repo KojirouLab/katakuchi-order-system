@@ -756,7 +756,7 @@ function renderOysterSummary(rows, stores) {
       const total = mixed + s + m;
       return `<li><span class="recent-date">${formatDateJp(
         date
-      )}</span><span class="oyster-qty">混合${mixed}/S${s}/M${m}</span><span class="recent-submitted">合計${total}CS(${
+      )}</span><span class="oyster-qty">混合${mixed} / S${s} / M${m}</span><span class="recent-submitted">合計${total}CS(${
         total * 15
       }kg)</span></li>`;
     })
@@ -770,7 +770,7 @@ function renderOysterSummary(rows, stores) {
         const total = (Number(r.mixed_boxes) || 0) + (Number(r.s_boxes) || 0) + (Number(r.m_boxes) || 0);
         if (!r.no_order && total === 0) return '';
         const bodyClass = r.no_order ? 'recent-body' : 'oyster-qty';
-        const body = r.no_order ? '発注なし' : `混合${r.mixed_boxes}/S${r.s_boxes}/M${r.m_boxes}`;
+        const body = r.no_order ? '発注なし' : `混合${r.mixed_boxes} / S${r.s_boxes} / M${r.m_boxes}`;
         return `<li><span class="recent-date">${formatDateJp(date)} <span class="recent-store">${escapeHtml(
           st.name
         )}</span><span class="recent-submitted">発注日時: ${formatDateTimeJp(
