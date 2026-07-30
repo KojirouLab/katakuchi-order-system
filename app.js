@@ -856,13 +856,13 @@ function renderOysterTable(rows, stores, options = {}) {
 
   let toolButtons = '';
   if (showTools) {
-    const xml = buildOysterExcelXml(dates, stores, matrix, storeTotals, rowTotals, grandTotal);
-    const xmlDataAttr = encodeURIComponent(xml);
-    const filename = `牡蠣受注集計_${dates[0]}_${dates[dates.length - 1]}.xls`;
+    const xlsxBinary = buildOysterXlsx(dates, stores, matrix, storeTotals, rowTotals, grandTotal);
+    const xlsxDataAttr = encodeURIComponent(xlsxBinary);
+    const filename = `牡蠣受注集計_${dates[0]}_${dates[dates.length - 1]}.xlsx`;
     toolButtons = `
       <div class="table-tools">
         <button type="button" class="print-table-btn" data-period="${escapeHtml(periodLabel)}">この表を印刷</button>
-        <button type="button" class="excel-export-btn" data-xml="${xmlDataAttr}" data-filename="${escapeHtml(filename)}">Numbers/Excelで開く(セル結合あり)</button>
+        <button type="button" class="excel-export-btn" data-xlsx="${xlsxDataAttr}" data-filename="${escapeHtml(filename)}">Numbers/Excelで開く(セル結合あり)</button>
       </div>`;
   }
 
@@ -896,94 +896,245 @@ function xmlEscape(str) {
   }[c]));
 }
 
-function xCell(value, opts = {}) {
-  const attrs = [];
-  if (opts.mergeAcross) attrs.push(`ss:MergeAcross="${opts.mergeAcross}"`);
-  if (opts.mergeDown) attrs.push(`ss:MergeDown="${opts.mergeDown}"`);
-  if (opts.styleId) attrs.push(`ss:StyleID="${opts.styleId}"`);
-  const attrStr = attrs.length ? ' ' + attrs.join(' ') : '';
-  if (value === '' || value === null || value === undefined) return `<Cell${attrStr}/>`;
-  const type = typeof value === 'number' ? 'Number' : 'String';
-  return `<Cell${attrStr}><Data ss:Type="${type}">${xmlEscape(value)}</Data></Cell>`;
+function colLetter(n) {
+  let s = '';
+  let x = n + 1;
+  while (x > 0) {
+    const rem = (x - 1) % 26;
+    s = String.fromCharCode(65 + rem) + s;
+    x = Math.floor((x - 1) / 26);
+  }
+  return s;
 }
 
-function buildOysterExcelXml(dates, stores, matrix, storeTotals, rowTotals, grandTotal) {
-  const headerRow1 = [xCell('日付', { mergeDown: 1, styleId: 'Header' })];
+function xlsxCellStr(col, row, text, styleId) {
+  return `<c r="${col}${row}" t="inlineStr" s="${styleId}"><is><t>${xmlEscape(text)}</t></is></c>`;
+}
+
+function xlsxCellNum(col, row, value, styleId) {
+  return `<c r="${col}${row}" s="${styleId}"><v>${value}</v></c>`;
+}
+
+function buildOysterWorksheetXml(dates, stores, matrix, storeTotals, rowTotals, grandTotal) {
+  const merges = [];
+  const rowsXml = [];
+
+  let col = 0;
+  const r1cells = [xlsxCellStr(colLetter(col), 1, '日付', 1)];
+  merges.push(`${colLetter(col)}1:${colLetter(col)}2`);
+  col++;
   stores.forEach((st) => {
-    headerRow1.push(xCell(st.name, { mergeAcross: 2, styleId: 'Header' }));
-    headerRow1.push(xCell('小計', { mergeDown: 1, styleId: 'Header' }));
+    const startCol = col;
+    r1cells.push(xlsxCellStr(colLetter(col), 1, st.name, 1));
+    merges.push(`${colLetter(startCol)}1:${colLetter(startCol + 2)}1`);
+    col += 3;
+    r1cells.push(xlsxCellStr(colLetter(col), 1, '小計', 1));
+    merges.push(`${colLetter(col)}1:${colLetter(col)}2`);
+    col++;
   });
-  headerRow1.push(xCell('全体合計', { mergeDown: 1, styleId: 'Header' }));
+  r1cells.push(xlsxCellStr(colLetter(col), 1, '全体合計', 1));
+  merges.push(`${colLetter(col)}1:${colLetter(col)}2`);
+  rowsXml.push(`<row r="1">${r1cells.join('')}</row>`);
 
-  const headerRow2 = [xCell('')];
+  col = 1;
+  const r2cells = [];
   stores.forEach(() => {
-    headerRow2.push(xCell('混合', { styleId: 'Header' }), xCell('S', { styleId: 'Header' }), xCell('M', { styleId: 'Header' }), xCell(''));
+    r2cells.push(xlsxCellStr(colLetter(col), 2, '混合', 1));
+    col++;
+    r2cells.push(xlsxCellStr(colLetter(col), 2, 'S', 1));
+    col++;
+    r2cells.push(xlsxCellStr(colLetter(col), 2, 'M', 1));
+    col++;
+    col++;
   });
-  headerRow2.push(xCell(''));
+  rowsXml.push(`<row r="2">${r2cells.join('')}</row>`);
 
-  const bodyRows = dates.map((date, di) => {
-    const cells = [xCell(formatDateJp(date), { styleId: 'Bold' })];
+  dates.forEach((date, di) => {
+    const rNum = di + 3;
+    const cells = [];
+    let c = 0;
+    cells.push(xlsxCellStr(colLetter(c), rNum, formatDateJp(date), 2));
+    c++;
     stores.forEach((st, si) => {
       const cell = matrix[di][si];
-      if (!cell) cells.push(xCell('-'), xCell('-'), xCell('-'), xCell('-'));
-      else cells.push(xCell(cell.mixed), xCell(cell.s), xCell(cell.m), xCell(cell.subtotal, { styleId: 'Bold' }));
+      if (!cell) {
+        cells.push(xlsxCellStr(colLetter(c), rNum, '-', 0));
+        c++;
+        cells.push(xlsxCellStr(colLetter(c), rNum, '-', 0));
+        c++;
+        cells.push(xlsxCellStr(colLetter(c), rNum, '-', 0));
+        c++;
+        cells.push(xlsxCellStr(colLetter(c), rNum, '-', 0));
+        c++;
+      } else {
+        cells.push(xlsxCellNum(colLetter(c), rNum, cell.mixed, 0));
+        c++;
+        cells.push(xlsxCellNum(colLetter(c), rNum, cell.s, 0));
+        c++;
+        cells.push(xlsxCellNum(colLetter(c), rNum, cell.m, 0));
+        c++;
+        cells.push(xlsxCellNum(colLetter(c), rNum, cell.subtotal, 2));
+        c++;
+      }
     });
-    cells.push(xCell(rowTotals[di], { styleId: 'Bold' }));
-    return `<Row>${cells.join('')}</Row>`;
+    cells.push(xlsxCellNum(colLetter(c), rNum, rowTotals[di], 2));
+    rowsXml.push(`<row r="${rNum}">${cells.join('')}</row>`);
   });
 
-  const footerCells = [xCell('合計', { styleId: 'Header' })];
+  const footerRowNum = dates.length + 3;
+  const fcells = [];
+  let fc = 0;
+  fcells.push(xlsxCellStr(colLetter(fc), footerRowNum, '合計', 1));
+  fc++;
   storeTotals.forEach((t) => {
-    footerCells.push(
-      xCell(t.mixed, { styleId: 'Header' }),
-      xCell(t.s, { styleId: 'Header' }),
-      xCell(t.m, { styleId: 'Header' }),
-      xCell(t.subtotal, { styleId: 'Header' })
-    );
+    fcells.push(xlsxCellNum(colLetter(fc), footerRowNum, t.mixed, 1));
+    fc++;
+    fcells.push(xlsxCellNum(colLetter(fc), footerRowNum, t.s, 1));
+    fc++;
+    fcells.push(xlsxCellNum(colLetter(fc), footerRowNum, t.m, 1));
+    fc++;
+    fcells.push(xlsxCellNum(colLetter(fc), footerRowNum, t.subtotal, 1));
+    fc++;
   });
-  footerCells.push(xCell(grandTotal, { styleId: 'Header' }));
+  fcells.push(xlsxCellNum(colLetter(fc), footerRowNum, grandTotal, 1));
+  rowsXml.push(`<row r="${footerRowNum}">${fcells.join('')}</row>`);
 
-  const rows = [
-    `<Row>${headerRow1.join('')}</Row>`,
-    `<Row>${headerRow2.join('')}</Row>`,
-    ...bodyRows,
-    `<Row>${footerCells.join('')}</Row>`,
-  ].join('');
+  const mergeCellsXml = merges.map((ref) => `<mergeCell ref="${ref}"/>`).join('');
 
-  return `<?xml version="1.0"?>
-<?mso-application progid="Excel.Sheet"?>
-<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"
- xmlns:o="urn:schemas-microsoft-com:office:office"
- xmlns:x="urn:schemas-microsoft-com:office:excel"
- xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">
- <Styles>
-  <Style ss:ID="Default" ss:Name="Normal">
-   <Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
-  </Style>
-  <Style ss:ID="Header">
-   <Font ss:Bold="1"/>
-   <Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
-   <Interior ss:Color="#F0F0EC" ss:Pattern="Solid"/>
-   <Borders>
-    <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1"/>
-    <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1"/>
-    <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1"/>
-    <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1"/>
-   </Borders>
-  </Style>
-  <Style ss:ID="Bold">
-   <Font ss:Bold="1"/>
-   <Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
-  </Style>
- </Styles>
- <Worksheet ss:Name="牡蠣受注集計">
-  <Table>${rows}</Table>
- </Worksheet>
-</Workbook>`;
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>${rowsXml.join(
+    ''
+  )}</sheetData><mergeCells count="${merges.length}">${mergeCellsXml}</mergeCells></worksheet>`;
 }
 
-function downloadExcelXml(xml, filename) {
-  const blob = new Blob([xml], { type: 'application/vnd.ms-excel' });
+const XLSX_CONTENT_TYPES = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/></Types>`;
+
+const XLSX_RELS = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>`;
+
+const XLSX_WORKBOOK = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="牡蠣受注集計" sheetId="1" r:id="rId1"/></sheets></workbook>`;
+
+const XLSX_WORKBOOK_RELS = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>`;
+
+const XLSX_STYLES = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="2"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><name val="Calibri"/></font></fonts><fills count="3"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FFF0F0EC"/><bgColor indexed="64"/></patternFill></fill></fills><borders count="2"><border><left/><right/><top/><bottom/><diagonal/></border><border><left style="thin"><color indexed="64"/></left><right style="thin"><color indexed="64"/></right><top style="thin"><color indexed="64"/></top><bottom style="thin"><color indexed="64"/></bottom><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="3"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf><xf numFmtId="0" fontId="1" fillId="2" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf><xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf></cellXfs></styleSheet>`;
+
+function crc32(bytes) {
+  if (!crc32.table) {
+    const table = [];
+    for (let n = 0; n < 256; n++) {
+      let c = n;
+      for (let k = 0; k < 8; k++) {
+        c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+      }
+      table[n] = c >>> 0;
+    }
+    crc32.table = table;
+  }
+  let crc = 0xffffffff;
+  for (let i = 0; i < bytes.length; i++) {
+    crc = crc32.table[(crc ^ bytes[i]) & 0xff] ^ (crc >>> 8);
+  }
+  return (crc ^ 0xffffffff) >>> 0;
+}
+
+function bytesToBinaryString(bytes) {
+  let s = '';
+  for (let i = 0; i < bytes.length; i++) s += String.fromCharCode(bytes[i]);
+  return s;
+}
+
+function buildZipBinaryString(files) {
+  const encoder = new TextEncoder();
+  let localSection = '';
+  const centralParts = [];
+  let offset = 0;
+
+  files.forEach(({ name, content }) => {
+    const nameBytes = encoder.encode(name);
+    const contentBytes = encoder.encode(content);
+    const crc = crc32(contentBytes);
+    const size = contentBytes.length;
+
+    const localHeader = new Uint8Array(30 + nameBytes.length);
+    const lv = new DataView(localHeader.buffer);
+    lv.setUint32(0, 0x04034b50, true);
+    lv.setUint16(4, 20, true);
+    lv.setUint16(6, 0x0800, true);
+    lv.setUint16(8, 0, true);
+    lv.setUint16(10, 0, true);
+    lv.setUint16(12, 0x21, true);
+    lv.setUint32(14, crc, true);
+    lv.setUint32(18, size, true);
+    lv.setUint32(22, size, true);
+    lv.setUint16(26, nameBytes.length, true);
+    lv.setUint16(28, 0, true);
+    localHeader.set(nameBytes, 30);
+
+    localSection += bytesToBinaryString(localHeader) + bytesToBinaryString(contentBytes);
+
+    const centralHeader = new Uint8Array(46 + nameBytes.length);
+    const cv = new DataView(centralHeader.buffer);
+    cv.setUint32(0, 0x02014b50, true);
+    cv.setUint16(4, 20, true);
+    cv.setUint16(6, 20, true);
+    cv.setUint16(8, 0x0800, true);
+    cv.setUint16(10, 0, true);
+    cv.setUint16(12, 0, true);
+    cv.setUint16(14, 0x21, true);
+    cv.setUint32(16, crc, true);
+    cv.setUint32(20, size, true);
+    cv.setUint32(24, size, true);
+    cv.setUint16(28, nameBytes.length, true);
+    cv.setUint16(30, 0, true);
+    cv.setUint16(32, 0, true);
+    cv.setUint16(34, 0, true);
+    cv.setUint16(36, 0, true);
+    cv.setUint32(38, 0, true);
+    cv.setUint32(42, offset, true);
+    centralHeader.set(nameBytes, 46);
+
+    centralParts.push(bytesToBinaryString(centralHeader));
+    offset += localHeader.length + contentBytes.length;
+  });
+
+  const centralSection = centralParts.join('');
+  const centralOffset = offset;
+  const centralSize = centralSection.length;
+
+  const end = new Uint8Array(22);
+  const ev = new DataView(end.buffer);
+  ev.setUint32(0, 0x06054b50, true);
+  ev.setUint16(4, 0, true);
+  ev.setUint16(6, 0, true);
+  ev.setUint16(8, files.length, true);
+  ev.setUint16(10, files.length, true);
+  ev.setUint32(12, centralSize, true);
+  ev.setUint32(16, centralOffset, true);
+  ev.setUint16(20, 0, true);
+
+  return localSection + centralSection + bytesToBinaryString(end);
+}
+
+function buildOysterXlsx(dates, stores, matrix, storeTotals, rowTotals, grandTotal) {
+  const sheetXml = buildOysterWorksheetXml(dates, stores, matrix, storeTotals, rowTotals, grandTotal);
+  return buildZipBinaryString([
+    { name: '[Content_Types].xml', content: XLSX_CONTENT_TYPES },
+    { name: '_rels/.rels', content: XLSX_RELS },
+    { name: 'xl/workbook.xml', content: XLSX_WORKBOOK },
+    { name: 'xl/_rels/workbook.xml.rels', content: XLSX_WORKBOOK_RELS },
+    { name: 'xl/styles.xml', content: XLSX_STYLES },
+    { name: 'xl/worksheets/sheet1.xml', content: sheetXml },
+  ]);
+}
+
+function downloadXlsx(binaryStr, filename) {
+  const bytes = new Uint8Array(binaryStr.length);
+  for (let i = 0; i < binaryStr.length; i++) bytes[i] = binaryStr.charCodeAt(i) & 0xff;
+  const blob = new Blob([bytes], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
@@ -1003,8 +1154,8 @@ function bindPrintTableButtons(container) {
   });
   container.querySelectorAll('.excel-export-btn').forEach((btn) => {
     btn.addEventListener('click', () => {
-      const xml = decodeURIComponent(btn.dataset.xml || '');
-      downloadExcelXml(xml, btn.dataset.filename || 'export.xls');
+      const xlsxBinary = decodeURIComponent(btn.dataset.xlsx || '');
+      downloadXlsx(xlsxBinary, btn.dataset.filename || 'export.xlsx');
     });
   });
 }
