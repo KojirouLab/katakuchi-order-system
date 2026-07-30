@@ -848,19 +848,21 @@ function renderOysterTable(rows, stores, options = {}) {
     .map((t) => `<td>${t.mixed}</td><td>${t.s}</td><td>${t.m}</td><td class="subtotal">${t.subtotal}</td>`)
     .join('');
 
-  const headerRow1 = stores.map((s) => `<th colspan="4">${escapeHtml(s.name)}</th>`).join('');
-  const headerRow2 = stores.map(() => `<th>混合</th><th>S</th><th>M</th><th>小計</th>`).join('');
+  const headerRow1 = stores
+    .map((s) => `<th colspan="3">${escapeHtml(s.name)}</th><th rowspan="2">小計</th>`)
+    .join('');
+  const headerRow2 = stores.map(() => `<th>混合</th><th>S</th><th>M</th>`).join('');
   const periodLabel = dates.length > 1 ? `${formatDateJp(dates[0])}〜${formatDateJp(dates[dates.length - 1])}` : formatDateJp(dates[0]);
 
   let toolButtons = '';
   if (showTools) {
-    const csv = buildOysterCsv(dates, stores, matrix, storeTotals, rowTotals, grandTotal);
-    const csvDataAttr = encodeURIComponent(csv);
-    const filename = `牡蠣受注集計_${dates[0]}_${dates[dates.length - 1]}.csv`;
+    const xml = buildOysterExcelXml(dates, stores, matrix, storeTotals, rowTotals, grandTotal);
+    const xmlDataAttr = encodeURIComponent(xml);
+    const filename = `牡蠣受注集計_${dates[0]}_${dates[dates.length - 1]}.xls`;
     toolButtons = `
       <div class="table-tools">
         <button type="button" class="print-table-btn" data-period="${escapeHtml(periodLabel)}">この表を印刷</button>
-        <button type="button" class="csv-export-btn" data-csv="${csvDataAttr}" data-filename="${escapeHtml(filename)}">Numbersで開く(CSV書き出し)</button>
+        <button type="button" class="excel-export-btn" data-xml="${xmlDataAttr}" data-filename="${escapeHtml(filename)}">Numbers/Excelで開く(セル結合あり)</button>
       </div>`;
   }
 
@@ -884,47 +886,104 @@ function renderOysterTable(rows, stores, options = {}) {
     </div>`;
 }
 
-function csvCell(v) {
-  const s = String(v);
-  if (/[",\n]/.test(s)) return '"' + s.replace(/"/g, '""') + '"';
-  return s;
+function xmlEscape(str) {
+  return String(str ?? '').replace(/[&<>"']/g, (c) => ({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&apos;',
+  }[c]));
 }
 
-function csvRow(arr) {
-  return arr.map(csvCell).join(',');
+function xCell(value, opts = {}) {
+  const attrs = [];
+  if (opts.mergeAcross) attrs.push(`ss:MergeAcross="${opts.mergeAcross}"`);
+  if (opts.mergeDown) attrs.push(`ss:MergeDown="${opts.mergeDown}"`);
+  if (opts.styleId) attrs.push(`ss:StyleID="${opts.styleId}"`);
+  const attrStr = attrs.length ? ' ' + attrs.join(' ') : '';
+  if (value === '' || value === null || value === undefined) return `<Cell${attrStr}/>`;
+  const type = typeof value === 'number' ? 'Number' : 'String';
+  return `<Cell${attrStr}><Data ss:Type="${type}">${xmlEscape(value)}</Data></Cell>`;
 }
 
-function buildOysterCsv(dates, stores, matrix, storeTotals, rowTotals, grandTotal) {
-  const lines = [];
-
-  const header = ['日付'];
+function buildOysterExcelXml(dates, stores, matrix, storeTotals, rowTotals, grandTotal) {
+  const headerRow1 = [xCell('日付', { mergeDown: 1, styleId: 'Header' })];
   stores.forEach((st) => {
-    header.push(`${st.name}_混合`, `${st.name}_S`, `${st.name}_M`, `${st.name}_小計`);
+    headerRow1.push(xCell(st.name, { mergeAcross: 2, styleId: 'Header' }));
+    headerRow1.push(xCell('小計', { mergeDown: 1, styleId: 'Header' }));
   });
-  header.push('全体合計');
-  lines.push(csvRow(header));
+  headerRow1.push(xCell('全体合計', { mergeDown: 1, styleId: 'Header' }));
 
-  dates.forEach((date, di) => {
-    const row = [formatDateJp(date)];
+  const headerRow2 = [xCell('')];
+  stores.forEach(() => {
+    headerRow2.push(xCell('混合', { styleId: 'Header' }), xCell('S', { styleId: 'Header' }), xCell('M', { styleId: 'Header' }), xCell(''));
+  });
+  headerRow2.push(xCell(''));
+
+  const bodyRows = dates.map((date, di) => {
+    const cells = [xCell(formatDateJp(date), { styleId: 'Bold' })];
     stores.forEach((st, si) => {
       const cell = matrix[di][si];
-      if (!cell) row.push('-', '-', '-', '-');
-      else row.push(cell.mixed, cell.s, cell.m, cell.subtotal);
+      if (!cell) cells.push(xCell('-'), xCell('-'), xCell('-'), xCell('-'));
+      else cells.push(xCell(cell.mixed), xCell(cell.s), xCell(cell.m), xCell(cell.subtotal, { styleId: 'Bold' }));
     });
-    row.push(rowTotals[di]);
-    lines.push(csvRow(row));
+    cells.push(xCell(rowTotals[di], { styleId: 'Bold' }));
+    return `<Row>${cells.join('')}</Row>`;
   });
 
-  const footerRow = ['合計'];
-  storeTotals.forEach((t) => footerRow.push(t.mixed, t.s, t.m, t.subtotal));
-  footerRow.push(grandTotal);
-  lines.push(csvRow(footerRow));
+  const footerCells = [xCell('合計', { styleId: 'Header' })];
+  storeTotals.forEach((t) => {
+    footerCells.push(
+      xCell(t.mixed, { styleId: 'Header' }),
+      xCell(t.s, { styleId: 'Header' }),
+      xCell(t.m, { styleId: 'Header' }),
+      xCell(t.subtotal, { styleId: 'Header' })
+    );
+  });
+  footerCells.push(xCell(grandTotal, { styleId: 'Header' }));
 
-  return lines.join('\r\n');
+  const rows = [
+    `<Row>${headerRow1.join('')}</Row>`,
+    `<Row>${headerRow2.join('')}</Row>`,
+    ...bodyRows,
+    `<Row>${footerCells.join('')}</Row>`,
+  ].join('');
+
+  return `<?xml version="1.0"?>
+<?mso-application progid="Excel.Sheet"?>
+<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"
+ xmlns:o="urn:schemas-microsoft-com:office:office"
+ xmlns:x="urn:schemas-microsoft-com:office:excel"
+ xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">
+ <Styles>
+  <Style ss:ID="Default" ss:Name="Normal">
+   <Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
+  </Style>
+  <Style ss:ID="Header">
+   <Font ss:Bold="1"/>
+   <Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
+   <Interior ss:Color="#F0F0EC" ss:Pattern="Solid"/>
+   <Borders>
+    <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1"/>
+    <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1"/>
+    <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1"/>
+    <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1"/>
+   </Borders>
+  </Style>
+  <Style ss:ID="Bold">
+   <Font ss:Bold="1"/>
+   <Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
+  </Style>
+ </Styles>
+ <Worksheet ss:Name="牡蠣受注集計">
+  <Table>${rows}</Table>
+ </Worksheet>
+</Workbook>`;
 }
 
-function downloadCsv(csvText, filename) {
-  const blob = new Blob(['\uFEFF' + csvText], { type: 'text/csv;charset=utf-8;' });
+function downloadExcelXml(xml, filename) {
+  const blob = new Blob([xml], { type: 'application/vnd.ms-excel' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
@@ -942,10 +1001,10 @@ function bindPrintTableButtons(container) {
       if (table) printAggregateTable(table, btn.dataset.period || '');
     });
   });
-  container.querySelectorAll('.csv-export-btn').forEach((btn) => {
+  container.querySelectorAll('.excel-export-btn').forEach((btn) => {
     btn.addEventListener('click', () => {
-      const csv = decodeURIComponent(btn.dataset.csv || '');
-      downloadCsv(csv, btn.dataset.filename || 'export.csv');
+      const xml = decodeURIComponent(btn.dataset.xml || '');
+      downloadExcelXml(xml, btn.dataset.filename || 'export.xls');
     });
   });
 }
