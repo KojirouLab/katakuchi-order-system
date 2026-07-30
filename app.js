@@ -897,15 +897,12 @@ function csvRow(arr) {
 function buildOysterCsv(dates, stores, matrix, storeTotals, rowTotals, grandTotal) {
   const lines = [];
 
-  const headerRow1 = [''];
-  stores.forEach((st) => headerRow1.push(st.name, '', '', ''));
-  headerRow1.push('');
-  lines.push(csvRow(headerRow1));
-
-  const headerRow2 = ['日付'];
-  stores.forEach(() => headerRow2.push('混合', 'S', 'M', '小計'));
-  headerRow2.push('全体合計');
-  lines.push(csvRow(headerRow2));
+  const header = ['日付'];
+  stores.forEach((st) => {
+    header.push(`${st.name}_混合`, `${st.name}_S`, `${st.name}_M`, `${st.name}_小計`);
+  });
+  header.push('全体合計');
+  lines.push(csvRow(header));
 
   dates.forEach((date, di) => {
     const row = [formatDateJp(date)];
