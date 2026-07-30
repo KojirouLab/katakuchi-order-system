@@ -860,7 +860,7 @@ function renderOysterTable(rows, stores, options = {}) {
     toolButtons = `
       <div class="table-tools">
         <button type="button" class="print-table-btn" data-period="${escapeHtml(periodLabel)}">この表を印刷</button>
-        <button type="button" class="excel-export-btn" data-xlsx="${xlsxDataAttr}" data-filename="${escapeHtml(filename)}">Numbers/Excelで開く(セル結合あり)</button>
+        <button type="button" class="excel-export-btn" data-xlsx="${xlsxDataAttr}" data-filename="${escapeHtml(filename)}">Excel形式でダウンロード</button>
       </div>`;
   }
 
