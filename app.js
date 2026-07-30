@@ -603,7 +603,6 @@ async function renderAdminPage(slug) {
           if (row) printDeliverySlip(btn.dataset.storename, btn.dataset.date, row.content);
         });
       });
-      bindPrintTableButtons(summaryEl);
     } catch (e) {
       console.error(e);
       summaryEl.innerHTML = '<p class="msg-error">読み込みに失敗しました。</p>';
@@ -673,7 +672,7 @@ async function renderCustomAggregatePage() {
           const heading = categories.length > 1 ? `<h2 class="section-title">${def.label}</h2>` : '';
           const body =
             category === 'oyster'
-              ? renderOysterSummary(rows, stores)
+              ? renderOysterSummary(rows, stores, { showPrint: true })
               : renderTextOrderSummary(rows, stores, { showActions: false });
           return heading + body;
         })
@@ -734,7 +733,8 @@ function renderTextOrderSummary(rows, stores, options = {}) {
     </div>`;
 }
 
-function renderOysterSummary(rows, stores) {
+function renderOysterSummary(rows, stores, options = {}) {
+  const showPrint = options.showPrint === true;
   const dates = [...new Set(rows.map((r) => r.order_date))].sort();
   if (!dates.length) return '<div class="card"><p class="hint">この期間の発注はありません。</p></div>';
   const byKey = {};
@@ -781,11 +781,14 @@ function renderOysterSummary(rows, stores) {
   const headerRow1 = stores.map((s) => `<th colspan="4">${escapeHtml(s.name)}</th>`).join('');
   const headerRow2 = stores.map(() => `<th>混合</th><th>S</th><th>M</th><th>小計</th>`).join('');
   const periodLabel = dates.length > 1 ? `${formatDateJp(dates[0])}〜${formatDateJp(dates[dates.length - 1])}` : formatDateJp(dates[0]);
+  const printBtn = showPrint
+    ? `<button type="button" class="print-table-btn" data-period="${escapeHtml(periodLabel)}">この表を印刷</button>`
+    : '';
 
   return `
     <div class="card">
       <h2>店舗別集計(1ケース=15kg)</h2>
-      <button type="button" class="print-table-btn" data-period="${escapeHtml(periodLabel)}">この表を印刷</button>
+      ${printBtn}
       <div class="table-scroll">
         <table class="agg-table">
           <thead>
