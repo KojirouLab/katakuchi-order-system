@@ -793,7 +793,7 @@ function renderOysterSummary(rows, stores) {
 }
 
 function renderOysterTable(rows, stores, options = {}) {
-  const showPrint = options.showPrint === true;
+  const showTools = options.showPrint === true;
   const dates = [...new Set(rows.map((r) => r.order_date))].sort();
   if (!dates.length) return '<div class="card"><p class="hint">この期間の発注はありません。</p></div>';
   const byKey = {};
@@ -801,53 +801,73 @@ function renderOysterTable(rows, stores, options = {}) {
     byKey[`${r.order_date}__${r.store_slug}`] = r;
   });
 
-  const storeTotals = stores.map(() => ({ mixed: 0, s: 0, m: 0 }));
-  let grandTotal = 0;
+  const matrix = dates.map((date) =>
+    stores.map((st) => {
+      const r = byKey[`${date}__${st.slug}`];
+      if (!r || r.no_order) return null;
+      const mixed = Number(r.mixed_boxes) || 0;
+      const s = Number(r.s_boxes) || 0;
+      const m = Number(r.m_boxes) || 0;
+      return { mixed, s, m, subtotal: mixed + s + m };
+    })
+  );
+
+  const storeTotals = stores.map((st, si) => {
+    let mixed = 0;
+    let s = 0;
+    let m = 0;
+    matrix.forEach((row) => {
+      const cell = row[si];
+      if (cell) {
+        mixed += cell.mixed;
+        s += cell.s;
+        m += cell.m;
+      }
+    });
+    return { mixed, s, m, subtotal: mixed + s + m };
+  });
+  const rowTotals = matrix.map((row) => row.reduce((sum, cell) => sum + (cell ? cell.subtotal : 0), 0));
+  const grandTotal = rowTotals.reduce((a, b) => a + b, 0);
 
   const bodyRows = dates
-    .map((date) => {
-      let rowTotal = 0;
+    .map((date, di) => {
       const cells = stores
-        .map((st, i) => {
-          const r = byKey[`${date}__${st.slug}`];
-          if (!r || r.no_order) {
+        .map((st, si) => {
+          const cell = matrix[di][si];
+          if (!cell) {
             return '<td class="cell-empty">-</td><td class="cell-empty">-</td><td class="cell-empty">-</td><td class="cell-empty">-</td>';
           }
-          const mixed = Number(r.mixed_boxes) || 0;
-          const s = Number(r.s_boxes) || 0;
-          const m = Number(r.m_boxes) || 0;
-          const subtotal = mixed + s + m;
-          storeTotals[i].mixed += mixed;
-          storeTotals[i].s += s;
-          storeTotals[i].m += m;
-          rowTotal += subtotal;
-          return `<td>${mixed}</td><td>${s}</td><td>${m}</td><td class="subtotal">${subtotal}</td>`;
+          return `<td>${cell.mixed}</td><td>${cell.s}</td><td>${cell.m}</td><td class="subtotal">${cell.subtotal}</td>`;
         })
         .join('');
-      grandTotal += rowTotal;
-      return `<tr><td class="row-label">${formatDateJp(date)}</td>${cells}<td class="grand">${rowTotal}</td></tr>`;
+      return `<tr><td class="row-label">${formatDateJp(date)}</td>${cells}<td class="grand">${rowTotals[di]}</td></tr>`;
     })
     .join('');
 
-  const footerCells = stores
-    .map((st, i) => {
-      const t = storeTotals[i];
-      const subtotal = t.mixed + t.s + t.m;
-      return `<td>${t.mixed}</td><td>${t.s}</td><td>${t.m}</td><td class="subtotal">${subtotal}</td>`;
-    })
+  const footerCells = storeTotals
+    .map((t) => `<td>${t.mixed}</td><td>${t.s}</td><td>${t.m}</td><td class="subtotal">${t.subtotal}</td>`)
     .join('');
 
   const headerRow1 = stores.map((s) => `<th colspan="4">${escapeHtml(s.name)}</th>`).join('');
   const headerRow2 = stores.map(() => `<th>混合</th><th>S</th><th>M</th><th>小計</th>`).join('');
   const periodLabel = dates.length > 1 ? `${formatDateJp(dates[0])}〜${formatDateJp(dates[dates.length - 1])}` : formatDateJp(dates[0]);
-  const printBtn = showPrint
-    ? `<button type="button" class="print-table-btn" data-period="${escapeHtml(periodLabel)}">この表を印刷</button>`
-    : '';
+
+  let toolButtons = '';
+  if (showTools) {
+    const csv = buildOysterCsv(dates, stores, matrix, storeTotals, rowTotals, grandTotal);
+    const csvDataAttr = encodeURIComponent(csv);
+    const filename = `牡蠣受注集計_${dates[0]}_${dates[dates.length - 1]}.csv`;
+    toolButtons = `
+      <div class="table-tools">
+        <button type="button" class="print-table-btn" data-period="${escapeHtml(periodLabel)}">この表を印刷</button>
+        <button type="button" class="csv-export-btn" data-csv="${csvDataAttr}" data-filename="${escapeHtml(filename)}">Numbersで開く(CSV書き出し)</button>
+      </div>`;
+  }
 
   return `
     <div class="card">
       <h2>店舗別集計(1ケース=15kg)</h2>
-      ${printBtn}
+      ${toolButtons}
       <div class="table-scroll">
         <table class="agg-table">
           <thead>
@@ -864,11 +884,71 @@ function renderOysterTable(rows, stores, options = {}) {
     </div>`;
 }
 
+function csvCell(v) {
+  const s = String(v);
+  if (/[",\n]/.test(s)) return '"' + s.replace(/"/g, '""') + '"';
+  return s;
+}
+
+function csvRow(arr) {
+  return arr.map(csvCell).join(',');
+}
+
+function buildOysterCsv(dates, stores, matrix, storeTotals, rowTotals, grandTotal) {
+  const lines = [];
+
+  const headerRow1 = [''];
+  stores.forEach((st) => headerRow1.push(st.name, '', '', ''));
+  headerRow1.push('');
+  lines.push(csvRow(headerRow1));
+
+  const headerRow2 = ['日付'];
+  stores.forEach(() => headerRow2.push('混合', 'S', 'M', '小計'));
+  headerRow2.push('全体合計');
+  lines.push(csvRow(headerRow2));
+
+  dates.forEach((date, di) => {
+    const row = [formatDateJp(date)];
+    stores.forEach((st, si) => {
+      const cell = matrix[di][si];
+      if (!cell) row.push('-', '-', '-', '-');
+      else row.push(cell.mixed, cell.s, cell.m, cell.subtotal);
+    });
+    row.push(rowTotals[di]);
+    lines.push(csvRow(row));
+  });
+
+  const footerRow = ['合計'];
+  storeTotals.forEach((t) => footerRow.push(t.mixed, t.s, t.m, t.subtotal));
+  footerRow.push(grandTotal);
+  lines.push(csvRow(footerRow));
+
+  return lines.join('\r\n');
+}
+
+function downloadCsv(csvText, filename) {
+  const blob = new Blob(['\uFEFF' + csvText], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
 function bindPrintTableButtons(container) {
   container.querySelectorAll('.print-table-btn').forEach((btn) => {
     btn.addEventListener('click', () => {
       const table = btn.closest('.card').querySelector('.agg-table');
       if (table) printAggregateTable(table, btn.dataset.period || '');
+    });
+  });
+  container.querySelectorAll('.csv-export-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const csv = decodeURIComponent(btn.dataset.csv || '');
+      downloadCsv(csv, btn.dataset.filename || 'export.csv');
     });
   });
 }
