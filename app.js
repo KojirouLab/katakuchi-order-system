@@ -672,7 +672,7 @@ async function renderCustomAggregatePage() {
           const heading = categories.length > 1 ? `<h2 class="section-title">${def.label}</h2>` : '';
           const body =
             category === 'oyster'
-              ? renderOysterSummary(rows, stores, { showPrint: true })
+              ? renderOysterTable(rows, stores, { showPrint: true })
               : renderTextOrderSummary(rows, stores, { showActions: false });
           return heading + body;
         })
@@ -733,7 +733,67 @@ function renderTextOrderSummary(rows, stores, options = {}) {
     </div>`;
 }
 
-function renderOysterSummary(rows, stores, options = {}) {
+function renderOysterSummary(rows, stores) {
+  const dates = [...new Set(rows.map((r) => r.order_date))].sort();
+  if (!dates.length) return '<div class="card"><p class="hint">この期間の発注はありません。</p></div>';
+  const byKey = {};
+  rows.forEach((r) => {
+    byKey[`${r.order_date}__${r.store_slug}`] = r;
+  });
+
+  const dailyTotalItems = dates
+    .map((date) => {
+      let mixed = 0;
+      let s = 0;
+      let m = 0;
+      stores.forEach((st) => {
+        const r = byKey[`${date}__${st.slug}`];
+        if (!r) return;
+        mixed += Number(r.mixed_boxes) || 0;
+        s += Number(r.s_boxes) || 0;
+        m += Number(r.m_boxes) || 0;
+      });
+      const total = mixed + s + m;
+      return `<li><span class="recent-date">${formatDateJp(
+        date
+      )}</span><span class="recent-body">混合${mixed}CS / Sサイズ${s}CS / Mサイズ${m}CS<br>合計${total}CS(${
+        total * 15
+      }kg)</span></li>`;
+    })
+    .join('');
+
+  const detailItems = dates
+    .flatMap((date) =>
+      stores.map((st) => {
+        const r = byKey[`${date}__${st.slug}`];
+        if (!r) return '';
+        const total = (Number(r.mixed_boxes) || 0) + (Number(r.s_boxes) || 0) + (Number(r.m_boxes) || 0);
+        if (!r.no_order && total === 0) return '';
+        const body = r.no_order
+          ? '発注なし'
+          : `混合${r.mixed_boxes}ケース / S${r.s_boxes}ケース / M${r.m_boxes}ケース`;
+        return `<li><span class="recent-date">${formatDateJp(date)} <span class="recent-store">${escapeHtml(
+          st.name
+        )}</span><span class="recent-submitted">発注日時: ${formatDateTimeJp(
+          r.updated_at
+        )}</span></span><span class="recent-body">${body}</span></li>`;
+      })
+    )
+    .filter(Boolean)
+    .join('');
+
+  return `
+    <div class="card">
+      <h2>日別合計(1ケース=15kg)</h2>
+      <ul class="recent-list">${dailyTotalItems}</ul>
+    </div>
+    <div class="card">
+      <h2>注文内容一覧</h2>
+      <ul class="recent-list">${detailItems || '<li class="hint">注文内容はありません。</li>'}</ul>
+    </div>`;
+}
+
+function renderOysterTable(rows, stores, options = {}) {
   const showPrint = options.showPrint === true;
   const dates = [...new Set(rows.map((r) => r.order_date))].sort();
   if (!dates.length) return '<div class="card"><p class="hint">この期間の発注はありません。</p></div>';
