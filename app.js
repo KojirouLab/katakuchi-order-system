@@ -848,10 +848,8 @@ function renderOysterTable(rows, stores, options = {}) {
     .map((t) => `<td>${t.mixed}</td><td>${t.s}</td><td>${t.m}</td><td class="subtotal">${t.subtotal}</td>`)
     .join('');
 
-  const headerRow1 = stores
-    .map((s) => `<th colspan="3">${escapeHtml(s.name)}</th><th rowspan="2">小計</th>`)
-    .join('');
-  const headerRow2 = stores.map(() => `<th>混合</th><th>S</th><th>M</th>`).join('');
+  const headerRow1 = stores.map((s) => `<th colspan="4">${escapeHtml(s.name)}</th>`).join('');
+  const headerRow2 = stores.map(() => `<th>混合</th><th>S</th><th>M</th><th>小計</th>`).join('');
   const periodLabel = dates.length > 1 ? `${formatDateJp(dates[0])}〜${formatDateJp(dates[dates.length - 1])}` : formatDateJp(dates[0]);
 
   let toolButtons = '';
@@ -926,11 +924,8 @@ function buildOysterWorksheetXml(dates, stores, matrix, storeTotals, rowTotals, 
   stores.forEach((st) => {
     const startCol = col;
     r1cells.push(xlsxCellStr(colLetter(col), 1, st.name, 1));
-    merges.push(`${colLetter(startCol)}1:${colLetter(startCol + 2)}1`);
-    col += 3;
-    r1cells.push(xlsxCellStr(colLetter(col), 1, '小計', 1));
-    merges.push(`${colLetter(col)}1:${colLetter(col)}2`);
-    col++;
+    merges.push(`${colLetter(startCol)}1:${colLetter(startCol + 3)}1`);
+    col += 4;
   });
   r1cells.push(xlsxCellStr(colLetter(col), 1, '全体合計', 1));
   merges.push(`${colLetter(col)}1:${colLetter(col)}2`);
@@ -945,6 +940,7 @@ function buildOysterWorksheetXml(dates, stores, matrix, storeTotals, rowTotals, 
     col++;
     r2cells.push(xlsxCellStr(colLetter(col), 2, 'M', 1));
     col++;
+    r2cells.push(xlsxCellStr(colLetter(col), 2, '小計', 1));
     col++;
   });
   rowsXml.push(`<row r="2">${r2cells.join('')}</row>`);
