@@ -255,6 +255,7 @@ function route() {
   const isParent = params.get('parent') === '1';
   if (isParent) return renderParentOrderPage();
   if (storeSlug) return renderOrderPage(storeSlug);
+  if (shopSlug === 'custom') return renderCustomAggregatePage();
   if (shopSlug) return renderAdminPage(shopSlug);
   renderHome();
 }
@@ -279,6 +280,7 @@ function renderHome() {
           <li><a href="?shop=katakuchi">カタクチ商店(ピザ集計)</a></li>
           <li><a href="?shop=kaki-juchu">牡蠣受注店(牡蠣集計)</a></li>
           <li><a href="?shop=haiso-juchu">配送受注店(全集計)</a></li>
+          <li><a href="?shop=custom">店舗ごとの集計(店舗・期間を選択)</a></li>
         </ul>
       </div>
       <div class="card">
@@ -608,6 +610,79 @@ async function renderAdminPage(slug) {
   }
 
   load();
+}
+
+async function renderCustomAggregatePage() {
+  const defaultFrom = todayStr();
+  const defaultTo = todayStr();
+
+  const storeCheckboxes = STORES.map(
+    (s) => `
+      <label class="checkbox-label">
+        <input type="checkbox" class="store-check" value="${s.slug}">
+        ${escapeHtml(s.name)}
+      </label>`
+  ).join('');
+
+  app.innerHTML = `
+    <div class="page wide">
+      <h1>店舗ごとの集計</h1>
+      <p class="hint">集計したい店舗を選び、期間を指定して表示してください。</p>
+      <div class="card">
+        <div class="field">
+          <label>店舗を選択</label>
+          ${storeCheckboxes}
+        </div>
+        <div class="field">
+          <label for="fromDate">開始日</label>
+          <input type="date" id="fromDate" value="${defaultFrom}">
+        </div>
+        <div class="field">
+          <label for="toDate">終了日</label>
+          <input type="date" id="toDate" value="${defaultTo}">
+        </div>
+        <button id="applyBtn" class="primary">表示</button>
+      </div>
+      <div id="summary"></div>
+    </div>`;
+
+  document.getElementById('applyBtn').addEventListener('click', load);
+
+  async function load() {
+    const from = document.getElementById('fromDate').value;
+    const to = document.getElementById('toDate').value;
+    const selectedSlugs = [...document.querySelectorAll('.store-check:checked')].map((el) => el.value);
+    const summaryEl = document.getElementById('summary');
+
+    if (!selectedSlugs.length) {
+      summaryEl.innerHTML = '<div class="card"><p class="hint">店舗を1つ以上選択してください。</p></div>';
+      return;
+    }
+
+    const selectedStores = STORES.filter((s) => selectedSlugs.includes(s.slug));
+    const categories = [...new Set(selectedStores.flatMap((s) => s.categories))];
+
+    summaryEl.innerHTML = '<p class="hint">読み込み中…</p>';
+    try {
+      const sections = await Promise.all(
+        categories.map(async (category) => {
+          const def = PRODUCT_DEFS[category];
+          const stores = selectedStores.filter((s) => s.categories.includes(category));
+          const rows = (await def.fetchRange(from, to)).filter((r) => selectedSlugs.includes(r.store_slug));
+          const heading = categories.length > 1 ? `<h2 class="section-title">${def.label}</h2>` : '';
+          const body =
+            category === 'oyster'
+              ? renderOysterSummary(rows, stores)
+              : renderTextOrderSummary(rows, stores, { showActions: false });
+          return heading + body;
+        })
+      );
+      summaryEl.innerHTML = sections.join('');
+    } catch (e) {
+      console.error(e);
+      summaryEl.innerHTML = '<p class="msg-error">読み込みに失敗しました。</p>';
+    }
+  }
 }
 
 function renderTextOrderSummary(rows, stores, options = {}) {
