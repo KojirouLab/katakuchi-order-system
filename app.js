@@ -603,6 +603,7 @@ async function renderAdminPage(slug) {
           if (row) printDeliverySlip(btn.dataset.storename, btn.dataset.date, row.content);
         });
       });
+      bindPrintTableButtons(summaryEl);
     } catch (e) {
       console.error(e);
       summaryEl.innerHTML = '<p class="msg-error">読み込みに失敗しました。</p>';
@@ -678,6 +679,7 @@ async function renderCustomAggregatePage() {
         })
       );
       summaryEl.innerHTML = sections.join('');
+      bindPrintTableButtons(summaryEl);
     } catch (e) {
       console.error(e);
       summaryEl.innerHTML = '<p class="msg-error">読み込みに失敗しました。</p>';
@@ -778,10 +780,12 @@ function renderOysterSummary(rows, stores) {
 
   const headerRow1 = stores.map((s) => `<th colspan="4">${escapeHtml(s.name)}</th>`).join('');
   const headerRow2 = stores.map(() => `<th>混合</th><th>S</th><th>M</th><th>小計</th>`).join('');
+  const periodLabel = dates.length > 1 ? `${formatDateJp(dates[0])}〜${formatDateJp(dates[dates.length - 1])}` : formatDateJp(dates[0]);
 
   return `
     <div class="card">
       <h2>店舗別集計(1ケース=15kg)</h2>
+      <button type="button" class="print-table-btn" data-period="${escapeHtml(periodLabel)}">この表を印刷</button>
       <div class="table-scroll">
         <table class="agg-table">
           <thead>
@@ -796,6 +800,45 @@ function renderOysterSummary(rows, stores) {
       </div>
       <p class="hint">数値は箱数(ケース)。1ケース=15kg。「小計」は店舗ごとのサイズ合計、右端は全店舗合計。「-」は未発注/発注なし。</p>
     </div>`;
+}
+
+function bindPrintTableButtons(container) {
+  container.querySelectorAll('.print-table-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const table = btn.closest('.card').querySelector('.agg-table');
+      if (table) printAggregateTable(table, btn.dataset.period || '');
+    });
+  });
+}
+
+function printAggregateTable(tableEl, periodLabel) {
+  const win = window.open('', '_blank', 'width=900,height=700');
+  if (!win) {
+    alert('ポップアップがブロックされました。ブラウザの設定でポップアップを許可してください。');
+    return;
+  }
+  win.document.write(`<!DOCTYPE html>
+<html lang="ja"><head><meta charset="UTF-8"><title>牡蠣受注集計表</title>
+<style>
+  @page { size: A4 portrait; margin: 12mm; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Yu Gothic", sans-serif; color: #1a1a1a; background: #fff; padding: 0; }
+  h1 { font-size: 18px; margin: 0 0 2mm; }
+  .subtitle { font-size: 12px; color: #555; margin: 0 0 6mm; }
+  table { border-collapse: collapse; width: 100%; font-size: 11px; }
+  th, td { border: 1px solid #999; padding: 3px 5px; text-align: center; white-space: nowrap; }
+  thead th { background: #eee; font-weight: 700; }
+  tfoot td { background: #eee; font-weight: 700; }
+  .row-label { text-align: left; font-weight: 700; }
+  .subtotal, .grand { font-weight: 700; }
+</style></head>
+<body>
+  <h1>牡蠣受注集計表</h1>
+  <p class="subtitle">対象期間: ${escapeHtml(periodLabel)} / 発行日: ${formatDateJp(todayStr())}</p>
+  ${tableEl.outerHTML}
+</body></html>`);
+  win.document.close();
+  win.focus();
+  win.print();
 }
 
 function printDeliverySlip(storeName, date, content) {
