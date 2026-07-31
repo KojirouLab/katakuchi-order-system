@@ -18,6 +18,9 @@ const ADMIN_SHOPS = {
   'haiso-juchu': { name: '配送受注店', categories: ['pizza', 'oyster'] },
 };
 
+// 混合サイズの発注を一時休止する開始日(この日付以降の配達分は混合を選択不可にする)。再開時はこの定数と関連ロジックを削除すること。
+const MIXED_SUSPENDED_FROM = '2026-08-04';
+
 // 日本の祝日(年ごとに更新が必要。内閣府 https://www8.cao.go.jp/chosei/shukujitsu/gaiyou.html を参照)
 const JP_HOLIDAYS = new Set([
   '2026-01-01', '2026-01-12', '2026-02-11', '2026-02-23', '2026-03-20', '2026-04-29',
@@ -182,6 +185,9 @@ const PRODUCT_DEFS = {
         <input type="checkbox" id="${id}-noOrder">
         この日は発注なし
       </label>
+      <p id="${id}-mixed-suspended-msg" class="deadline-msg" style="display:none">${formatDateJp(
+        MIXED_SUSPENDED_FROM
+      )}配送分より、混合サイズの発注を一時休止しています。</p>
       <div class="field-row">
         <div class="field">
           <label for="${id}-mixed">混合(ケース)</label>
@@ -221,9 +227,12 @@ const PRODUCT_DEFS = {
     },
     applyExtraFieldState: (id) => {
       const noOrder = document.getElementById(`${id}-noOrder`).checked;
+      const dateVal = document.getElementById(`${id}-date`).value;
+      const mixedSuspended = !!dateVal && dateVal >= MIXED_SUSPENDED_FROM;
+      document.getElementById(`${id}-mixed-suspended-msg`).style.display = mixedSuspended ? '' : 'none';
       ['mixed', 's', 'm'].forEach((k) => {
         const el = document.getElementById(`${id}-${k}`);
-        if (noOrder) {
+        if (noOrder || (k === 'mixed' && mixedSuspended)) {
           el.disabled = true;
           el.value = 0;
         }
