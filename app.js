@@ -542,7 +542,7 @@ async function renderAdminPage(slug) {
   const defaultTo = todayStr();
 
   app.innerHTML = `
-    <div class="page wide">
+    <div class="page wide shop-${slug}">
       <h1>${escapeHtml(shop.name)}</h1>
       <p class="hint">${subtitle}</p>
       <div class="card">
