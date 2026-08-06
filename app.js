@@ -704,41 +704,46 @@ function renderTextOrderSummary(rows, stores, options = {}) {
     byKey[`${r.order_date}__${r.store_slug}`] = r;
   });
 
-  const detailItems = dates
-    .flatMap((date) =>
-      stores.map((s) => {
-        const r = byKey[`${date}__${s.slug}`];
-        if (!r || !r.content || !r.content.trim()) return '';
-        const status = showActions
-          ? r.confirmed_at
-            ? `<span class="confirm-badge confirmed">✓ 確認済み(${formatDateTimeJp(r.confirmed_at)})</span> <button class="unconfirm-btn" data-store="${s.slug}" data-date="${date}">未確認に戻す</button>`
-            : `<button class="confirm-btn" data-store="${s.slug}" data-date="${date}">確認済みにする</button>`
-          : '';
-        const printBtn = showActions
-          ? `<button class="print-btn" data-store="${s.slug}" data-date="${date}" data-storename="${escapeHtml(
-              s.name
-            )}">納品明細書を印刷</button>`
-          : '';
-        const storeLabel = showActions
-          ? `<span class="recent-store">${escapeHtml(s.name)}</span>`
-          : `<span class="recent-store">${escapeHtml(s.name)}</span><span class="recent-submitted">発注日時: ${formatDateTimeJp(
-              r.updated_at
-            )}</span>`;
-        return `<li><span class="recent-date">${formatDateJp(
-          date
-        )} ${storeLabel}</span><span class="recent-body">${escapeHtml(r.content).replace(
-          /\n/g,
-          '<br>'
-        )}</span>${status} ${printBtn}</li>`;
-      })
-    )
+  const dateGroups = dates
+    .map((date) => {
+      const storeItems = stores
+        .map((s) => {
+          const r = byKey[`${date}__${s.slug}`];
+          if (!r || !r.content || !r.content.trim()) return '';
+          const status = showActions
+            ? r.confirmed_at
+              ? `<span class="confirm-badge confirmed">✓ 確認済み(${formatDateTimeJp(r.confirmed_at)})</span> <button class="unconfirm-btn" data-store="${s.slug}" data-date="${date}">未確認に戻す</button>`
+              : `<button class="confirm-btn" data-store="${s.slug}" data-date="${date}">確認済みにする</button>`
+            : '';
+          const printBtn = showActions
+            ? `<button class="print-btn" data-store="${s.slug}" data-date="${date}" data-storename="${escapeHtml(
+                s.name
+              )}">納品明細書を印刷</button>`
+            : '';
+          const submittedLabel = showActions
+            ? ''
+            : `<span class="recent-submitted">発注日時: ${formatDateTimeJp(r.updated_at)}</span>`;
+          return `<li><span class="recent-store">${escapeHtml(
+            s.name
+          )}</span>${submittedLabel}<span class="recent-body">${escapeHtml(r.content).replace(
+            /\n/g,
+            '<br>'
+          )}</span>${status} ${printBtn}</li>`;
+        })
+        .filter(Boolean)
+        .join('');
+      if (!storeItems) return '';
+      return `<div class="date-group"><h3 class="date-heading">${formatDateJp(
+        date
+      )}</h3><ul class="recent-list">${storeItems}</ul></div>`;
+    })
     .filter(Boolean)
     .join('');
 
   return `
     <div class="card">
       <h2>注文内容一覧</h2>
-      <ul class="recent-list">${detailItems || '<li class="hint">注文内容はありません。</li>'}</ul>
+      ${dateGroups || '<p class="hint">注文内容はありません。</p>'}
     </div>`;
 }
 
@@ -771,22 +776,29 @@ function renderOysterSummary(rows, stores) {
     })
     .join('');
 
-  const detailItems = dates
-    .flatMap((date) =>
-      stores.map((st) => {
-        const r = byKey[`${date}__${st.slug}`];
-        if (!r) return '';
-        const total = (Number(r.mixed_boxes) || 0) + (Number(r.s_boxes) || 0) + (Number(r.m_boxes) || 0);
-        if (!r.no_order && total === 0) return '';
-        const bodyClass = r.no_order ? 'recent-body' : 'oyster-qty';
-        const body = r.no_order ? '発注なし' : `混合 ${r.mixed_boxes} / S ${r.s_boxes} / M ${r.m_boxes}`;
-        return `<li><span class="recent-date">${formatDateJp(date)} <span class="recent-store">${escapeHtml(
-          st.name
-        )}</span><span class="recent-submitted">発注日時: ${formatDateTimeJp(
-          r.updated_at
-        )}</span></span><span class="${bodyClass}">${body}</span></li>`;
-      })
-    )
+  const detailGroups = dates
+    .map((date) => {
+      const storeItems = stores
+        .map((st) => {
+          const r = byKey[`${date}__${st.slug}`];
+          if (!r) return '';
+          const total = (Number(r.mixed_boxes) || 0) + (Number(r.s_boxes) || 0) + (Number(r.m_boxes) || 0);
+          if (!r.no_order && total === 0) return '';
+          const bodyClass = r.no_order ? 'recent-body' : 'oyster-qty';
+          const body = r.no_order ? '発注なし' : `混合 ${r.mixed_boxes} / S ${r.s_boxes} / M ${r.m_boxes}`;
+          return `<li><span class="recent-store">${escapeHtml(
+            st.name
+          )}</span><span class="recent-submitted">発注日時: ${formatDateTimeJp(
+            r.updated_at
+          )}</span><span class="${bodyClass}">${body}</span></li>`;
+        })
+        .filter(Boolean)
+        .join('');
+      if (!storeItems) return '';
+      return `<div class="date-group"><h3 class="date-heading">${formatDateJp(
+        date
+      )}</h3><ul class="recent-list">${storeItems}</ul></div>`;
+    })
     .filter(Boolean)
     .join('');
 
@@ -797,7 +809,7 @@ function renderOysterSummary(rows, stores) {
     </div>
     <div class="card">
       <h2>注文内容一覧</h2>
-      <ul class="recent-list">${detailItems || '<li class="hint">注文内容はありません。</li>'}</ul>
+      ${detailGroups || '<p class="hint">注文内容はありません。</p>'}
     </div>`;
 }
 
