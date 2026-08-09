@@ -708,6 +708,63 @@ async function renderCustomAggregatePage() {
 // この日より前の発注はこの冷凍庫在庫とは無関係(在庫管理開始前の出荷)として扱う。
 const KAKI_STOCK_TRACKING_START_DATE = '2026-08-04';
 
+// 直近の出荷実績(shippedByDate)から曜日別の平均出荷ペースを求め、現在庫が
+// いつ頃尽きそうかを予測して一言メッセージにする。祝日は出荷が減る傾向を
+// 見込んで日曜相当のペースとして計算する(実績が乏しい祝日固有の平均は
+// 使わず、既知の日曜実績で代用する簡易的な扱い)。
+function buildStockoutForecast(balance, shippedByDate) {
+  const dateKeys = Object.keys(shippedByDate);
+  if (!dateKeys.length) return '出荷実績がまだないため、在庫が持つ期間を予測できません。';
+
+  const weekdaySum = Array.from({ length: 7 }, () => ({ s: 0, m: 0, count: 0 }));
+  const overallSum = { s: 0, m: 0, count: 0 };
+  dateKeys.forEach((date) => {
+    const t = shippedByDate[date];
+    const dow = new Date(`${date}T00:00:00Z`).getUTCDay();
+    weekdaySum[dow].s += t.s;
+    weekdaySum[dow].m += t.m;
+    weekdaySum[dow].count++;
+    overallSum.s += t.s;
+    overallSum.m += t.m;
+    overallSum.count++;
+  });
+  const overallAvg = { s: overallSum.s / overallSum.count, m: overallSum.m / overallSum.count };
+
+  function expectedFor(dateStr) {
+    const dow = new Date(`${dateStr}T00:00:00Z`).getUTCDay();
+    const lookupDow = JP_HOLIDAYS.has(dateStr) ? 0 : dow; // 祝日は日曜相当の出荷ペースとして扱う
+    const w = weekdaySum[lookupDow];
+    return w.count > 0 ? { s: w.s / w.count, m: w.m / w.count } : overallAvg;
+  }
+
+  const MAX_DAYS = 90;
+  let remainingS = balance.s;
+  let remainingM = balance.m;
+  let depleteDateS = balance.s <= 0 ? todayStr() : null;
+  let depleteDateM = balance.m <= 0 ? todayStr() : null;
+  const cur = new Date(`${todayStr()}T00:00:00Z`);
+  for (let i = 1; i <= MAX_DAYS && (!depleteDateS || !depleteDateM); i++) {
+    cur.setUTCDate(cur.getUTCDate() + 1);
+    const dateStr = cur.toISOString().slice(0, 10);
+    const exp = expectedFor(dateStr);
+    if (!depleteDateS) {
+      remainingS -= exp.s;
+      if (remainingS <= 0) depleteDateS = dateStr;
+    }
+    if (!depleteDateM) {
+      remainingM -= exp.m;
+      if (remainingM <= 0) depleteDateM = dateStr;
+    }
+  }
+
+  const sPart =
+    balance.s <= 0 ? 'Sサイズは在庫切れ' : depleteDateS ? `Sサイズは${formatDateJp(depleteDateS)}頃` : `Sサイズは${MAX_DAYS}日以上`;
+  const mPart =
+    balance.m <= 0 ? 'Mサイズは在庫切れ' : depleteDateM ? `Mサイズは${formatDateJp(depleteDateM)}頃` : `Mサイズは${MAX_DAYS}日以上`;
+
+  return `直近の曜日別出荷ペース(祝日は日曜相当で計算)だと、${sPart}、${mPart}まで在庫が持つ見込みです。余裕をもって入庫の手配をおすすめします。`;
+}
+
 async function renderStockPage() {
   app.innerHTML = `
     <div class="page wide">
@@ -773,11 +830,19 @@ async function renderStockPage() {
         inTotal.s += Number(r.s_boxes) || 0;
         inTotal.m += Number(r.m_boxes) || 0;
       });
-      const outTotal = { mixed: 0, s: 0, m: 0 };
+      const shippedByDate = {};
       shippedRows.forEach((r) => {
-        outTotal.mixed += Number(r.mixed_boxes) || 0;
-        outTotal.s += Number(r.s_boxes) || 0;
-        outTotal.m += Number(r.m_boxes) || 0;
+        const key = r.order_date;
+        if (!shippedByDate[key]) shippedByDate[key] = { mixed: 0, s: 0, m: 0 };
+        shippedByDate[key].mixed += Number(r.mixed_boxes) || 0;
+        shippedByDate[key].s += Number(r.s_boxes) || 0;
+        shippedByDate[key].m += Number(r.m_boxes) || 0;
+      });
+      const outTotal = { mixed: 0, s: 0, m: 0 };
+      Object.values(shippedByDate).forEach((t) => {
+        outTotal.mixed += t.mixed;
+        outTotal.s += t.s;
+        outTotal.m += t.m;
       });
       const balance = {
         mixed: inTotal.mixed - outTotal.mixed,
@@ -785,12 +850,14 @@ async function renderStockPage() {
         m: inTotal.m - outTotal.m,
       };
       const totalCases = balance.mixed + balance.s + balance.m;
+      const forecastMsg = buildStockoutForecast(balance, shippedByDate);
 
       balanceEl.innerHTML = `
         <div class="card">
           <h2>現在庫(残り)</h2>
           <span class="oyster-qty">混合 ${balance.mixed} / S ${balance.s} / M ${balance.m}</span>
           <span class="recent-submitted">合計${totalCases}ケース(${totalCases * 15}kg)</span>
+          <p class="stock-forecast">${escapeHtml(forecastMsg)}</p>
         </div>`;
 
       stockInListEl.innerHTML =
@@ -805,14 +872,6 @@ async function renderStockPage() {
           )
           .join('') || '<li class="hint">入庫記録がありません。</li>';
 
-      const shippedByDate = {};
-      shippedRows.forEach((r) => {
-        const key = r.order_date;
-        if (!shippedByDate[key]) shippedByDate[key] = { mixed: 0, s: 0, m: 0 };
-        shippedByDate[key].mixed += Number(r.mixed_boxes) || 0;
-        shippedByDate[key].s += Number(r.s_boxes) || 0;
-        shippedByDate[key].m += Number(r.m_boxes) || 0;
-      });
       const shippedDates = Object.keys(shippedByDate).sort((a, b) => (a < b ? 1 : -1));
       stockOutListEl.innerHTML =
         shippedDates
