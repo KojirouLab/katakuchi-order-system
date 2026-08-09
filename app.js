@@ -976,13 +976,12 @@ function renderOysterSummary(rows, stores) {
     })
     .join('');
   const grandTotalCases = grandTotal.mixed + grandTotal.s + grandTotal.m;
-  const grandTotalHtml =
+  const grandTotalCard =
     dates.length > 1
-      ? `<div class="date-group">
-          <h3 class="date-heading">期間合計(${formatDateJp(dates[0])}〜${formatDateJp(dates[dates.length - 1])})</h3>
-          <ul class="recent-list"><li><span class="oyster-qty">混合 ${grandTotal.mixed} / S ${grandTotal.s} / M ${
-          grandTotal.m
-        }</span><span class="recent-submitted">合計${grandTotalCases}CS(${grandTotalCases * 15}kg)</span></li></ul>
+      ? `<div class="card grand-total-card">
+          <h2>期間合計(${formatDateJp(dates[0])}〜${formatDateJp(dates[dates.length - 1])})</h2>
+          <span class="oyster-qty">混合 ${grandTotal.mixed} / S ${grandTotal.s} / M ${grandTotal.m}</span>
+          <span class="recent-submitted">合計${grandTotalCases}CS(${grandTotalCases * 15}kg)</span>
         </div>`
       : '';
 
@@ -1013,9 +1012,9 @@ function renderOysterSummary(rows, stores) {
     .join('');
 
   return `
+    ${grandTotalCard}
     <div class="card">
       <h2>日別合計(1ケース=15kg)</h2>
-      ${grandTotalHtml}
       <ul class="recent-list">${dailyTotalItems}</ul>
     </div>
     <div class="card">
