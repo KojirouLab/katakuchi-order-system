@@ -738,7 +738,7 @@ const KAKI_STOCK_TRACKING_START_DATE = '2026-08-04';
 // いつ頃尽きそうかを予測して一言メッセージにする。祝日は出荷が減る傾向を
 // 見込んで日曜相当のペースとして計算する(実績が乏しい祝日固有の平均は
 // 使わず、既知の日曜実績で代用する簡易的な扱い)。
-function buildStockoutForecast(balance, shippedByDate) {
+function buildStockoutForecast(balance, shippedByDate, asOfDate) {
   const dateKeys = Object.keys(shippedByDate);
   if (!dateKeys.length) return '出荷実績がまだないため、在庫が持つ期間を予測できません。';
 
@@ -766,9 +766,9 @@ function buildStockoutForecast(balance, shippedByDate) {
   const MAX_DAYS = 90;
   let remainingS = balance.s;
   let remainingM = balance.m;
-  let depleteDateS = balance.s <= 0 ? todayStr() : null;
-  let depleteDateM = balance.m <= 0 ? todayStr() : null;
-  const cur = new Date(`${todayStr()}T00:00:00Z`);
+  let depleteDateS = balance.s <= 0 ? asOfDate : null;
+  let depleteDateM = balance.m <= 0 ? asOfDate : null;
+  const cur = new Date(`${asOfDate}T00:00:00Z`);
   for (let i = 1; i <= MAX_DAYS && (!depleteDateS || !depleteDateM); i++) {
     cur.setUTCDate(cur.getUTCDate() + 1);
     const dateStr = cur.toISOString().slice(0, 10);
@@ -795,9 +795,14 @@ async function renderStockPage() {
   app.innerHTML = `
     <div class="page wide">
       <h1>牡蠣在庫管理</h1>
-      <p class="hint">仙台のカタクチ商店冷凍庫にある牡蠣の在庫です。現在庫は${formatDateJp(
-        KAKI_STOCK_TRACKING_START_DATE
-      )}〜今日までに確定した各店舗への発注(牡蠣)を自動で差し引いた、今日時点の値です。今日より先の発注はまだ出荷していないため在庫からは引かれません。</p>
+      <p class="hint">仙台のカタクチ商店冷凍庫にある牡蠣の在庫です。指定した日までに確定した入庫・各店舗への発注(牡蠣)から、その時点の在庫を計算します。それより先の発注はまだ出荷していないため在庫からは引かれません。</p>
+      <div class="card">
+        <div class="field">
+          <label for="asOfDate">この日時点の在庫を表示</label>
+          <input type="date" id="asOfDate" value="${todayStr()}">
+        </div>
+        <button id="asOfApplyBtn" class="primary">表示</button>
+      </div>
       <div id="stockBalance"><p class="hint">読み込み中…</p></div>
       <div class="card">
         <h2>入庫を記録する</h2>
@@ -827,7 +832,7 @@ async function renderStockPage() {
         <ul id="stockInList" class="recent-list"><li class="hint">読み込み中…</li></ul>
       </div>
       <div class="card">
-        <h2>出荷(日別・${formatDateJp(KAKI_STOCK_TRACKING_START_DATE)}〜今日)</h2>
+        <h2 id="stockOutHeading">出荷(日別)</h2>
         <ul id="stockOutList" class="recent-list"><li class="hint">読み込み中…</li></ul>
       </div>
     </div>`;
@@ -835,19 +840,25 @@ async function renderStockPage() {
   const balanceEl = document.getElementById('stockBalance');
   const stockInListEl = document.getElementById('stockInList');
   const stockOutListEl = document.getElementById('stockOutList');
+  const stockOutHeadingEl = document.getElementById('stockOutHeading');
+
+  document.getElementById('asOfApplyBtn').addEventListener('click', load);
 
   async function load() {
+    const asOfDate = document.getElementById('asOfDate').value || todayStr();
     balanceEl.innerHTML = '<p class="hint">読み込み中…</p>';
     stockInListEl.innerHTML = '<li class="hint">読み込み中…</li>';
     stockOutListEl.innerHTML = '<li class="hint">読み込み中…</li>';
+    stockOutHeadingEl.textContent = `出荷(日別・${formatDateJp(KAKI_STOCK_TRACKING_START_DATE)}〜${formatDateJp(asOfDate)})`;
     try {
-      const [stockInRows, shippedRows] = await Promise.all([
+      const [allStockInRows, shippedRows] = await Promise.all([
         fetchStockInAll(),
-        fetchOysterOrdersRange(KAKI_STOCK_TRACKING_START_DATE, todayStr()),
+        fetchOysterOrdersRange(KAKI_STOCK_TRACKING_START_DATE, asOfDate),
       ]);
+      const stockInRowsUpToDate = allStockInRows.filter((r) => r.in_date <= asOfDate);
 
       const inTotal = { mixed: 0, s: 0, m: 0 };
-      stockInRows.forEach((r) => {
+      stockInRowsUpToDate.forEach((r) => {
         inTotal.mixed += Number(r.mixed_boxes) || 0;
         inTotal.s += Number(r.s_boxes) || 0;
         inTotal.m += Number(r.m_boxes) || 0;
@@ -872,18 +883,19 @@ async function renderStockPage() {
         m: inTotal.m - outTotal.m,
       };
       const totalCases = balance.mixed + balance.s + balance.m;
-      const forecastMsg = buildStockoutForecast(balance, shippedByDate);
+      const forecastMsg = buildStockoutForecast(balance, shippedByDate, asOfDate);
+      const balanceHeading = asOfDate === todayStr() ? '現在庫(残り)' : `在庫(${formatDateJp(asOfDate)}時点)`;
 
       balanceEl.innerHTML = `
         <div class="card">
-          <h2>現在庫(残り)</h2>
+          <h2>${balanceHeading}</h2>
           <span class="oyster-qty">混合 ${balance.mixed} / S ${balance.s} / M ${balance.m}</span>
           <span class="recent-submitted">合計${totalCases}ケース(${totalCases * 15}kg)</span>
           <p class="stock-forecast">${escapeHtml(forecastMsg)}</p>
         </div>`;
 
       stockInListEl.innerHTML =
-        stockInRows
+        allStockInRows
           .map(
             (r) => `<li>
               <span class="recent-date">${formatDateJp(r.in_date)}</span>
