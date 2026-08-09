@@ -587,6 +587,7 @@ async function renderAdminPage(slug) {
     const categories = showOysterToo ? [...shop.categories, 'oyster'] : shop.categories;
     try {
       const pizzaRowsByKey = {};
+      const oysterRowsByKey = {};
       const sections = await Promise.all(
         categories.map(async (category) => {
           const def = PRODUCT_DEFS[category];
@@ -596,11 +597,15 @@ async function renderAdminPage(slug) {
             rows.forEach((r) => {
               pizzaRowsByKey[`${r.order_date}__${r.store_slug}`] = r;
             });
+          } else if (category === 'oyster') {
+            rows.forEach((r) => {
+              oysterRowsByKey[`${r.order_date}__${r.store_slug}`] = r;
+            });
           }
           const heading = categories.length > 1 ? `<h2 class="section-title">${def.label}</h2>` : '';
           const body =
             category === 'oyster'
-              ? renderOysterSummary(rows, stores)
+              ? renderOysterSummary(rows, stores, { showPrint: showOysterToo })
               : renderTextOrderSummary(rows, stores, { showActions: slug === 'katakuchi' });
           return heading + body;
         })
@@ -627,8 +632,19 @@ async function renderAdminPage(slug) {
       bindConfirmToggle('.unconfirm-btn', unconfirmPizzaOrder, '未確認に戻す');
       summaryEl.querySelectorAll('.print-btn').forEach((btn) => {
         btn.addEventListener('click', () => {
-          const row = pizzaRowsByKey[`${btn.dataset.date}__${btn.dataset.store}`];
-          if (row) printDeliverySlip(btn.dataset.storename, btn.dataset.date, row.content);
+          const key = `${btn.dataset.date}__${btn.dataset.store}`;
+          const pizzaRow = pizzaRowsByKey[key];
+          if (pizzaRow) {
+            printDeliverySlip(btn.dataset.storename, btn.dataset.date, pizzaRow.content);
+            return;
+          }
+          const oysterRow = oysterRowsByKey[key];
+          if (oysterRow) {
+            const content = oysterRow.no_order
+              ? '発注なし'
+              : `混合 ${oysterRow.mixed_boxes}ケース\nSサイズ ${oysterRow.s_boxes}ケース\nMサイズ ${oysterRow.m_boxes}ケース`;
+            printDeliverySlip(btn.dataset.storename, btn.dataset.date, content);
+          }
         });
       });
     } catch (e) {
@@ -1006,7 +1022,8 @@ function renderTextOrderSummary(rows, stores, options = {}) {
     </div>`;
 }
 
-function renderOysterSummary(rows, stores) {
+function renderOysterSummary(rows, stores, options = {}) {
+  const showPrint = options.showPrint === true;
   const dates = [...new Set(rows.map((r) => r.order_date))].sort();
   if (!dates.length) return '<div class="card"><p class="hint">この期間の発注はありません。</p></div>';
   const byKey = {};
@@ -1058,11 +1075,16 @@ function renderOysterSummary(rows, stores) {
           if (!r.no_order && total === 0) return '';
           const bodyClass = r.no_order ? 'recent-body' : 'oyster-qty';
           const body = r.no_order ? '発注なし' : `混合 ${r.mixed_boxes} / S ${r.s_boxes} / M ${r.m_boxes}`;
+          const printBtn = showPrint
+            ? `<button class="print-btn" data-store="${st.slug}" data-date="${date}" data-storename="${escapeHtml(
+                st.name
+              )}">納品明細書を印刷</button>`
+            : '';
           return `<li><span class="recent-store">${escapeHtml(
             st.name
           )}</span><span class="recent-submitted">発注日時: ${formatDateTimeJp(
             r.updated_at
-          )}</span><span class="${bodyClass}">${body}</span></li>`;
+          )}</span><span class="${bodyClass}">${body}</span>${printBtn}</li>`;
         })
         .filter(Boolean)
         .join('');
