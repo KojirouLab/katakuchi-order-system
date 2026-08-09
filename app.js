@@ -95,9 +95,9 @@ function formatDeadlineJp(dateStr, category) {
   return `${d.getMonth() + 1}/${d.getDate()}(${w}) ${String(d.getHours()).padStart(2, '0')}:00`;
 }
 
-function qtyOptionsHtml() {
+function qtyOptionsHtml(max = 10) {
   let html = '';
-  for (let i = 0; i <= 10; i++) {
+  for (let i = 0; i <= max; i++) {
     html += `<option value="${i}">${i}</option>`;
   }
   return html;
@@ -262,7 +262,9 @@ function route() {
   const storeSlug = params.get('store');
   const shopSlug = params.get('shop');
   const isParent = params.get('parent') === '1';
+  const isStock = params.get('stock') === '1';
   if (isParent) return renderParentOrderPage();
+  if (isStock) return renderStockPage();
   if (storeSlug) return renderOrderPage(storeSlug);
   if (shopSlug === 'custom') return renderCustomAggregatePage();
   if (shopSlug) return renderAdminPage(shopSlug);
@@ -297,6 +299,13 @@ function renderHome() {
         <p class="hint">店舗からの電話連絡などで、締切後にカタクチ商店・牡蠣受注店側が代わりに発注内容を直す場合に使います。取り扱いにご注意ください。</p>
         <ul class="home-links">
           <li><a href="?parent=1">管理者ページを開く</a></li>
+        </ul>
+      </div>
+      <div class="card">
+        <h2>牡蠣在庫管理(カタクチ商店冷凍庫)</h2>
+        <p class="hint">仙台のカタクチ商店冷凍庫にある牡蠣の在庫を管理します。</p>
+        <ul class="home-links">
+          <li><a href="?stock=1">在庫管理ページを開く</a></li>
         </ul>
       </div>
     </div>`;
@@ -693,6 +702,193 @@ async function renderCustomAggregatePage() {
       summaryEl.innerHTML = '<p class="msg-error">読み込みに失敗しました。</p>';
     }
   }
+}
+
+// 出荷(在庫減)は、この日付以降のoyster_ordersの合計を自動で差し引く。
+// この日より前の発注はこの冷凍庫在庫とは無関係(在庫管理開始前の出荷)として扱う。
+const KAKI_STOCK_TRACKING_START_DATE = '2026-08-04';
+
+async function renderStockPage() {
+  app.innerHTML = `
+    <div class="page wide">
+      <h1>牡蠣在庫管理</h1>
+      <p class="hint">仙台のカタクチ商店冷凍庫にある牡蠣の在庫です。出荷は${formatDateJp(
+        KAKI_STOCK_TRACKING_START_DATE
+      )}以降の各店舗への発注(牡蠣)から自動で差し引かれます。</p>
+      <div id="stockBalance"><p class="hint">読み込み中…</p></div>
+      <div class="card">
+        <h2>入庫を記録する</h2>
+        <div class="field">
+          <label for="stockInDate">入庫日</label>
+          <input type="date" id="stockInDate" value="${todayStr()}">
+        </div>
+        <div class="field-row">
+          <div class="field">
+            <label for="stockInMixed">混合(ケース)</label>
+            <select id="stockInMixed">${qtyOptionsHtml(100)}</select>
+          </div>
+          <div class="field">
+            <label for="stockInS">Sサイズ(ケース)</label>
+            <select id="stockInS">${qtyOptionsHtml(100)}</select>
+          </div>
+          <div class="field">
+            <label for="stockInM">Mサイズ(ケース)</label>
+            <select id="stockInM">${qtyOptionsHtml(100)}</select>
+          </div>
+        </div>
+        <div class="field">
+          <label for="stockInNote">メモ(任意)</label>
+          <input type="text" id="stockInNote" placeholder="例) ◯◯漁協より">
+        </div>
+        <button id="stockInSubmitBtn" class="primary">入庫を登録する</button>
+        <p id="stockInMsg" class="msg"></p>
+      </div>
+      <div class="card">
+        <h2>入庫履歴</h2>
+        <ul id="stockInList" class="recent-list"><li class="hint">読み込み中…</li></ul>
+      </div>
+      <div class="card">
+        <h2>出荷(日別・${formatDateJp(KAKI_STOCK_TRACKING_START_DATE)}以降)</h2>
+        <ul id="stockOutList" class="recent-list"><li class="hint">読み込み中…</li></ul>
+      </div>
+    </div>`;
+
+  const balanceEl = document.getElementById('stockBalance');
+  const stockInListEl = document.getElementById('stockInList');
+  const stockOutListEl = document.getElementById('stockOutList');
+
+  async function load() {
+    balanceEl.innerHTML = '<p class="hint">読み込み中…</p>';
+    stockInListEl.innerHTML = '<li class="hint">読み込み中…</li>';
+    stockOutListEl.innerHTML = '<li class="hint">読み込み中…</li>';
+    try {
+      const [stockInRows, shippedRows] = await Promise.all([
+        fetchStockInAll(),
+        fetchOysterOrdersRange(KAKI_STOCK_TRACKING_START_DATE, '2099-12-31'),
+      ]);
+
+      const inTotal = { mixed: 0, s: 0, m: 0 };
+      stockInRows.forEach((r) => {
+        inTotal.mixed += Number(r.mixed_boxes) || 0;
+        inTotal.s += Number(r.s_boxes) || 0;
+        inTotal.m += Number(r.m_boxes) || 0;
+      });
+      const outTotal = { mixed: 0, s: 0, m: 0 };
+      shippedRows.forEach((r) => {
+        outTotal.mixed += Number(r.mixed_boxes) || 0;
+        outTotal.s += Number(r.s_boxes) || 0;
+        outTotal.m += Number(r.m_boxes) || 0;
+      });
+      const balance = {
+        mixed: inTotal.mixed - outTotal.mixed,
+        s: inTotal.s - outTotal.s,
+        m: inTotal.m - outTotal.m,
+      };
+      const totalCases = balance.mixed + balance.s + balance.m;
+
+      balanceEl.innerHTML = `
+        <div class="card">
+          <h2>現在庫(残り)</h2>
+          <span class="oyster-qty">混合 ${balance.mixed} / S ${balance.s} / M ${balance.m}</span>
+          <span class="recent-submitted">合計${totalCases}ケース(${totalCases * 15}kg)</span>
+        </div>`;
+
+      stockInListEl.innerHTML =
+        stockInRows
+          .map(
+            (r) => `<li>
+              <span class="recent-date">${formatDateJp(r.in_date)}</span>
+              <span class="oyster-qty">混合 ${r.mixed_boxes} / S ${r.s_boxes} / M ${r.m_boxes}</span>
+              ${r.note ? `<span class="recent-submitted">${escapeHtml(r.note)}</span>` : ''}
+              <button class="unconfirm-btn stock-in-delete-btn" data-id="${r.id}">削除</button>
+            </li>`
+          )
+          .join('') || '<li class="hint">入庫記録がありません。</li>';
+
+      const shippedByDate = {};
+      shippedRows.forEach((r) => {
+        const key = r.order_date;
+        if (!shippedByDate[key]) shippedByDate[key] = { mixed: 0, s: 0, m: 0 };
+        shippedByDate[key].mixed += Number(r.mixed_boxes) || 0;
+        shippedByDate[key].s += Number(r.s_boxes) || 0;
+        shippedByDate[key].m += Number(r.m_boxes) || 0;
+      });
+      const shippedDates = Object.keys(shippedByDate).sort((a, b) => (a < b ? 1 : -1));
+      stockOutListEl.innerHTML =
+        shippedDates
+          .map((date) => {
+            const t = shippedByDate[date];
+            const total = t.mixed + t.s + t.m;
+            if (total === 0) return '';
+            return `<li>
+              <span class="recent-date">${formatDateJp(date)}</span>
+              <span class="oyster-qty">混合 ${t.mixed} / S ${t.s} / M ${t.m}</span>
+            </li>`;
+          })
+          .filter(Boolean)
+          .join('') || '<li class="hint">出荷記録がありません。</li>';
+
+      stockInListEl.querySelectorAll('.stock-in-delete-btn').forEach((btn) => {
+        btn.addEventListener('click', async () => {
+          if (!confirm('この入庫記録を削除します。よろしいですか？')) return;
+          btn.disabled = true;
+          try {
+            await deleteStockIn(btn.dataset.id);
+            load();
+          } catch (e) {
+            console.error(e);
+            alert('削除に失敗しました。通信状況を確認してもう一度お試しください。');
+            btn.disabled = false;
+          }
+        });
+      });
+    } catch (e) {
+      console.error(e);
+      balanceEl.innerHTML = '<p class="msg-error">読み込みに失敗しました。</p>';
+    }
+  }
+
+  document.getElementById('stockInSubmitBtn').addEventListener('click', async () => {
+    const inDate = document.getElementById('stockInDate').value;
+    const mixedBoxes = Number(document.getElementById('stockInMixed').value) || 0;
+    const sBoxes = Number(document.getElementById('stockInS').value) || 0;
+    const mBoxes = Number(document.getElementById('stockInM').value) || 0;
+    const note = document.getElementById('stockInNote').value.trim();
+    const msgEl = document.getElementById('stockInMsg');
+    if (!inDate) {
+      msgEl.textContent = '入庫日を選択してください。';
+      msgEl.className = 'msg msg-error';
+      return;
+    }
+    if (mixedBoxes === 0 && sBoxes === 0 && mBoxes === 0) {
+      msgEl.textContent = 'ケース数を入力してください。';
+      msgEl.className = 'msg msg-error';
+      return;
+    }
+    if (!confirm(`${formatDateJp(inDate)}の入庫(混合${mixedBoxes}/S${sBoxes}/M${mBoxes})を登録します。よろしいですか？`)) return;
+    const btn = document.getElementById('stockInSubmitBtn');
+    btn.disabled = true;
+    msgEl.textContent = '登録中…';
+    msgEl.className = 'msg';
+    try {
+      await saveStockIn({ inDate, mixedBoxes, sBoxes, mBoxes, note });
+      msgEl.textContent = `✓ ${formatDateJp(inDate)}の入庫を登録しました。`;
+      msgEl.className = 'msg msg-success';
+      document.getElementById('stockInMixed').value = 0;
+      document.getElementById('stockInS').value = 0;
+      document.getElementById('stockInM').value = 0;
+      document.getElementById('stockInNote').value = '';
+      load();
+    } catch (e) {
+      console.error(e);
+      msgEl.textContent = '登録に失敗しました。通信状況を確認してもう一度お試しください。';
+      msgEl.className = 'msg msg-error';
+    } finally {
+      btn.disabled = false;
+    }
+  });
+
+  load();
 }
 
 function renderTextOrderSummary(rows, stores, options = {}) {

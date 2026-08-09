@@ -162,3 +162,31 @@ async function fetchOysterOrdersRange(from, to) {
   if (error) throw error;
   return data || [];
 }
+
+// ---- 牡蠣在庫(入庫) ----
+
+async function fetchStockInAll() {
+  assertClient();
+  const { data, error } = await sb.from('kaki_stock_in').select('*').order('in_date', { ascending: false });
+  if (error) throw error;
+  return data || [];
+}
+
+async function saveStockIn({ inDate, mixedBoxes, sBoxes, mBoxes, note }) {
+  assertClient();
+  const { error } = await sb.from('kaki_stock_in').insert({
+    in_date: inDate,
+    mixed_boxes: mixedBoxes,
+    s_boxes: sBoxes,
+    m_boxes: mBoxes,
+    note: note || '',
+  });
+  if (error) throw error;
+}
+
+async function deleteStockIn(id) {
+  assertClient();
+  const { data, error } = await sb.from('kaki_stock_in').delete().eq('id', id).select();
+  if (error) throw error;
+  if (!data || data.length === 0) throw new Error('削除できませんでした(権限設定が反映されていない可能性があります)');
+}
