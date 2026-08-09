@@ -563,6 +563,14 @@ async function renderAdminPage(slug) {
           <label for="toDate">終了日</label>
           <input type="date" id="toDate" value="${defaultTo}">
         </div>
+        ${
+          slug === 'katakuchi'
+            ? `<label class="checkbox-label">
+                <input type="checkbox" id="showOysterToo">
+                牡蠣の受注状況も表示する
+              </label>`
+            : ''
+        }
         <button id="applyBtn" class="primary">表示</button>
       </div>
       <div id="summary"></div>
@@ -575,10 +583,12 @@ async function renderAdminPage(slug) {
     const to = document.getElementById('toDate').value;
     const summaryEl = document.getElementById('summary');
     summaryEl.innerHTML = '<p class="hint">読み込み中…</p>';
+    const showOysterToo = slug === 'katakuchi' && document.getElementById('showOysterToo').checked;
+    const categories = showOysterToo ? [...shop.categories, 'oyster'] : shop.categories;
     try {
       const pizzaRowsByKey = {};
       const sections = await Promise.all(
-        shop.categories.map(async (category) => {
+        categories.map(async (category) => {
           const def = PRODUCT_DEFS[category];
           const stores = STORES_BY_CATEGORY[category];
           const rows = await def.fetchRange(from, to);
@@ -587,7 +597,7 @@ async function renderAdminPage(slug) {
               pizzaRowsByKey[`${r.order_date}__${r.store_slug}`] = r;
             });
           }
-          const heading = shop.categories.length > 1 ? `<h2 class="section-title">${def.label}</h2>` : '';
+          const heading = categories.length > 1 ? `<h2 class="section-title">${def.label}</h2>` : '';
           const body =
             category === 'oyster'
               ? renderOysterSummary(rows, stores)
