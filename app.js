@@ -951,6 +951,7 @@ function renderOysterSummary(rows, stores) {
     byKey[`${r.order_date}__${r.store_slug}`] = r;
   });
 
+  const grandTotal = { mixed: 0, s: 0, m: 0 };
   const dailyTotalItems = dates
     .map((date) => {
       let mixed = 0;
@@ -963,6 +964,9 @@ function renderOysterSummary(rows, stores) {
         s += Number(r.s_boxes) || 0;
         m += Number(r.m_boxes) || 0;
       });
+      grandTotal.mixed += mixed;
+      grandTotal.s += s;
+      grandTotal.m += m;
       const total = mixed + s + m;
       return `<li><span class="recent-date">${formatDateJp(
         date
@@ -971,6 +975,16 @@ function renderOysterSummary(rows, stores) {
       }kg)</span></li>`;
     })
     .join('');
+  const grandTotalCases = grandTotal.mixed + grandTotal.s + grandTotal.m;
+  const grandTotalHtml =
+    dates.length > 1
+      ? `<div class="date-group">
+          <h3 class="date-heading">期間合計(${formatDateJp(dates[0])}〜${formatDateJp(dates[dates.length - 1])})</h3>
+          <ul class="recent-list"><li><span class="oyster-qty">混合 ${grandTotal.mixed} / S ${grandTotal.s} / M ${
+          grandTotal.m
+        }</span><span class="recent-submitted">合計${grandTotalCases}CS(${grandTotalCases * 15}kg)</span></li></ul>
+        </div>`
+      : '';
 
   const detailGroups = dates
     .map((date) => {
@@ -1001,6 +1015,7 @@ function renderOysterSummary(rows, stores) {
   return `
     <div class="card">
       <h2>日別合計(1ケース=15kg)</h2>
+      ${grandTotalHtml}
       <ul class="recent-list">${dailyTotalItems}</ul>
     </div>
     <div class="card">
