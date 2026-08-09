@@ -793,10 +793,6 @@ async function renderStockPage() {
             <select id="stockInM">${qtyOptionsHtml(100)}</select>
           </div>
         </div>
-        <div class="field">
-          <label for="stockInNote">メモ(任意)</label>
-          <input type="text" id="stockInNote" placeholder="例) ◯◯漁協より">
-        </div>
         <button id="stockInSubmitBtn" class="primary">入庫を登録する</button>
         <p id="stockInMsg" class="msg"></p>
       </div>
@@ -912,7 +908,6 @@ async function renderStockPage() {
     const mixedBoxes = Number(document.getElementById('stockInMixed').value) || 0;
     const sBoxes = Number(document.getElementById('stockInS').value) || 0;
     const mBoxes = Number(document.getElementById('stockInM').value) || 0;
-    const note = document.getElementById('stockInNote').value.trim();
     const msgEl = document.getElementById('stockInMsg');
     if (!inDate) {
       msgEl.textContent = '入庫日を選択してください。';
@@ -930,13 +925,12 @@ async function renderStockPage() {
     msgEl.textContent = '登録中…';
     msgEl.className = 'msg';
     try {
-      await saveStockIn({ inDate, mixedBoxes, sBoxes, mBoxes, note });
+      await saveStockIn({ inDate, mixedBoxes, sBoxes, mBoxes, note: '' });
       msgEl.textContent = `✓ ${formatDateJp(inDate)}の入庫を登録しました。`;
       msgEl.className = 'msg msg-success';
       document.getElementById('stockInMixed').value = 0;
       document.getElementById('stockInS').value = 0;
       document.getElementById('stockInM').value = 0;
-      document.getElementById('stockInNote').value = '';
       load();
     } catch (e) {
       console.error(e);
