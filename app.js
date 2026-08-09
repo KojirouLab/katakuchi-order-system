@@ -712,9 +712,9 @@ async function renderStockPage() {
   app.innerHTML = `
     <div class="page wide">
       <h1>牡蠣在庫管理</h1>
-      <p class="hint">仙台のカタクチ商店冷凍庫にある牡蠣の在庫です。出荷は${formatDateJp(
+      <p class="hint">仙台のカタクチ商店冷凍庫にある牡蠣の在庫です。現在庫は${formatDateJp(
         KAKI_STOCK_TRACKING_START_DATE
-      )}以降の各店舗への発注(牡蠣)から自動で差し引かれます。</p>
+      )}〜今日までに確定した各店舗への発注(牡蠣)を自動で差し引いた、今日時点の値です。今日より先の発注はまだ出荷していないため在庫からは引かれません。</p>
       <div id="stockBalance"><p class="hint">読み込み中…</p></div>
       <div class="card">
         <h2>入庫を記録する</h2>
@@ -748,7 +748,7 @@ async function renderStockPage() {
         <ul id="stockInList" class="recent-list"><li class="hint">読み込み中…</li></ul>
       </div>
       <div class="card">
-        <h2>出荷(日別・${formatDateJp(KAKI_STOCK_TRACKING_START_DATE)}以降)</h2>
+        <h2>出荷(日別・${formatDateJp(KAKI_STOCK_TRACKING_START_DATE)}〜今日)</h2>
         <ul id="stockOutList" class="recent-list"><li class="hint">読み込み中…</li></ul>
       </div>
     </div>`;
@@ -764,7 +764,7 @@ async function renderStockPage() {
     try {
       const [stockInRows, shippedRows] = await Promise.all([
         fetchStockInAll(),
-        fetchOysterOrdersRange(KAKI_STOCK_TRACKING_START_DATE, '2099-12-31'),
+        fetchOysterOrdersRange(KAKI_STOCK_TRACKING_START_DATE, todayStr()),
       ]);
 
       const inTotal = { mixed: 0, s: 0, m: 0 };
