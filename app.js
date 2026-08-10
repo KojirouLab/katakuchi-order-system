@@ -6,6 +6,7 @@ const STORES = [
   { slug: 'kaki-mouikko', name: '牡蠣小屋もういっこ', categories: ['oyster'] },
   { slug: 'kaki-higashiichi', name: '牡蠣小屋東一店', categories: ['oyster'] },
   { slug: 'kai-hakko', name: '貝小屋はっこ', categories: ['oyster'] },
+  { slug: 'choinomi-takahashi', name: 'ちょい飲みたかはし', categories: ['oyster'] },
 ];
 
 const PIZZA_STORES = STORES.filter((s) => s.categories.includes('pizza'));
