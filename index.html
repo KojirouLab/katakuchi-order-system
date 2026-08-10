@@ -89,6 +89,81 @@
     margin: 10px 0 0;
     line-height: 1.6;
   }
+  .calendar-header {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 16px;
+    margin-bottom: 8px;
+  }
+  .calendar-header h2 {
+    margin: 0;
+    min-width: 110px;
+    text-align: center;
+  }
+  .cal-nav-btn {
+    width: auto;
+    padding: 6px 14px;
+    font-size: 15px;
+    font-weight: 700;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: #fff;
+    color: var(--primary);
+    cursor: pointer;
+  }
+  .stock-calendar {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 4px;
+  }
+  .cal-weekday {
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--hint);
+    text-align: center;
+    padding: 2px 0 6px;
+  }
+  .cal-cell {
+    min-height: 58px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 3px 4px;
+    font-size: 10.5px;
+    line-height: 1.35;
+  }
+  .cal-cell.cal-empty {
+    border-color: transparent;
+  }
+  .cal-cell.cal-today {
+    border-color: var(--primary);
+    border-width: 2px;
+  }
+  .cal-daynum {
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--text);
+    margin-bottom: 1px;
+  }
+  .cal-in {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 2px;
+    color: var(--success);
+  }
+  .cal-out {
+    color: var(--danger);
+  }
+  .cal-del-btn {
+    border: none;
+    background: none;
+    color: var(--hint);
+    cursor: pointer;
+    font-size: 11px;
+    padding: 0 2px;
+    line-height: 1;
+  }
   .field {
     margin-bottom: 14px;
   }
@@ -431,7 +506,7 @@
 </head>
 <body>
 <div id="app"></div>
-<script src="storage.js?v=202608100855"></script>
-<script src="app.js?v=202608100855"></script>
+<script src="storage.js?v=202608101354"></script>
+<script src="app.js?v=202608101354"></script>
 </body>
 </html>

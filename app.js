@@ -828,28 +828,128 @@ async function renderStockPage() {
         <p id="stockInMsg" class="msg"></p>
       </div>
       <div class="card">
-        <h2>入庫履歴</h2>
-        <ul id="stockInList" class="recent-list"><li class="hint">読み込み中…</li></ul>
-      </div>
-      <div class="card">
-        <h2 id="stockOutHeading">出荷(日別)</h2>
-        <ul id="stockOutList" class="recent-list"><li class="hint">読み込み中…</li></ul>
+        <div class="calendar-header">
+          <button id="calPrevBtn" class="cal-nav-btn" type="button">◀</button>
+          <h2 id="calMonthLabel"></h2>
+          <button id="calNextBtn" class="cal-nav-btn" type="button">▶</button>
+        </div>
+        <p class="hint">緑=入庫、オレンジ=出荷。入庫の「×」をタップすると削除できます。</p>
+        <div id="stockCalendar" class="stock-calendar"><p class="hint">読み込み中…</p></div>
       </div>
     </div>`;
 
   const balanceEl = document.getElementById('stockBalance');
-  const stockInListEl = document.getElementById('stockInList');
-  const stockOutListEl = document.getElementById('stockOutList');
-  const stockOutHeadingEl = document.getElementById('stockOutHeading');
+  const calendarEl = document.getElementById('stockCalendar');
+  const calMonthLabelEl = document.getElementById('calMonthLabel');
+
+  let calendarMonth = new Date(`${todayStr()}T00:00:00Z`);
+  calendarMonth.setUTCDate(1);
 
   document.getElementById('asOfApplyBtn').addEventListener('click', load);
+  document.getElementById('calPrevBtn').addEventListener('click', () => {
+    calendarMonth.setUTCMonth(calendarMonth.getUTCMonth() - 1);
+    loadCalendar();
+  });
+  document.getElementById('calNextBtn').addEventListener('click', () => {
+    calendarMonth.setUTCMonth(calendarMonth.getUTCMonth() + 1);
+    loadCalendar();
+  });
+
+  function compactQty(mixed, s, m) {
+    const parts = [];
+    if (mixed) parts.push(`混${mixed}`);
+    if (s) parts.push(`S${s}`);
+    if (m) parts.push(`M${m}`);
+    return parts.length ? parts.join('/') : '0';
+  }
+
+  async function loadCalendar() {
+    const year = calendarMonth.getUTCFullYear();
+    const month = calendarMonth.getUTCMonth();
+    calMonthLabelEl.textContent = `${year}年${month + 1}月`;
+    calendarEl.innerHTML = '<p class="hint">読み込み中…</p>';
+    const monthStart = `${year}-${String(month + 1).padStart(2, '0')}-01`;
+    const daysInMonth = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
+    const monthEnd = `${year}-${String(month + 1).padStart(2, '0')}-${String(daysInMonth).padStart(2, '0')}`;
+    const shippedRangeStart = monthStart < KAKI_STOCK_TRACKING_START_DATE ? KAKI_STOCK_TRACKING_START_DATE : monthStart;
+    try {
+      const [allStockInRows, shippedRows] = await Promise.all([
+        fetchStockInAll(),
+        shippedRangeStart <= monthEnd ? fetchOysterOrdersRange(shippedRangeStart, monthEnd) : Promise.resolve([]),
+      ]);
+      const stockInByDate = {};
+      allStockInRows
+        .filter((r) => r.in_date >= monthStart && r.in_date <= monthEnd)
+        .forEach((r) => {
+          if (!stockInByDate[r.in_date]) stockInByDate[r.in_date] = [];
+          stockInByDate[r.in_date].push(r);
+        });
+      const shippedByDate = {};
+      shippedRows.forEach((r) => {
+        const key = r.order_date;
+        if (!shippedByDate[key]) shippedByDate[key] = { mixed: 0, s: 0, m: 0 };
+        shippedByDate[key].mixed += Number(r.mixed_boxes) || 0;
+        shippedByDate[key].s += Number(r.s_boxes) || 0;
+        shippedByDate[key].m += Number(r.m_boxes) || 0;
+      });
+
+      const firstWeekday = new Date(`${monthStart}T00:00:00Z`).getUTCDay();
+      const weekdayHeaders = ['日', '月', '火', '水', '木', '金', '土']
+        .map((w) => `<div class="cal-weekday">${w}</div>`)
+        .join('');
+      const leadingBlanks = Array.from({ length: firstWeekday }, () => '<div class="cal-cell cal-empty"></div>').join('');
+      const dayCells = Array.from({ length: daysInMonth }, (_, i) => {
+        const day = i + 1;
+        const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+        const inEntries = stockInByDate[dateStr] || [];
+        const shipped = shippedByDate[dateStr];
+        const shippedTotal = shipped ? shipped.mixed + shipped.s + shipped.m : 0;
+        const inHtml = inEntries
+          .map(
+            (r) =>
+              `<div class="cal-in">入 ${compactQty(
+                Number(r.mixed_boxes),
+                Number(r.s_boxes),
+                Number(r.m_boxes)
+              )}<button class="cal-del-btn" data-id="${r.id}">×</button></div>`
+          )
+          .join('');
+        const outHtml =
+          shippedTotal > 0 ? `<div class="cal-out">出 ${compactQty(shipped.mixed, shipped.s, shipped.m)}</div>` : '';
+        const isToday = dateStr === todayStr();
+        return `<div class="cal-cell${isToday ? ' cal-today' : ''}">
+          <div class="cal-daynum">${day}</div>
+          ${inHtml}
+          ${outHtml}
+        </div>`;
+      }).join('');
+
+      calendarEl.innerHTML = weekdayHeaders + leadingBlanks + dayCells;
+
+      calendarEl.querySelectorAll('.cal-del-btn').forEach((btn) => {
+        btn.addEventListener('click', async () => {
+          if (!confirm('この入庫記録を削除します。よろしいですか？')) return;
+          btn.disabled = true;
+          try {
+            await deleteStockIn(btn.dataset.id);
+            loadCalendar();
+            load();
+          } catch (e) {
+            console.error(e);
+            alert('削除に失敗しました。通信状況を確認してもう一度お試しください。');
+            btn.disabled = false;
+          }
+        });
+      });
+    } catch (e) {
+      console.error(e);
+      calendarEl.innerHTML = '<p class="msg-error">読み込みに失敗しました。</p>';
+    }
+  }
 
   async function load() {
     const asOfDate = document.getElementById('asOfDate').value || todayStr();
     balanceEl.innerHTML = '<p class="hint">読み込み中…</p>';
-    stockInListEl.innerHTML = '<li class="hint">読み込み中…</li>';
-    stockOutListEl.innerHTML = '<li class="hint">読み込み中…</li>';
-    stockOutHeadingEl.textContent = `出荷(日別・${formatDateJp(KAKI_STOCK_TRACKING_START_DATE)}〜${formatDateJp(asOfDate)})`;
     try {
       const [allStockInRows, shippedRows] = await Promise.all([
         fetchStockInAll(),
@@ -893,48 +993,6 @@ async function renderStockPage() {
           <span class="recent-submitted">合計${totalCases}ケース(${totalCases * 15}kg)</span>
           <p class="stock-forecast">${escapeHtml(forecastMsg)}</p>
         </div>`;
-
-      stockInListEl.innerHTML =
-        allStockInRows
-          .map(
-            (r) => `<li>
-              <span class="recent-date">${formatDateJp(r.in_date)}</span>
-              <span class="oyster-qty">混合 ${r.mixed_boxes} / S ${r.s_boxes} / M ${r.m_boxes}</span>
-              ${r.note ? `<span class="recent-submitted">${escapeHtml(r.note)}</span>` : ''}
-              <button class="unconfirm-btn stock-in-delete-btn" data-id="${r.id}">削除</button>
-            </li>`
-          )
-          .join('') || '<li class="hint">入庫記録がありません。</li>';
-
-      const shippedDates = Object.keys(shippedByDate).sort((a, b) => (a < b ? 1 : -1));
-      stockOutListEl.innerHTML =
-        shippedDates
-          .map((date) => {
-            const t = shippedByDate[date];
-            const total = t.mixed + t.s + t.m;
-            if (total === 0) return '';
-            return `<li>
-              <span class="recent-date">${formatDateJp(date)}</span>
-              <span class="oyster-qty">混合 ${t.mixed} / S ${t.s} / M ${t.m}</span>
-            </li>`;
-          })
-          .filter(Boolean)
-          .join('') || '<li class="hint">出荷記録がありません。</li>';
-
-      stockInListEl.querySelectorAll('.stock-in-delete-btn').forEach((btn) => {
-        btn.addEventListener('click', async () => {
-          if (!confirm('この入庫記録を削除します。よろしいですか？')) return;
-          btn.disabled = true;
-          try {
-            await deleteStockIn(btn.dataset.id);
-            load();
-          } catch (e) {
-            console.error(e);
-            alert('削除に失敗しました。通信状況を確認してもう一度お試しください。');
-            btn.disabled = false;
-          }
-        });
-      });
     } catch (e) {
       console.error(e);
       balanceEl.innerHTML = '<p class="msg-error">読み込みに失敗しました。</p>';
@@ -970,6 +1028,7 @@ async function renderStockPage() {
       document.getElementById('stockInS').value = 0;
       document.getElementById('stockInM').value = 0;
       load();
+      loadCalendar();
     } catch (e) {
       console.error(e);
       msgEl.textContent = '登録に失敗しました。通信状況を確認してもう一度お試しください。';
@@ -980,6 +1039,7 @@ async function renderStockPage() {
   });
 
   load();
+  loadCalendar();
 }
 
 function renderTextOrderSummary(rows, stores, options = {}) {
