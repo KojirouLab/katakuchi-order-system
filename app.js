@@ -263,6 +263,8 @@ function route() {
   const shopSlug = params.get('shop');
   const isParent = params.get('parent') === '1';
   const isStock = params.get('stock') === '1';
+  const isAdminMenu = params.get('admin') === '1';
+  if (isAdminMenu) return renderAdminMenuPage();
   if (isParent) return renderParentOrderPage();
   if (isStock) return renderStockPage();
   if (storeSlug) return renderOrderPage(storeSlug);
@@ -311,6 +313,39 @@ function renderHome() {
     </div>`;
 }
 
+// 各ページに置く「管理メニューへ戻る」リンク。管理メニュー(?admin=1)経由で
+// 各ページに来た人が迷わず戻れるようにする。
+const ADMIN_MENU_BACK_LINK = '<p class="admin-back-link"><a href="?admin=1">← 管理メニューへ戻る</a></p>';
+
+function renderAdminMenuPage() {
+  app.innerHTML = `
+    <div class="page">
+      <h1>管理メニュー</h1>
+      <p class="hint">管理者だけが使う集計・管理ページの一覧です。URLを知っている人だけがアクセスできます。</p>
+      <div class="card">
+        <h2>受注集計</h2>
+        <ul class="home-links">
+          <li><a href="?shop=katakuchi">ピザ集計(カタクチ商店)</a></li>
+          <li><a href="?shop=kaki-juchu">牡蠣集計(牡蠣受注店)</a></li>
+          <li><a href="?shop=haiso-juchu">全集計(配送受注店)</a></li>
+          <li><a href="?shop=custom">店舗ごとの集計(店舗・期間を選択)</a></li>
+        </ul>
+      </div>
+      <div class="card">
+        <h2>管理者ページ(締切後も変更・キャンセル可)</h2>
+        <ul class="home-links">
+          <li><a href="?parent=1">管理者ページを開く</a></li>
+        </ul>
+      </div>
+      <div class="card">
+        <h2>牡蠣在庫管理(カタクチ商店冷凍庫)</h2>
+        <ul class="home-links">
+          <li><a href="?stock=1">在庫管理ページを開く</a></li>
+        </ul>
+      </div>
+    </div>`;
+}
+
 function renderError(msg) {
   app.innerHTML = `<div class="page"><div class="card"><p class="msg-error">${escapeHtml(msg)}</p></div></div>`;
 }
@@ -333,6 +368,7 @@ function renderParentOrderPage() {
   app.innerHTML = `
     <div class="page">
       <h1>管理者ページ</h1>
+      ${ADMIN_MENU_BACK_LINK}
       <p class="hint">締切に関係なく、どの店舗の発注でも追加・変更・キャンセルできます。取り扱いにご注意ください。</p>
       <div class="card">
         <div class="field">
@@ -553,6 +589,7 @@ async function renderAdminPage(slug) {
   app.innerHTML = `
     <div class="page wide shop-${slug}">
       <h1>${escapeHtml(shop.name)}</h1>
+      ${ADMIN_MENU_BACK_LINK}
       <p class="hint">${subtitle}</p>
       <div class="card">
         <div class="field">
@@ -671,6 +708,7 @@ async function renderCustomAggregatePage() {
   app.innerHTML = `
     <div class="page wide">
       <h1>店舗ごとの集計</h1>
+      ${ADMIN_MENU_BACK_LINK}
       <p class="hint">集計したい店舗を選び、期間を指定して表示してください。</p>
       <div class="card">
         <div class="field">
@@ -795,6 +833,7 @@ async function renderStockPage() {
   app.innerHTML = `
     <div class="page wide">
       <h1>牡蠣在庫管理</h1>
+      ${ADMIN_MENU_BACK_LINK}
       <p class="hint">仙台のカタクチ商店冷凍庫にある牡蠣の在庫です。指定した日までに確定した入庫・各店舗への発注(牡蠣)から、その時点の在庫を計算します。それより先の発注はまだ出荷していないため在庫からは引かれません。</p>
       <div class="card">
         <div class="field">
