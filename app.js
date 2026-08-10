@@ -779,6 +779,9 @@ async function renderCustomAggregatePage() {
 // この日より前の発注はこの冷凍庫在庫とは無関係(在庫管理開始前の出荷)として扱う。
 const KAKI_STOCK_TRACKING_START_DATE = '2026-08-04';
 
+// 入庫の仕入れ元。増える場合はここに追記する(kaki_stock_in.noteカラムに文字列で保存)。
+const STOCK_SUPPLIERS = ['カタクチ', '拓人'];
+
 // 直近の出荷実績(shippedByDate)から曜日別の平均出荷ペースを求め、現在庫が
 // いつ頃尽きそうかを予測して一言メッセージにする。祝日は出荷が減る傾向を
 // 見込んで日曜相当のペースとして計算する(実績が乏しい祝日固有の平均は
@@ -855,6 +858,12 @@ async function renderStockPage() {
         <div class="field">
           <label for="stockInDate">入庫日</label>
           <input type="date" id="stockInDate" value="${todayStr()}">
+        </div>
+        <div class="field">
+          <label for="stockInSupplier">仕入れ元</label>
+          <select id="stockInSupplier">${STOCK_SUPPLIERS.map((s) => `<option value="${escapeHtml(s)}">${escapeHtml(
+            s
+          )}</option>`).join('')}</select>
         </div>
         <div class="field-row">
           <div class="field">
@@ -957,7 +966,7 @@ async function renderStockPage() {
                 Number(r.mixed_boxes),
                 Number(r.s_boxes),
                 Number(r.m_boxes)
-              )}<button class="cal-del-btn" data-id="${r.id}">×</button></div>`
+              )}${r.note ? `(${escapeHtml(r.note)})` : ''}<button class="cal-del-btn" data-id="${r.id}">×</button></div>`
           )
           .join('');
         const outHtml =
@@ -1050,6 +1059,7 @@ async function renderStockPage() {
     const mixedBoxes = Number(document.getElementById('stockInMixed').value) || 0;
     const sBoxes = Number(document.getElementById('stockInS').value) || 0;
     const mBoxes = Number(document.getElementById('stockInM').value) || 0;
+    const supplier = document.getElementById('stockInSupplier').value;
     const msgEl = document.getElementById('stockInMsg');
     if (!inDate) {
       msgEl.textContent = '入庫日を選択してください。';
@@ -1061,13 +1071,18 @@ async function renderStockPage() {
       msgEl.className = 'msg msg-error';
       return;
     }
-    if (!confirm(`${formatDateJp(inDate)}の入庫(混合${mixedBoxes}/S${sBoxes}/M${mBoxes})を登録します。よろしいですか？`)) return;
+    if (
+      !confirm(
+        `${formatDateJp(inDate)}の入庫(混合${mixedBoxes}/S${sBoxes}/M${mBoxes}・仕入れ元:${supplier})を登録します。よろしいですか？`
+      )
+    )
+      return;
     const btn = document.getElementById('stockInSubmitBtn');
     btn.disabled = true;
     msgEl.textContent = '登録中…';
     msgEl.className = 'msg';
     try {
-      await saveStockIn({ inDate, mixedBoxes, sBoxes, mBoxes, note: '' });
+      await saveStockIn({ inDate, mixedBoxes, sBoxes, mBoxes, note: supplier });
       msgEl.textContent = `✓ ${formatDateJp(inDate)}の入庫を登録しました。`;
       msgEl.className = 'msg msg-success';
       document.getElementById('stockInMixed').value = 0;
