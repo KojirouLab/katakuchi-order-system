@@ -245,7 +245,7 @@ const PRODUCT_DEFS = {
     recentText: (row) =>
       row.no_order
         ? '発注なし'
-        : `混合${row.mixed_boxes}ケース / S${row.s_boxes}ケース / M${row.m_boxes}ケース<span class="recent-kg">混合${
+        : `混${row.mixed_boxes}ケース / S${row.s_boxes}ケース / M${row.m_boxes}ケース<span class="recent-kg">混${
             row.mixed_boxes * 15
           }kg / S${row.s_boxes * 15}kg / M${row.m_boxes * 15}kg</span>`,
     fetchOne: fetchOysterOrder,
@@ -1044,7 +1044,7 @@ async function renderStockPage() {
       balanceEl.innerHTML = `
         <div class="card">
           <h2>${balanceHeading}</h2>
-          <span class="oyster-qty">混合 ${balance.mixed} / S ${balance.s} / M ${balance.m}</span>
+          <span class="oyster-qty">混 ${balance.mixed} / S ${balance.s} / M ${balance.m}</span>
           <span class="recent-submitted">合計${totalCases}ケース(${totalCases * 15}kg)</span>
           <p class="stock-forecast">${escapeHtml(forecastMsg)}</p>
         </div>`;
@@ -1073,7 +1073,7 @@ async function renderStockPage() {
     }
     if (
       !confirm(
-        `${formatDateJp(inDate)}の入庫(混合${mixedBoxes}/S${sBoxes}/M${mBoxes}・仕入れ元:${supplier})を登録します。よろしいですか？`
+        `${formatDateJp(inDate)}の入庫(混${mixedBoxes}/S${sBoxes}/M${mBoxes}・仕入れ元:${supplier})を登録します。よろしいですか？`
       )
     )
       return;
@@ -1183,7 +1183,7 @@ function renderOysterSummary(rows, stores, options = {}) {
       const total = mixed + s + m;
       return `<li><span class="recent-date">${formatDateJp(
         date
-      )}</span><span class="oyster-qty">混合 ${mixed} / S ${s} / M ${m}</span><span class="recent-submitted">合計${total}CS(${
+      )}</span><span class="oyster-qty">混 ${mixed} / S ${s} / M ${m}</span><span class="recent-submitted">合計${total}CS(${
         total * 15
       }kg)</span></li>`;
     })
@@ -1193,7 +1193,7 @@ function renderOysterSummary(rows, stores, options = {}) {
     dates.length > 1
       ? `<div class="card grand-total-card">
           <h2>期間合計(${formatDateJp(dates[0])}〜${formatDateJp(dates[dates.length - 1])})</h2>
-          <span class="oyster-qty">混合 ${grandTotal.mixed} / S ${grandTotal.s} / M ${grandTotal.m}</span>
+          <span class="oyster-qty">混 ${grandTotal.mixed} / S ${grandTotal.s} / M ${grandTotal.m}</span>
           <span class="recent-submitted">合計${grandTotalCases}CS(${grandTotalCases * 15}kg)</span>
         </div>`
       : '';
@@ -1207,7 +1207,7 @@ function renderOysterSummary(rows, stores, options = {}) {
           const total = (Number(r.mixed_boxes) || 0) + (Number(r.s_boxes) || 0) + (Number(r.m_boxes) || 0);
           if (!r.no_order && total === 0) return '';
           const bodyClass = r.no_order ? 'recent-body' : 'oyster-qty';
-          const body = r.no_order ? '発注なし' : `混合 ${r.mixed_boxes} / S ${r.s_boxes} / M ${r.m_boxes}`;
+          const body = r.no_order ? '発注なし' : `混 ${r.mixed_boxes} / S ${r.s_boxes} / M ${r.m_boxes}`;
           const printBtn = showPrint
             ? `<button class="print-btn" data-store="${st.slug}" data-date="${date}" data-storename="${escapeHtml(
                 st.name
@@ -1298,7 +1298,7 @@ function renderOysterTable(rows, stores, options = {}) {
     .join('');
 
   const headerRow1 = stores.map((s) => `<th colspan="4">${escapeHtml(s.name)}</th>`).join('');
-  const headerRow2 = stores.map(() => `<th>混合</th><th>S</th><th>M</th><th>小計</th>`).join('');
+  const headerRow2 = stores.map(() => `<th>混</th><th>S</th><th>M</th><th>小計</th>`).join('');
   const periodLabel = dates.length > 1 ? `${formatDateJp(dates[0])}〜${formatDateJp(dates[dates.length - 1])}` : formatDateJp(dates[0]);
 
   let toolButtons = '';
@@ -1383,7 +1383,7 @@ function buildOysterWorksheetXml(dates, stores, matrix, storeTotals, rowTotals, 
   col = 1;
   const r2cells = [];
   stores.forEach(() => {
-    r2cells.push(xlsxCellStr(colLetter(col), 2, '混合', 1));
+    r2cells.push(xlsxCellStr(colLetter(col), 2, '混', 1));
     col++;
     r2cells.push(xlsxCellStr(colLetter(col), 2, 'S', 1));
     col++;
