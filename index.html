@@ -173,6 +173,38 @@
     padding: 0 2px;
     line-height: 1;
   }
+  .range-calendar .cal-cell {
+    min-height: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 8px 0;
+  }
+  .range-calendar .cal-daynum {
+    margin: 0;
+    font-size: 13px;
+    font-weight: 500;
+  }
+  .cal-cell.cal-pickable {
+    cursor: pointer;
+  }
+  .cal-cell.cal-pickable:hover {
+    border-color: var(--primary);
+  }
+  .cal-cell.cal-range-mid {
+    background: #e3f0ec;
+    border-radius: 0;
+  }
+  .cal-cell.cal-range-start,
+  .cal-cell.cal-range-end {
+    background: var(--primary);
+    border-color: var(--primary);
+  }
+  .cal-cell.cal-range-start .cal-daynum,
+  .cal-cell.cal-range-end .cal-daynum {
+    color: #fff;
+    font-weight: 700;
+  }
   .field {
     margin-bottom: 14px;
   }
@@ -515,7 +547,7 @@
 </head>
 <body>
 <div id="app"></div>
-<script src="storage.js?v=202608102133"></script>
-<script src="app.js?v=202608102133"></script>
+<script src="storage.js?v=202608122039"></script>
+<script src="app.js?v=202608122039"></script>
 </body>
 </html>

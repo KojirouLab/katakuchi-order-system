@@ -590,8 +590,6 @@ async function renderAdminPage(slug) {
   const shop = ADMIN_SHOPS[slug];
   if (!shop) return renderError('無効なURLです。');
   const subtitle = `${shop.categories.map((c) => PRODUCT_DEFS[c].label).join('・')}受注集計`;
-  const defaultFrom = todayStr();
-  const defaultTo = todayStr();
 
   app.innerHTML = `
     <div class="page wide shop-${slug}">
@@ -600,12 +598,14 @@ async function renderAdminPage(slug) {
       <p class="hint">${subtitle}</p>
       <div class="card">
         <div class="field">
-          <label for="fromDate">開始日</label>
-          <input type="date" id="fromDate" value="${defaultFrom}">
-        </div>
-        <div class="field">
-          <label for="toDate">終了日</label>
-          <input type="date" id="toDate" value="${defaultTo}">
+          <label>期間を選択</label>
+          <p class="hint" id="rangeLabel"></p>
+          <div class="calendar-header">
+            <button id="rangeCalPrevBtn" class="cal-nav-btn" type="button">◀</button>
+            <h2 id="rangeCalMonthLabel"></h2>
+            <button id="rangeCalNextBtn" class="cal-nav-btn" type="button">▶</button>
+          </div>
+          <div id="rangeCalendar" class="stock-calendar range-calendar"></div>
         </div>
         ${
           slug === 'katakuchi'
@@ -620,11 +620,92 @@ async function renderAdminPage(slug) {
       <div id="summary"></div>
     </div>`;
 
+  const rangeCalendarEl = document.getElementById('rangeCalendar');
+  const rangeCalMonthLabelEl = document.getElementById('rangeCalMonthLabel');
+  const rangeLabelEl = document.getElementById('rangeLabel');
+
+  let rangeStart = todayStr();
+  let rangeEnd = todayStr();
+  let selectingEnd = false;
+  let calMonth = new Date(`${todayStr()}T00:00:00Z`);
+  calMonth.setUTCDate(1);
+
+  function updateRangeLabel() {
+    rangeLabelEl.textContent =
+      rangeStart === rangeEnd
+        ? `${formatDateJp(rangeStart)}の1日間`
+        : `${formatDateJp(rangeStart)} 〜 ${formatDateJp(rangeEnd)}`;
+  }
+
+  function renderRangeCalendar() {
+    const year = calMonth.getUTCFullYear();
+    const month = calMonth.getUTCMonth();
+    rangeCalMonthLabelEl.textContent = `${year}年${month + 1}月`;
+    const monthStart = `${year}-${String(month + 1).padStart(2, '0')}-01`;
+    const daysInMonth = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
+    const firstWeekday = new Date(`${monthStart}T00:00:00Z`).getUTCDay();
+    const weekdayHeaders = ['日', '月', '火', '水', '木', '金', '土']
+      .map((w) => `<div class="cal-weekday">${w}</div>`)
+      .join('');
+    const leadingBlanks = Array.from({ length: firstWeekday }, () => '<div class="cal-cell cal-empty"></div>').join('');
+    const dayCells = Array.from({ length: daysInMonth }, (_, i) => {
+      const day = i + 1;
+      const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+      const isStart = dateStr === rangeStart;
+      const isEnd = dateStr === rangeEnd;
+      const isMid = dateStr > rangeStart && dateStr < rangeEnd;
+      const isToday = dateStr === todayStr();
+      const cls = [
+        'cal-cell',
+        'cal-pickable',
+        isToday ? 'cal-today' : '',
+        isStart ? 'cal-range-start' : '',
+        isEnd ? 'cal-range-end' : '',
+        isMid ? 'cal-range-mid' : '',
+      ]
+        .filter(Boolean)
+        .join(' ');
+      return `<div class="${cls}" data-date="${dateStr}"><div class="cal-daynum">${day}</div></div>`;
+    }).join('');
+    rangeCalendarEl.innerHTML = weekdayHeaders + leadingBlanks + dayCells;
+    rangeCalendarEl.querySelectorAll('.cal-pickable').forEach((cell) => {
+      cell.addEventListener('click', () => {
+        const dateStr = cell.dataset.date;
+        if (!selectingEnd) {
+          rangeStart = dateStr;
+          rangeEnd = dateStr;
+          selectingEnd = true;
+        } else if (dateStr < rangeStart) {
+          rangeEnd = rangeStart;
+          rangeStart = dateStr;
+          selectingEnd = false;
+        } else {
+          rangeEnd = dateStr;
+          selectingEnd = false;
+        }
+        updateRangeLabel();
+        renderRangeCalendar();
+      });
+    });
+  }
+
+  document.getElementById('rangeCalPrevBtn').addEventListener('click', () => {
+    calMonth.setUTCMonth(calMonth.getUTCMonth() - 1);
+    renderRangeCalendar();
+  });
+  document.getElementById('rangeCalNextBtn').addEventListener('click', () => {
+    calMonth.setUTCMonth(calMonth.getUTCMonth() + 1);
+    renderRangeCalendar();
+  });
+
+  updateRangeLabel();
+  renderRangeCalendar();
+
   document.getElementById('applyBtn').addEventListener('click', load);
 
   async function load() {
-    const from = document.getElementById('fromDate').value;
-    const to = document.getElementById('toDate').value;
+    const from = rangeStart;
+    const to = rangeEnd;
     const summaryEl = document.getElementById('summary');
     summaryEl.innerHTML = '<p class="hint">読み込み中…</p>';
     const showOysterToo = slug === 'katakuchi' && document.getElementById('showOysterToo').checked;
