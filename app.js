@@ -675,13 +675,15 @@ async function renderAdminPage(slug) {
           rangeStart = dateStr;
           rangeEnd = dateStr;
           selectingEnd = true;
-        } else if (dateStr < rangeStart) {
-          rangeEnd = rangeStart;
-          rangeStart = dateStr;
-          selectingEnd = false;
         } else {
-          rangeEnd = dateStr;
+          if (dateStr < rangeStart) {
+            rangeEnd = rangeStart;
+            rangeStart = dateStr;
+          } else {
+            rangeEnd = dateStr;
+          }
           selectingEnd = false;
+          load();
         }
         updateRangeLabel();
         renderRangeCalendar();
