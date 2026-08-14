@@ -966,12 +966,40 @@ async function renderStockPage() {
         <p id="stockInMsg" class="msg"></p>
       </div>
       <div class="card">
+        <h2>自社使用を記録する</h2>
+        <p class="hint">イベントでの使用など、店舗への発注以外で在庫を消費した分をここに記録すると、在庫残高に反映されます。</p>
+        <div class="field">
+          <label for="stockOutDate">使用日</label>
+          <input type="date" id="stockOutDate" value="${todayStr()}">
+        </div>
+        <div class="field">
+          <label for="stockOutNote">用途(任意)</label>
+          <input type="text" id="stockOutNote" placeholder="例: 〇〇イベント、試食など">
+        </div>
+        <div class="field-row">
+          <div class="field">
+            <label for="stockOutMixed">混合(ケース)</label>
+            <select id="stockOutMixed">${qtyOptionsHtml(100)}</select>
+          </div>
+          <div class="field">
+            <label for="stockOutS">Sサイズ(ケース)</label>
+            <select id="stockOutS">${qtyOptionsHtml(100)}</select>
+          </div>
+          <div class="field">
+            <label for="stockOutM">Mサイズ(ケース)</label>
+            <select id="stockOutM">${qtyOptionsHtml(100)}</select>
+          </div>
+        </div>
+        <button id="stockOutSubmitBtn" class="primary">自社使用を登録する</button>
+        <p id="stockOutMsg" class="msg"></p>
+      </div>
+      <div class="card">
         <div class="calendar-header">
           <button id="calPrevBtn" class="cal-nav-btn" type="button">◀</button>
           <h2 id="calMonthLabel"></h2>
           <button id="calNextBtn" class="cal-nav-btn" type="button">▶</button>
         </div>
-        <p class="hint">緑=入庫、オレンジ=出荷。入庫の「×」をタップすると削除できます。</p>
+        <p class="hint">緑=入庫、オレンジ=店舗への出荷、紫=自社使用。入庫・自社使用の「×」をタップすると削除できます。</p>
         <div id="stockCalendar" class="stock-calendar"><p class="hint">読み込み中…</p></div>
       </div>
     </div>`;
@@ -1011,9 +1039,10 @@ async function renderStockPage() {
     const monthEnd = `${year}-${String(month + 1).padStart(2, '0')}-${String(daysInMonth).padStart(2, '0')}`;
     const shippedRangeStart = monthStart < KAKI_STOCK_TRACKING_START_DATE ? KAKI_STOCK_TRACKING_START_DATE : monthStart;
     try {
-      const [allStockInRows, shippedRows] = await Promise.all([
+      const [allStockInRows, shippedRows, internalOutRows] = await Promise.all([
         fetchStockInAll(),
         shippedRangeStart <= monthEnd ? fetchOysterOrdersRange(shippedRangeStart, monthEnd) : Promise.resolve([]),
+        fetchStockOutInternalAll(),
       ]);
       const stockInByDate = {};
       allStockInRows
@@ -1021,6 +1050,13 @@ async function renderStockPage() {
         .forEach((r) => {
           if (!stockInByDate[r.in_date]) stockInByDate[r.in_date] = [];
           stockInByDate[r.in_date].push(r);
+        });
+      const internalOutByDate = {};
+      internalOutRows
+        .filter((r) => r.out_date >= monthStart && r.out_date <= monthEnd)
+        .forEach((r) => {
+          if (!internalOutByDate[r.out_date]) internalOutByDate[r.out_date] = [];
+          internalOutByDate[r.out_date].push(r);
         });
       const shippedByDate = {};
       shippedRows.forEach((r) => {
@@ -1054,11 +1090,23 @@ async function renderStockPage() {
           .join('');
         const outHtml =
           shippedTotal > 0 ? `<div class="cal-out">出 ${compactQty(shipped.mixed, shipped.s, shipped.m)}</div>` : '';
+        const useEntries = internalOutByDate[dateStr] || [];
+        const useHtml = useEntries
+          .map(
+            (r) =>
+              `<div class="cal-use">使 ${compactQty(
+                Number(r.mixed_boxes),
+                Number(r.s_boxes),
+                Number(r.m_boxes)
+              )}${r.note ? `(${escapeHtml(r.note)})` : ''}<button class="cal-deluse-btn" data-id="${r.id}">×</button></div>`
+          )
+          .join('');
         const isToday = dateStr === todayStr();
         return `<div class="cal-cell${isToday ? ' cal-today' : ''}">
           <div class="cal-daynum">${day}</div>
           ${inHtml}
           ${outHtml}
+          ${useHtml}
         </div>`;
       }).join('');
 
@@ -1079,6 +1127,21 @@ async function renderStockPage() {
           }
         });
       });
+      calendarEl.querySelectorAll('.cal-deluse-btn').forEach((btn) => {
+        btn.addEventListener('click', async () => {
+          if (!confirm('この自社使用の記録を削除します。よろしいですか？')) return;
+          btn.disabled = true;
+          try {
+            await deleteStockOutInternal(btn.dataset.id);
+            loadCalendar();
+            load();
+          } catch (e) {
+            console.error(e);
+            alert('削除に失敗しました。通信状況を確認してもう一度お試しください。');
+            btn.disabled = false;
+          }
+        });
+      });
     } catch (e) {
       console.error(e);
       calendarEl.innerHTML = '<p class="msg-error">読み込みに失敗しました。</p>';
@@ -1089,11 +1152,15 @@ async function renderStockPage() {
     const asOfDate = document.getElementById('asOfDate').value || todayStr();
     balanceEl.innerHTML = '<p class="hint">読み込み中…</p>';
     try {
-      const [allStockInRows, shippedRows] = await Promise.all([
+      const [allStockInRows, shippedRows, internalOutRows] = await Promise.all([
         fetchStockInAll(),
         fetchOysterOrdersRange(KAKI_STOCK_TRACKING_START_DATE, asOfDate),
+        fetchStockOutInternalAll(),
       ]);
       const stockInRowsUpToDate = allStockInRows.filter((r) => r.in_date <= asOfDate);
+      const internalOutRowsUpToDate = internalOutRows.filter(
+        (r) => r.out_date <= asOfDate && r.out_date >= KAKI_STOCK_TRACKING_START_DATE
+      );
 
       const inTotal = { mixed: 0, s: 0, m: 0 };
       stockInRowsUpToDate.forEach((r) => {
@@ -1104,6 +1171,13 @@ async function renderStockPage() {
       const shippedByDate = {};
       shippedRows.forEach((r) => {
         const key = r.order_date;
+        if (!shippedByDate[key]) shippedByDate[key] = { mixed: 0, s: 0, m: 0 };
+        shippedByDate[key].mixed += Number(r.mixed_boxes) || 0;
+        shippedByDate[key].s += Number(r.s_boxes) || 0;
+        shippedByDate[key].m += Number(r.m_boxes) || 0;
+      });
+      internalOutRowsUpToDate.forEach((r) => {
+        const key = r.out_date;
         if (!shippedByDate[key]) shippedByDate[key] = { mixed: 0, s: 0, m: 0 };
         shippedByDate[key].mixed += Number(r.mixed_boxes) || 0;
         shippedByDate[key].s += Number(r.s_boxes) || 0;
@@ -1171,6 +1245,54 @@ async function renderStockPage() {
       document.getElementById('stockInMixed').value = 0;
       document.getElementById('stockInS').value = 0;
       document.getElementById('stockInM').value = 0;
+      load();
+      loadCalendar();
+    } catch (e) {
+      console.error(e);
+      msgEl.textContent = '登録に失敗しました。通信状況を確認してもう一度お試しください。';
+      msgEl.className = 'msg msg-error';
+    } finally {
+      btn.disabled = false;
+    }
+  });
+
+  document.getElementById('stockOutSubmitBtn').addEventListener('click', async () => {
+    const outDate = document.getElementById('stockOutDate').value;
+    const mixedBoxes = Number(document.getElementById('stockOutMixed').value) || 0;
+    const sBoxes = Number(document.getElementById('stockOutS').value) || 0;
+    const mBoxes = Number(document.getElementById('stockOutM').value) || 0;
+    const note = document.getElementById('stockOutNote').value.trim();
+    const msgEl = document.getElementById('stockOutMsg');
+    if (!outDate) {
+      msgEl.textContent = '使用日を選択してください。';
+      msgEl.className = 'msg msg-error';
+      return;
+    }
+    if (mixedBoxes === 0 && sBoxes === 0 && mBoxes === 0) {
+      msgEl.textContent = 'ケース数を入力してください。';
+      msgEl.className = 'msg msg-error';
+      return;
+    }
+    if (
+      !confirm(
+        `${formatDateJp(outDate)}の自社使用(混${mixedBoxes}/S${sBoxes}/M${mBoxes}${
+          note ? `・用途:${note}` : ''
+        })を登録します。よろしいですか？`
+      )
+    )
+      return;
+    const btn = document.getElementById('stockOutSubmitBtn');
+    btn.disabled = true;
+    msgEl.textContent = '登録中…';
+    msgEl.className = 'msg';
+    try {
+      await saveStockOutInternal({ outDate, mixedBoxes, sBoxes, mBoxes, note });
+      msgEl.textContent = `✓ ${formatDateJp(outDate)}の自社使用を登録しました。`;
+      msgEl.className = 'msg msg-success';
+      document.getElementById('stockOutMixed').value = 0;
+      document.getElementById('stockOutS').value = 0;
+      document.getElementById('stockOutM').value = 0;
+      document.getElementById('stockOutNote').value = '';
       load();
       loadCalendar();
     } catch (e) {

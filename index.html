@@ -23,6 +23,7 @@
     --success: #1e7a3d;
     --warning: #9a6400;
     --warning-bg: #fbf1dc;
+    --internal: #6b3fa0;
   }
   * { box-sizing: border-box; }
   body {
@@ -164,7 +165,15 @@
   .cal-out {
     color: var(--danger);
   }
-  .cal-del-btn {
+  .cal-use {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 2px;
+    color: var(--internal);
+  }
+  .cal-del-btn,
+  .cal-deluse-btn {
     border: none;
     background: none;
     color: var(--hint);
@@ -547,7 +556,7 @@
 </head>
 <body>
 <div id="app"></div>
-<script src="storage.js?v=202608122048"></script>
-<script src="app.js?v=202608122048"></script>
+<script src="storage.js?v=202608140940"></script>
+<script src="app.js?v=202608140940"></script>
 </body>
 </html>
