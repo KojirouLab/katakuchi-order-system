@@ -863,7 +863,7 @@ async function renderCustomAggregatePage() {
 const KAKI_STOCK_TRACKING_START_DATE = '2026-08-04';
 
 // 入庫の仕入れ元。増える場合はここに追記する(kaki_stock_in.noteカラムに文字列で保存)。
-const STOCK_SUPPLIERS = ['カタクチ', '拓人'];
+const STOCK_SUPPLIERS = ['カタクチ', '拓人', '勝又酒店'];
 
 // 直近の出荷実績(shippedByDate)から曜日別の平均出荷ペースを求め、現在庫が
 // いつ頃尽きそうかを予測して一言メッセージにする。祝日は出荷が減る傾向を
