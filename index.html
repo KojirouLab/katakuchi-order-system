@@ -127,6 +127,61 @@
     grid-template-columns: repeat(7, 1fr);
     gap: 4px;
   }
+  .view-toggle {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 12px;
+  }
+  .view-toggle-btn {
+    flex: 1;
+    padding: 9px 6px;
+    font-size: 13px;
+    font-weight: 700;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: #fff;
+    color: var(--hint);
+    cursor: pointer;
+  }
+  .view-toggle-btn.active {
+    border-color: var(--primary);
+    color: var(--primary);
+    background: #e3f0ec;
+  }
+  .stock-calendar > .cal-list-wrap {
+    grid-column: 1 / -1;
+  }
+  .cal-list-wrap {
+    overflow-x: auto;
+  }
+  .cal-list-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+  }
+  .cal-list-table th,
+  .cal-list-table td {
+    border-bottom: 1px solid var(--border);
+    padding: 6px 6px;
+    text-align: left;
+    vertical-align: top;
+    white-space: nowrap;
+  }
+  .cal-list-table th {
+    color: var(--hint);
+    font-weight: 700;
+    font-size: 11px;
+  }
+  .cal-list-table td {
+    white-space: normal;
+  }
+  .cal-list-date {
+    font-weight: 700;
+    white-space: nowrap !important;
+  }
+  .cal-list-today td {
+    background: #e3f0ec;
+  }
   .cal-weekday {
     font-size: 11px;
     font-weight: 700;
@@ -597,7 +652,7 @@
 </head>
 <body>
 <div id="app"></div>
-<script src="storage.js?v=202608171432"></script>
-<script src="app.js?v=202608171432"></script>
+<script src="storage.js?v=202608171444"></script>
+<script src="app.js?v=202608171444"></script>
 </body>
 </html>

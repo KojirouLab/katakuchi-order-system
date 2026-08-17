@@ -1018,12 +1018,16 @@ async function renderStockPage() {
         <p id="stockOutMsg" class="msg"></p>
       </div>
       <div class="card">
+        <div class="view-toggle">
+          <button id="viewCalendarBtn" class="view-toggle-btn active" type="button">📅 カレンダー表示</button>
+          <button id="viewListBtn" class="view-toggle-btn" type="button">📋 一覧表示</button>
+        </div>
         <div class="calendar-header">
           <button id="calPrevBtn" class="cal-nav-btn" type="button">◀</button>
           <h2 id="calMonthLabel"></h2>
           <button id="calNextBtn" class="cal-nav-btn" type="button">▶</button>
         </div>
-        <p class="hint">緑=入庫、オレンジ=店舗への出荷(自動計算)、紫=手動で記録した出庫。入庫・出庫の「×」をタップすると削除できます。オレンジ・紫の出庫表示自体をタップすると、上の「出庫を記録する」フォームにその内容が読み込まれ、仕入れ先の記録・修正ができます。赤字の「⚠受注と差」は、受注システムの出荷数と店舗配達分として記録した仕入れ先内訳が合っていない日に表示されます(タップすると不足分がフォームに入力された状態で開きます)。</p>
+        <p class="hint">緑=入庫、オレンジ=店舗への出荷(自動計算)、紫=手動で記録した出庫。入庫・出庫の「×」をタップすると削除できます。オレンジ・紫の出庫表示自体をタップすると、上の「出庫を記録する」フォームにその内容が読み込まれ、仕入れ先の記録・修正ができます。赤字の「⚠受注と差」は、受注システムの出荷数と店舗配達分として記録した仕入れ先内訳が合っていない日に表示されます(タップすると不足分がフォームに入力された状態で開きます)。一覧表示では、その月のうち入出庫があった日だけを表形式で並べます。</p>
         <div id="stockCalendar" class="stock-calendar"><p class="hint">読み込み中…</p></div>
       </div>
     </div>`;
@@ -1034,6 +1038,7 @@ async function renderStockPage() {
 
   let calendarMonth = new Date(`${todayStr()}T00:00:00Z`);
   calendarMonth.setUTCDate(1);
+  let stockView = 'calendar'; // 'calendar' or 'list'
 
   document.getElementById('asOfApplyBtn').addEventListener('click', load);
   document.getElementById('calPrevBtn').addEventListener('click', () => {
@@ -1042,6 +1047,20 @@ async function renderStockPage() {
   });
   document.getElementById('calNextBtn').addEventListener('click', () => {
     calendarMonth.setUTCMonth(calendarMonth.getUTCMonth() + 1);
+    loadCalendar();
+  });
+  document.getElementById('viewCalendarBtn').addEventListener('click', () => {
+    if (stockView === 'calendar') return;
+    stockView = 'calendar';
+    document.getElementById('viewCalendarBtn').classList.add('active');
+    document.getElementById('viewListBtn').classList.remove('active');
+    loadCalendar();
+  });
+  document.getElementById('viewListBtn').addEventListener('click', () => {
+    if (stockView === 'list') return;
+    stockView = 'list';
+    document.getElementById('viewListBtn').classList.add('active');
+    document.getElementById('viewCalendarBtn').classList.remove('active');
     loadCalendar();
   });
 
@@ -1167,7 +1186,7 @@ async function renderStockPage() {
         .map((w) => `<div class="cal-weekday">${w}</div>`)
         .join('');
       const leadingBlanks = Array.from({ length: firstWeekday }, () => '<div class="cal-cell cal-empty"></div>').join('');
-      const dayCells = Array.from({ length: daysInMonth }, (_, i) => {
+      const dayInfos = Array.from({ length: daysInMonth }, (_, i) => {
         const day = i + 1;
         const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
         const inEntries = stockInByDate[dateStr] || [];
@@ -1240,16 +1259,45 @@ async function renderStockPage() {
         }
 
         const isToday = dateStr === todayStr();
-        return `<div class="cal-cell${isToday ? ' cal-today' : ''}">
-          <div class="cal-daynum">${day}</div>
-          ${inHtml}
-          ${outHtml}
-          ${useHtml}
-          ${warnHtml}
-        </div>`;
-      }).join('');
+        const hasAny = !!(inHtml || outHtml || useHtml || warnHtml);
+        return { day, dateStr, isToday, hasAny, inHtml, outHtml, useHtml, warnHtml };
+      });
 
-      calendarEl.innerHTML = weekdayHeaders + leadingBlanks + dayCells;
+      if (stockView === 'list') {
+        const rows = dayInfos.filter((d) => d.hasAny);
+        const weekdayLabels = ['日', '月', '火', '水', '木', '金', '土'];
+        const rowsHtml = rows.length
+          ? rows
+              .map((d) => {
+                const dow = new Date(`${d.dateStr}T00:00:00Z`).getUTCDay();
+                return `<tr class="${d.isToday ? 'cal-list-today' : ''}">
+                  <td class="cal-list-date">${d.day}日(${weekdayLabels[dow]})</td>
+                  <td>${d.inHtml || ''}</td>
+                  <td>${d.outHtml || ''}</td>
+                  <td>${d.useHtml || ''}</td>
+                  <td>${d.warnHtml || ''}</td>
+                </tr>`;
+              })
+              .join('')
+          : `<tr><td colspan="5" class="hint">この月は入出庫の記録がありません。</td></tr>`;
+        calendarEl.innerHTML = `<div class="cal-list-wrap"><table class="cal-list-table">
+          <thead><tr><th>日付</th><th>入庫</th><th>出荷(自動)</th><th>手動出庫</th><th>差分</th></tr></thead>
+          <tbody>${rowsHtml}</tbody>
+        </table></div>`;
+      } else {
+        const dayCells = dayInfos
+          .map(
+            (d) => `<div class="cal-cell${d.isToday ? ' cal-today' : ''}">
+          <div class="cal-daynum">${d.day}</div>
+          ${d.inHtml}
+          ${d.outHtml}
+          ${d.useHtml}
+          ${d.warnHtml}
+        </div>`
+          )
+          .join('');
+        calendarEl.innerHTML = weekdayHeaders + leadingBlanks + dayCells;
+      }
 
       calendarEl.querySelectorAll('.cal-del-btn').forEach((btn) => {
         btn.addEventListener('click', async () => {
