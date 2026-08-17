@@ -865,6 +865,9 @@ const KAKI_STOCK_TRACKING_START_DATE = '2026-08-04';
 // 入庫の仕入れ元。増える場合はここに追記する(kaki_stock_in.noteカラムに文字列で保存)。
 const STOCK_SUPPLIERS = ['カタクチ', '拓人', '勝又商店'];
 
+// 出庫記録フォームで最初から選ばれている仕入れ先。通常の出庫は拓人の牡蠣がほとんどのため。
+const STOCK_OUT_DEFAULT_SUPPLIER = '拓人';
+
 // 直近の出荷実績(shippedByDate)から曜日別の平均出荷ペースを求め、現在庫が
 // いつ頃尽きそうかを予測して一言メッセージにする。祝日は出荷が減る傾向を
 // 見込んで日曜相当のペースとして計算する(実績が乏しい祝日固有の平均は
@@ -974,9 +977,15 @@ async function renderStockPage() {
         </div>
         <div class="field">
           <label for="stockOutSupplier">どこの牡蠣か(仕入れ先)</label>
-          <select id="stockOutSupplier">${STOCK_SUPPLIERS.map((s) => `<option value="${escapeHtml(s)}">${escapeHtml(
-            s
-          )}</option>`).join('')}</select>
+          <select id="stockOutSupplier">${[...STOCK_SUPPLIERS]
+            .sort((a, b) => (a === STOCK_OUT_DEFAULT_SUPPLIER ? -1 : b === STOCK_OUT_DEFAULT_SUPPLIER ? 1 : 0))
+            .map(
+              (s) =>
+                `<option value="${escapeHtml(s)}"${s === STOCK_OUT_DEFAULT_SUPPLIER ? ' selected' : ''}>${escapeHtml(
+                  s
+                )}</option>`
+            )
+            .join('')}</select>
         </div>
         <div class="field">
           <label for="stockOutPurpose">用途</label>
