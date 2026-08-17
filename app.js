@@ -1336,26 +1336,42 @@ async function renderStockPage() {
         }
 
         // 一覧表示専用: その日の手動出庫を「店舗配送/自社使用」の合計と、仕入れ先ごとの合計に分けて
-        // コンパクトに表示する(店舗配送が何個、自社使用が何個、仕入れ先ごとに何個、合計何個)。
+        // サイズ(混合/S/M)入りでコンパクトに表示する。
         let breakdownHtml = '';
         if (useEntries.length) {
-          const purposeTotal = { store: 0, self: 0 };
+          const zero = () => ({ mixed: 0, s: 0, m: 0 });
+          const addQty = (acc, r) => {
+            acc.mixed += Number(r.mixed_boxes) || 0;
+            acc.s += Number(r.s_boxes) || 0;
+            acc.m += Number(r.m_boxes) || 0;
+          };
+          const purposeTotal = { store: zero(), self: zero() };
           const perSupplierTotal = {};
           STOCK_SUPPLIERS.forEach((s) => {
-            perSupplierTotal[s] = 0;
+            perSupplierTotal[s] = zero();
           });
           useEntries.forEach((r) => {
-            const boxes = (Number(r.mixed_boxes) || 0) + (Number(r.s_boxes) || 0) + (Number(r.m_boxes) || 0);
-            purposeTotal[r.purpose === 'store' ? 'store' : 'self'] += boxes;
-            if (perSupplierTotal[r.supplier] !== undefined) perSupplierTotal[r.supplier] += boxes;
+            addQty(purposeTotal[r.purpose === 'store' ? 'store' : 'self'], r);
+            if (perSupplierTotal[r.supplier]) addQty(perSupplierTotal[r.supplier], r);
           });
-          const grandTotal = purposeTotal.store + purposeTotal.self;
-          const supplierParts = STOCK_SUPPLIERS.filter((s) => perSupplierTotal[s] > 0).map(
-            (s) => `${escapeHtml(s)}${perSupplierTotal[s]}`
-          );
-          breakdownHtml = `<div class="cal-breakdown">店舗配送${purposeTotal.store}・自社使用${purposeTotal.self}(計${grandTotal})${
-            supplierParts.length ? `<br>${supplierParts.join('・')}` : ''
-          }</div>`;
+          const grandTotal = {
+            mixed: purposeTotal.store.mixed + purposeTotal.self.mixed,
+            s: purposeTotal.store.s + purposeTotal.self.s,
+            m: purposeTotal.store.m + purposeTotal.self.m,
+          };
+          const supplierParts = STOCK_SUPPLIERS.filter((s) => {
+            const b = perSupplierTotal[s];
+            return b.mixed || b.s || b.m;
+          }).map((s) => `${escapeHtml(s)}${compactQty(perSupplierTotal[s].mixed, perSupplierTotal[s].s, perSupplierTotal[s].m)}`);
+          breakdownHtml = `<div class="cal-breakdown">店舗配送${compactQty(
+            purposeTotal.store.mixed,
+            purposeTotal.store.s,
+            purposeTotal.store.m
+          )}・自社使用${compactQty(purposeTotal.self.mixed, purposeTotal.self.s, purposeTotal.self.m)}(計${compactQty(
+            grandTotal.mixed,
+            grandTotal.s,
+            grandTotal.m
+          )})${supplierParts.length ? `<br>${supplierParts.join('・')}` : ''}</div>`;
         }
 
         const isToday = dateStr === todayStr();
@@ -1594,33 +1610,57 @@ async function renderStockPage() {
         return `<li><span class="recent-store">${escapeHtml(s)}</span><span class="oyster-qty">混 ${b.mixed} / S ${b.s} / M ${b.m}</span></li>`;
       }).join('');
 
-      // 仕入れ先別・用途別(店舗配送/自社使用)の出庫内訳(ケース数の合計、混合+S+M合算)。
+      // 仕入れ先別・用途別(店舗配送/自社使用)の出庫内訳(混合/S/Mのサイズ別)。
+      const zeroQty = () => ({ mixed: 0, s: 0, m: 0 });
+      const addQtyTo = (acc, r) => {
+        acc.mixed += Number(r.mixed_boxes) || 0;
+        acc.s += Number(r.s_boxes) || 0;
+        acc.m += Number(r.m_boxes) || 0;
+      };
       const supplierPurposeBreakdown = {};
       STOCK_SUPPLIERS.forEach((s) => {
-        supplierPurposeBreakdown[s] = { store: 0, self: 0 };
+        supplierPurposeBreakdown[s] = { store: zeroQty(), self: zeroQty() };
       });
-      const unknownSupplierBreakdown = { store: 0, self: 0 };
+      const unknownSupplierBreakdown = { store: zeroQty(), self: zeroQty() };
       internalOutRowsUpToDate.forEach((r) => {
-        const boxes = (Number(r.mixed_boxes) || 0) + (Number(r.s_boxes) || 0) + (Number(r.m_boxes) || 0);
         const bucket = r.purpose === 'store' ? 'store' : 'self';
         if (supplierPurposeBreakdown[r.supplier]) {
-          supplierPurposeBreakdown[r.supplier][bucket] += boxes;
+          addQtyTo(supplierPurposeBreakdown[r.supplier][bucket], r);
         } else {
-          unknownSupplierBreakdown[bucket] += boxes;
+          addQtyTo(unknownSupplierBreakdown[bucket], r);
         }
       });
+      const sumQty = (a, b) => ({ mixed: a.mixed + b.mixed, s: a.s + b.s, m: a.m + b.m });
+      const qtyHasAny = (q) => q.mixed || q.s || q.m;
       const breakdownRows = STOCK_SUPPLIERS.map((s) => {
         const b = supplierPurposeBreakdown[s];
-        return `<tr><td>${escapeHtml(s)}</td><td>${b.store}</td><td>${b.self}</td><td>${b.store + b.self}</td></tr>`;
+        const total = sumQty(b.store, b.self);
+        return `<tr><td>${escapeHtml(s)}</td><td>${compactQty(b.store.mixed, b.store.s, b.store.m)}</td><td>${compactQty(
+          b.self.mixed,
+          b.self.s,
+          b.self.m
+        )}</td><td>${compactQty(total.mixed, total.s, total.m)}</td></tr>`;
       }).join('');
-      const unknownTotal = unknownSupplierBreakdown.store + unknownSupplierBreakdown.self;
-      const unknownRow = unknownTotal
-        ? `<tr class="supplier-breakdown-unknown"><td>仕入れ先未記録</td><td>${unknownSupplierBreakdown.store}</td><td>${unknownSupplierBreakdown.self}</td><td>${unknownTotal}</td></tr>`
+      const unknownTotal = sumQty(unknownSupplierBreakdown.store, unknownSupplierBreakdown.self);
+      const unknownRow = qtyHasAny(unknownTotal)
+        ? `<tr class="supplier-breakdown-unknown"><td>仕入れ先未記録</td><td>${compactQty(
+            unknownSupplierBreakdown.store.mixed,
+            unknownSupplierBreakdown.store.s,
+            unknownSupplierBreakdown.store.m
+          )}</td><td>${compactQty(
+            unknownSupplierBreakdown.self.mixed,
+            unknownSupplierBreakdown.self.s,
+            unknownSupplierBreakdown.self.m
+          )}</td><td>${compactQty(unknownTotal.mixed, unknownTotal.s, unknownTotal.m)}</td></tr>`
         : '';
-      const grandStore =
-        STOCK_SUPPLIERS.reduce((sum, s) => sum + supplierPurposeBreakdown[s].store, 0) + unknownSupplierBreakdown.store;
-      const grandSelf =
-        STOCK_SUPPLIERS.reduce((sum, s) => sum + supplierPurposeBreakdown[s].self, 0) + unknownSupplierBreakdown.self;
+      const grandStore = STOCK_SUPPLIERS.reduce(
+        (sum, s) => sumQty(sum, supplierPurposeBreakdown[s].store),
+        zeroQty()
+      );
+      const grandStoreAll = sumQty(grandStore, unknownSupplierBreakdown.store);
+      const grandSelf = STOCK_SUPPLIERS.reduce((sum, s) => sumQty(sum, supplierPurposeBreakdown[s].self), zeroQty());
+      const grandSelfAll = sumQty(grandSelf, unknownSupplierBreakdown.self);
+      const grandAll = sumQty(grandStoreAll, grandSelfAll);
 
       balanceEl.innerHTML = `
         <div class="card">
@@ -1636,14 +1676,22 @@ async function renderStockPage() {
         </div>
         <div class="card">
           <h2>仕入れ先別の出庫内訳(${formatDateJp(asOfDate)}まで)</h2>
-          <p class="hint">出庫記録(手動)を仕入れ先・用途別に集計したケース数です(混合/S/Mを合わせた箱数)。</p>
+          <p class="hint">出庫記録(手動)を仕入れ先・用途別に集計した数量です(混合/S/M)。</p>
           <div class="cal-list-wrap">
             <table class="cal-list-table supplier-breakdown-table">
               <thead><tr><th>仕入れ先</th><th>店舗配送</th><th>自社使用</th><th>合計出庫</th></tr></thead>
               <tbody>
                 ${breakdownRows}
                 ${unknownRow}
-                <tr class="supplier-breakdown-total"><td>合計</td><td>${grandStore}</td><td>${grandSelf}</td><td>${grandStore + grandSelf}</td></tr>
+                <tr class="supplier-breakdown-total"><td>合計</td><td>${compactQty(
+                  grandStoreAll.mixed,
+                  grandStoreAll.s,
+                  grandStoreAll.m
+                )}</td><td>${compactQty(grandSelfAll.mixed, grandSelfAll.s, grandSelfAll.m)}</td><td>${compactQty(
+                  grandAll.mixed,
+                  grandAll.s,
+                  grandAll.m
+                )}</td></tr>
               </tbody>
             </table>
           </div>
