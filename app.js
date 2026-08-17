@@ -977,18 +977,6 @@ async function renderStockPage() {
           <input type="date" id="stockOutDate" value="${todayStr()}">
         </div>
         <div class="field">
-          <label for="stockOutSupplier">どこの牡蠣か(仕入れ先)</label>
-          <select id="stockOutSupplier">${[...STOCK_SUPPLIERS]
-            .sort((a, b) => (a === STOCK_OUT_DEFAULT_SUPPLIER ? -1 : b === STOCK_OUT_DEFAULT_SUPPLIER ? 1 : 0))
-            .map(
-              (s) =>
-                `<option value="${escapeHtml(s)}"${s === STOCK_OUT_DEFAULT_SUPPLIER ? ' selected' : ''}>${escapeHtml(
-                  s
-                )}</option>`
-            )
-            .join('')}</select>
-        </div>
-        <div class="field">
           <label for="stockOutPurpose">用途</label>
           <select id="stockOutPurpose">
             <option value="self">自社使用など(在庫残高からも差し引く)</option>
@@ -999,20 +987,9 @@ async function renderStockPage() {
           <label for="stockOutNote">メモ(任意)</label>
           <input type="text" id="stockOutNote" placeholder="例: 〇〇イベント、8/20配達分など">
         </div>
-        <div class="field-row">
-          <div class="field">
-            <label for="stockOutMixed">混合(ケース)</label>
-            <select id="stockOutMixed">${qtyOptionsHtml(100)}</select>
-          </div>
-          <div class="field">
-            <label for="stockOutS">Sサイズ(ケース)</label>
-            <select id="stockOutS">${qtyOptionsHtml(100)}</select>
-          </div>
-          <div class="field">
-            <label for="stockOutM">Mサイズ(ケース)</label>
-            <select id="stockOutM">${qtyOptionsHtml(100)}</select>
-          </div>
-        </div>
+        <p class="hint">同じ日の出庫を複数の仕入れ先に分けて記録したい場合は「+ 別の仕入れ先を追加」で内訳を増やせます(例: Mを勝又商店から3箱、拓人から2箱など)。</p>
+        <div id="stockOutBreakdownRows"></div>
+        <button id="stockOutAddRowBtn" type="button" class="btn-plain">+ 別の仕入れ先を追加</button>
         <button id="stockOutSubmitBtn" class="primary">出庫を登録する</button>
         <button id="stockOutCancelBtn" type="button" class="btn-plain" style="display:none;">キャンセル(新規登録に戻す)</button>
         <p id="stockOutMsg" class="msg"></p>
@@ -1087,14 +1064,77 @@ async function renderStockPage() {
   // editingStockOutId がセットされている間は「更新」、nullなら「新規登録」として扱う。
   let editingStockOutId = null;
 
+  // 出庫フォームの「仕入れ先+数量」の内訳行。複数の仕入れ先に分けて記録できるよう、
+  // 行を動的に増減できるようにしている(既存の1件を編集/更新する時は常に1行のみ)。
+  let breakdownRowSeq = 0;
+
+  function createBreakdownRow({ supplier, mixed, s, m } = {}) {
+    breakdownRowSeq += 1;
+    const wrapper = document.createElement('div');
+    wrapper.className = 'stock-out-row';
+    wrapper.dataset.rowId = String(breakdownRowSeq);
+    wrapper.innerHTML = `
+      <div class="field">
+        <label>どこの牡蠣か(仕入れ先)</label>
+        <select class="bo-supplier">${[...STOCK_SUPPLIERS]
+          .sort((a, b) => (a === STOCK_OUT_DEFAULT_SUPPLIER ? -1 : b === STOCK_OUT_DEFAULT_SUPPLIER ? 1 : 0))
+          .map((s2) => `<option value="${escapeHtml(s2)}">${escapeHtml(s2)}</option>`)
+          .join('')}</select>
+      </div>
+      <div class="field-row">
+        <div class="field"><label>混合(ケース)</label><select class="bo-mixed">${qtyOptionsHtml(100)}</select></div>
+        <div class="field"><label>Sサイズ(ケース)</label><select class="bo-s">${qtyOptionsHtml(100)}</select></div>
+        <div class="field"><label>Mサイズ(ケース)</label><select class="bo-m">${qtyOptionsHtml(100)}</select></div>
+      </div>
+      <button type="button" class="bo-remove btn-plain">この仕入れ先を削除</button>
+    `;
+    wrapper.querySelector('.bo-supplier').value = supplier || STOCK_OUT_DEFAULT_SUPPLIER;
+    wrapper.querySelector('.bo-mixed').value = mixed || 0;
+    wrapper.querySelector('.bo-s').value = s || 0;
+    wrapper.querySelector('.bo-m').value = m || 0;
+    wrapper.querySelector('.bo-remove').addEventListener('click', () => {
+      if (document.querySelectorAll('#stockOutBreakdownRows .stock-out-row').length <= 1) return; // 最低1行は残す
+      wrapper.remove();
+      updateBreakdownRemoveButtons();
+    });
+    return wrapper;
+  }
+
+  function updateBreakdownRemoveButtons() {
+    const rows = document.querySelectorAll('#stockOutBreakdownRows .stock-out-row');
+    rows.forEach((row) => {
+      row.querySelector('.bo-remove').style.display = rows.length > 1 ? '' : 'none';
+    });
+  }
+
+  // rows未指定、または空配列の場合は仕入れ先1行(デフォルト値)だけの状態に戻す。
+  function resetBreakdownRows(rows) {
+    const container = document.getElementById('stockOutBreakdownRows');
+    container.innerHTML = '';
+    const list = rows && rows.length ? rows : [{ supplier: STOCK_OUT_DEFAULT_SUPPLIER, mixed: 0, s: 0, m: 0 }];
+    list.forEach((r) => container.appendChild(createBreakdownRow(r)));
+    updateBreakdownRemoveButtons();
+  }
+
+  function getBreakdownRowsData() {
+    return Array.from(document.querySelectorAll('#stockOutBreakdownRows .stock-out-row')).map((row) => ({
+      supplier: row.querySelector('.bo-supplier').value,
+      mixedBoxes: Number(row.querySelector('.bo-mixed').value) || 0,
+      sBoxes: Number(row.querySelector('.bo-s').value) || 0,
+      mBoxes: Number(row.querySelector('.bo-m').value) || 0,
+    }));
+  }
+
+  document.getElementById('stockOutAddRowBtn').addEventListener('click', () => {
+    document.getElementById('stockOutBreakdownRows').appendChild(createBreakdownRow());
+    updateBreakdownRemoveButtons();
+  });
+
   function fillStockOutForm({ outDate, mixedBoxes, sBoxes, mBoxes, supplier, purpose, note }) {
     document.getElementById('stockOutDate').value = outDate;
-    document.getElementById('stockOutSupplier').value = supplier;
     document.getElementById('stockOutPurpose').value = purpose;
     document.getElementById('stockOutNote').value = note;
-    document.getElementById('stockOutMixed').value = mixedBoxes;
-    document.getElementById('stockOutS').value = sBoxes;
-    document.getElementById('stockOutM').value = mBoxes;
+    resetBreakdownRows([{ supplier, mixed: mixedBoxes, s: sBoxes, m: mBoxes }]);
   }
 
   // mode: 'edit'(既存の手動出庫を編集) / 'prefill'(店舗出荷分に仕入れ先を新規記録) /
@@ -1105,6 +1145,8 @@ async function renderStockPage() {
     const submitBtn = document.getElementById('stockOutSubmitBtn');
     const banner = document.getElementById('stockOutEditBanner');
     const cancelBtn = document.getElementById('stockOutCancelBtn');
+    // 既存1件の編集中は内訳を複数に分けられると更新の意味が曖昧になるため、追加ボタンを隠す。
+    document.getElementById('stockOutAddRowBtn').style.display = editingStockOutId ? 'none' : '';
     submitBtn.textContent = editingStockOutId ? 'この出庫記録を更新する' : '出庫を登録する';
     if (mode === 'edit') {
       banner.textContent = `${formatDateJp(entry.outDate)}の出庫記録を編集中です。内容を直して「更新する」を押してください。`;
@@ -1131,6 +1173,7 @@ async function renderStockPage() {
     document.getElementById('stockOutSubmitBtn').textContent = '出庫を登録する';
     document.getElementById('stockOutEditBanner').style.display = 'none';
     document.getElementById('stockOutCancelBtn').style.display = 'none';
+    document.getElementById('stockOutAddRowBtn').style.display = '';
   }
 
   // 「キャンセル」ボタン用: 編集モードを抜けたうえでフォーム全体も初期値に戻す。
@@ -1584,28 +1627,31 @@ async function renderStockPage() {
 
   document.getElementById('stockOutSubmitBtn').addEventListener('click', async () => {
     const outDate = document.getElementById('stockOutDate').value;
-    const mixedBoxes = Number(document.getElementById('stockOutMixed').value) || 0;
-    const sBoxes = Number(document.getElementById('stockOutS').value) || 0;
-    const mBoxes = Number(document.getElementById('stockOutM').value) || 0;
-    const supplier = document.getElementById('stockOutSupplier').value;
     const purpose = document.getElementById('stockOutPurpose').value;
     const note = document.getElementById('stockOutNote').value.trim();
     const msgEl = document.getElementById('stockOutMsg');
+    const isEdit = !!editingStockOutId;
+    const purposeLabel = purpose === 'store' ? '店舗配達分の記録' : '自社使用';
     if (!outDate) {
       msgEl.textContent = '出庫日を選択してください。';
       msgEl.className = 'msg msg-error';
       return;
     }
-    if (mixedBoxes === 0 && sBoxes === 0 && mBoxes === 0) {
+    // 編集中は常に1行のみ(add-rowボタンを隠しているので通常は1行だが念のため先頭行だけを使う)。
+    // 新規登録時は、数量が入っている行だけを対象にする(空の行は無視)。
+    const allRows = getBreakdownRowsData();
+    const rows = isEdit ? allRows.slice(0, 1) : allRows.filter((r) => r.mixedBoxes || r.sBoxes || r.mBoxes);
+    if (!rows.length) {
       msgEl.textContent = 'ケース数を入力してください。';
       msgEl.className = 'msg msg-error';
       return;
     }
-    const purposeLabel = purpose === 'store' ? '店舗配達分の記録' : '自社使用';
-    const isEdit = !!editingStockOutId;
+    const summary = rows
+      .map((r) => `${r.supplier} 混${r.mixedBoxes}/S${r.sBoxes}/M${r.mBoxes}`)
+      .join('、');
     if (
       !confirm(
-        `${formatDateJp(outDate)}の出庫(${supplier}・${purposeLabel}・混${mixedBoxes}/S${sBoxes}/M${mBoxes}${
+        `${formatDateJp(outDate)}の出庫(${summary}・${purposeLabel}${
           note ? `・${note}` : ''
         })を${isEdit ? '更新' : '登録'}します。よろしいですか？`
       )
@@ -1617,17 +1663,34 @@ async function renderStockPage() {
     msgEl.className = 'msg';
     try {
       if (isEdit) {
-        await updateStockOutInternal(editingStockOutId, { outDate, mixedBoxes, sBoxes, mBoxes, supplier, purpose, note });
+        const r = rows[0];
+        await updateStockOutInternal(editingStockOutId, {
+          outDate,
+          mixedBoxes: r.mixedBoxes,
+          sBoxes: r.sBoxes,
+          mBoxes: r.mBoxes,
+          supplier: r.supplier,
+          purpose,
+          note,
+        });
         msgEl.textContent = `✓ ${formatDateJp(outDate)}の出庫記録を更新しました。`;
       } else {
-        await saveStockOutInternal({ outDate, mixedBoxes, sBoxes, mBoxes, supplier, purpose, note });
-        msgEl.textContent = `✓ ${formatDateJp(outDate)}の出庫を登録しました。`;
+        for (const r of rows) {
+          await saveStockOutInternal({
+            outDate,
+            mixedBoxes: r.mixedBoxes,
+            sBoxes: r.sBoxes,
+            mBoxes: r.mBoxes,
+            supplier: r.supplier,
+            purpose,
+            note,
+          });
+        }
+        msgEl.textContent = `✓ ${formatDateJp(outDate)}の出庫を${rows.length > 1 ? `${rows.length}件` : ''}登録しました。`;
       }
       msgEl.className = 'msg msg-success';
       exitStockOutEditMode();
-      document.getElementById('stockOutMixed').value = 0;
-      document.getElementById('stockOutS').value = 0;
-      document.getElementById('stockOutM').value = 0;
+      resetBreakdownRows();
       document.getElementById('stockOutNote').value = '';
       load();
       loadCalendar();
@@ -1646,6 +1709,7 @@ async function renderStockPage() {
     document.getElementById('stockOutMsg').className = 'msg';
   });
 
+  resetBreakdownRows();
   load();
   loadCalendar();
 }
