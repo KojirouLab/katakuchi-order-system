@@ -1383,16 +1383,14 @@ async function renderStockPage() {
                 return `<tr class="${d.isToday ? 'cal-list-today' : ''}">
                   <td class="cal-list-date">${d.day}日(${weekdayLabels[dow]})</td>
                   <td>${d.inHtml || ''}</td>
-                  <td>${d.outHtml || ''}</td>
-                  <td>${d.useHtml || ''}</td>
-                  <td>${d.breakdownHtml || ''}</td>
-                  <td>${d.warnHtml || ''}</td>
+                  <td>${d.outHtml || ''}${d.useHtml || ''}</td>
+                  <td>${d.breakdownHtml || ''}${d.warnHtml || ''}</td>
                 </tr>`;
               })
               .join('')
-          : `<tr><td colspan="6" class="hint">この月は入出庫の記録がありません。</td></tr>`;
+          : `<tr><td colspan="4" class="hint">この月は入出庫の記録がありません。</td></tr>`;
         calendarEl.innerHTML = `<div class="cal-list-wrap"><table class="cal-list-table">
-          <thead><tr><th>日付</th><th>入庫</th><th>出荷(自動)</th><th>手動出庫</th><th>仕入れ先内訳</th><th>差分</th></tr></thead>
+          <thead><tr><th>日付</th><th>入庫</th><th>出庫</th><th>仕入れ先別出庫</th></tr></thead>
           <tbody>${rowsHtml}</tbody>
         </table></div>`;
       } else {
