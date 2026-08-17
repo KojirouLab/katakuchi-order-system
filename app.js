@@ -1007,9 +1007,11 @@ async function renderStockPage() {
         <p class="hint">緑=入庫、オレンジ=店舗への出荷(自動計算)、紫=手動で記録した出庫。入庫・出庫の「×」をタップすると削除できます。オレンジ・紫の出庫表示自体をタップすると、上の「出庫を記録する」フォームにその内容が読み込まれ、仕入れ先の記録・修正ができます。赤字の「⚠受注と差」は、受注システムの出荷数と店舗配達分として記録した仕入れ先内訳が合っていない日に表示されます(タップすると不足分がフォームに入力された状態で開きます)。赤字の「⚠自社使用の仕入れ先未記録」は、自社使用の出庫のうちどこの牡蠣を使ったか(仕入れ先)が記録されていない日に表示されます(タップするとその記録が編集できる状態で開きます)。一覧表示では、その月のうち入出庫があった日だけを表形式で並べます。</p>
         <div id="stockCalendar" class="stock-calendar"><p class="hint">読み込み中…</p></div>
       </div>
+      <div id="supplierBreakdown"></div>
     </div>`;
 
   const balanceEl = document.getElementById('stockBalance');
+  const supplierBreakdownEl = document.getElementById('supplierBreakdown');
   const calendarEl = document.getElementById('stockCalendar');
   const calMonthLabelEl = document.getElementById('calMonthLabel');
 
@@ -1682,7 +1684,10 @@ async function renderStockPage() {
           <h2>仕入れ先ごとの残り(${formatDateJp(asOfDate)}時点)</h2>
           <p class="hint">出庫記録で仕入れ先を指定した分だけが反映されます(未記録の出庫は仕入れ先不明のまま全体在庫からのみ引かれます)。</p>
           <ul class="recent-list">${supplierRows}</ul>
-        </div>
+        </div>`;
+
+      // 「仕入れ先別の出庫内訳」はページ最後(カレンダー/一覧表示カードの下)に表示する。
+      supplierBreakdownEl.innerHTML = `
         <div class="card">
           <h2>仕入れ先別の出庫内訳(${formatDateJp(asOfDate)}まで)</h2>
           <p class="hint">出庫記録(手動)を仕入れ先・用途別に集計した数量です(混合/S/M)。</p>
