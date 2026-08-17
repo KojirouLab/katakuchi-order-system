@@ -200,13 +200,15 @@ async function fetchStockOutInternalAll() {
   return data || [];
 }
 
-async function saveStockOutInternal({ outDate, mixedBoxes, sBoxes, mBoxes, note }) {
+async function saveStockOutInternal({ outDate, mixedBoxes, sBoxes, mBoxes, supplier, purpose, note }) {
   assertClient();
   const { error } = await sb.from('kaki_stock_out_internal').insert({
     out_date: outDate,
     mixed_boxes: mixedBoxes,
     s_boxes: sBoxes,
     m_boxes: mBoxes,
+    supplier: supplier || '',
+    purpose: purpose || 'self',
     note: note || '',
   });
   if (error) throw error;

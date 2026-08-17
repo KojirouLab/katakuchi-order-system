@@ -966,15 +966,28 @@ async function renderStockPage() {
         <p id="stockInMsg" class="msg"></p>
       </div>
       <div class="card">
-        <h2>自社使用を記録する</h2>
-        <p class="hint">イベントでの使用など、店舗への発注以外で在庫を消費した分をここに記録すると、在庫残高に反映されます。</p>
+        <h2>出庫を記録する</h2>
+        <p class="hint">自社使用(イベントなど)や、店舗配達分がどの仕入れ先の在庫から出たかを記録できます。「自社使用」は全体の在庫残高からも差し引かれます。「店舗配達分の記録」は仕入れ先ごとの残りにだけ反映され、全体の在庫残高には影響しません(店舗への出荷は発注データから別途自動計算されているため)。</p>
         <div class="field">
-          <label for="stockOutDate">使用日</label>
+          <label for="stockOutDate">出庫日</label>
           <input type="date" id="stockOutDate" value="${todayStr()}">
         </div>
         <div class="field">
-          <label for="stockOutNote">用途(任意)</label>
-          <input type="text" id="stockOutNote" placeholder="例: 〇〇イベント、試食など">
+          <label for="stockOutSupplier">どこの牡蠣か(仕入れ先)</label>
+          <select id="stockOutSupplier">${STOCK_SUPPLIERS.map((s) => `<option value="${escapeHtml(s)}">${escapeHtml(
+            s
+          )}</option>`).join('')}</select>
+        </div>
+        <div class="field">
+          <label for="stockOutPurpose">用途</label>
+          <select id="stockOutPurpose">
+            <option value="self">自社使用など(在庫残高からも差し引く)</option>
+            <option value="store">店舗配達分の記録(仕入れ先の残りにのみ反映)</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="stockOutNote">メモ(任意)</label>
+          <input type="text" id="stockOutNote" placeholder="例: 〇〇イベント、8/20配達分など">
         </div>
         <div class="field-row">
           <div class="field">
@@ -990,7 +1003,7 @@ async function renderStockPage() {
             <select id="stockOutM">${qtyOptionsHtml(100)}</select>
           </div>
         </div>
-        <button id="stockOutSubmitBtn" class="primary">自社使用を登録する</button>
+        <button id="stockOutSubmitBtn" class="primary">出庫を登録する</button>
         <p id="stockOutMsg" class="msg"></p>
       </div>
       <div class="card">
@@ -999,7 +1012,7 @@ async function renderStockPage() {
           <h2 id="calMonthLabel"></h2>
           <button id="calNextBtn" class="cal-nav-btn" type="button">▶</button>
         </div>
-        <p class="hint">緑=入庫、オレンジ=店舗への出荷、紫=自社使用。入庫・自社使用の「×」をタップすると削除できます。</p>
+        <p class="hint">緑=入庫、オレンジ=店舗への出荷(自動計算)、紫=手動で記録した出庫。入庫・出庫の「×」をタップすると削除できます。</p>
         <div id="stockCalendar" class="stock-calendar"><p class="hint">読み込み中…</p></div>
       </div>
     </div>`;
@@ -1092,14 +1105,15 @@ async function renderStockPage() {
           shippedTotal > 0 ? `<div class="cal-out">出 ${compactQty(shipped.mixed, shipped.s, shipped.m)}</div>` : '';
         const useEntries = internalOutByDate[dateStr] || [];
         const useHtml = useEntries
-          .map(
-            (r) =>
-              `<div class="cal-use">使 ${compactQty(
-                Number(r.mixed_boxes),
-                Number(r.s_boxes),
-                Number(r.m_boxes)
-              )}${r.note ? `(${escapeHtml(r.note)})` : ''}<button class="cal-deluse-btn" data-id="${r.id}">×</button></div>`
-          )
+          .map((r) => {
+            const purposeLabel = r.purpose === 'store' ? '店舗配達分' : '自社使用';
+            const detail = [r.supplier, purposeLabel, r.note].filter(Boolean).join('・');
+            return `<div class="cal-use">出 ${compactQty(
+              Number(r.mixed_boxes),
+              Number(r.s_boxes),
+              Number(r.m_boxes)
+            )}${detail ? `(${escapeHtml(detail)})` : ''}<button class="cal-deluse-btn" data-id="${r.id}">×</button></div>`;
+          })
           .join('');
         const isToday = dateStr === todayStr();
         return `<div class="cal-cell${isToday ? ' cal-today' : ''}">
@@ -1129,7 +1143,7 @@ async function renderStockPage() {
       });
       calendarEl.querySelectorAll('.cal-deluse-btn').forEach((btn) => {
         btn.addEventListener('click', async () => {
-          if (!confirm('この自社使用の記録を削除します。よろしいですか？')) return;
+          if (!confirm('この出庫記録を削除します。よろしいですか？')) return;
           btn.disabled = true;
           try {
             await deleteStockOutInternal(btn.dataset.id);
@@ -1176,13 +1190,18 @@ async function renderStockPage() {
         shippedByDate[key].s += Number(r.s_boxes) || 0;
         shippedByDate[key].m += Number(r.m_boxes) || 0;
       });
-      internalOutRowsUpToDate.forEach((r) => {
-        const key = r.out_date;
-        if (!shippedByDate[key]) shippedByDate[key] = { mixed: 0, s: 0, m: 0 };
-        shippedByDate[key].mixed += Number(r.mixed_boxes) || 0;
-        shippedByDate[key].s += Number(r.s_boxes) || 0;
-        shippedByDate[key].m += Number(r.m_boxes) || 0;
-      });
+      // 用途が「自社使用など」の分だけ全体在庫からも差し引く。「店舗配達分の記録」は
+      // 発注データ側(shippedRows)ですでに全体在庫から引かれているため、ここでは
+      // 仕入れ先ごとの残り計算にのみ使う(二重に引かない)。
+      internalOutRowsUpToDate
+        .filter((r) => r.purpose !== 'store')
+        .forEach((r) => {
+          const key = r.out_date;
+          if (!shippedByDate[key]) shippedByDate[key] = { mixed: 0, s: 0, m: 0 };
+          shippedByDate[key].mixed += Number(r.mixed_boxes) || 0;
+          shippedByDate[key].s += Number(r.s_boxes) || 0;
+          shippedByDate[key].m += Number(r.m_boxes) || 0;
+        });
       const outTotal = { mixed: 0, s: 0, m: 0 };
       Object.values(shippedByDate).forEach((t) => {
         outTotal.mixed += t.mixed;
@@ -1198,12 +1217,42 @@ async function renderStockPage() {
       const forecastMsg = buildStockoutForecast(balance, shippedByDate, asOfDate);
       const balanceHeading = asOfDate === todayStr() ? '現在庫(残り)' : `在庫(${formatDateJp(asOfDate)}時点)`;
 
+      // 仕入れ先ごとの残り = その仕入れ先の入庫合計 − その仕入れ先を指定して記録した出庫合計
+      // (用途が自社使用・店舗配達どちらでも、仕入れ先が分かっているものはすべて差し引く)
+      const supplierBalance = {};
+      STOCK_SUPPLIERS.forEach((s) => {
+        supplierBalance[s] = { mixed: 0, s: 0, m: 0 };
+      });
+      stockInRowsUpToDate.forEach((r) => {
+        if (supplierBalance[r.note]) {
+          supplierBalance[r.note].mixed += Number(r.mixed_boxes) || 0;
+          supplierBalance[r.note].s += Number(r.s_boxes) || 0;
+          supplierBalance[r.note].m += Number(r.m_boxes) || 0;
+        }
+      });
+      internalOutRowsUpToDate.forEach((r) => {
+        if (supplierBalance[r.supplier]) {
+          supplierBalance[r.supplier].mixed -= Number(r.mixed_boxes) || 0;
+          supplierBalance[r.supplier].s -= Number(r.s_boxes) || 0;
+          supplierBalance[r.supplier].m -= Number(r.m_boxes) || 0;
+        }
+      });
+      const supplierRows = STOCK_SUPPLIERS.map((s) => {
+        const b = supplierBalance[s];
+        return `<li><span class="recent-store">${escapeHtml(s)}</span><span class="oyster-qty">混 ${b.mixed} / S ${b.s} / M ${b.m}</span></li>`;
+      }).join('');
+
       balanceEl.innerHTML = `
         <div class="card">
           <h2>${balanceHeading}</h2>
           <span class="oyster-qty">混 ${balance.mixed} / S ${balance.s} / M ${balance.m}</span>
           <span class="recent-submitted">合計${totalCases}ケース(${totalCases * 15}kg)</span>
           <p class="stock-forecast">${escapeHtml(forecastMsg)}</p>
+        </div>
+        <div class="card">
+          <h2>仕入れ先ごとの残り(${formatDateJp(asOfDate)}時点)</h2>
+          <p class="hint">出庫記録で仕入れ先を指定した分だけが反映されます(未記録の出庫は仕入れ先不明のまま全体在庫からのみ引かれます)。</p>
+          <ul class="recent-list">${supplierRows}</ul>
         </div>`;
     } catch (e) {
       console.error(e);
@@ -1261,10 +1310,12 @@ async function renderStockPage() {
     const mixedBoxes = Number(document.getElementById('stockOutMixed').value) || 0;
     const sBoxes = Number(document.getElementById('stockOutS').value) || 0;
     const mBoxes = Number(document.getElementById('stockOutM').value) || 0;
+    const supplier = document.getElementById('stockOutSupplier').value;
+    const purpose = document.getElementById('stockOutPurpose').value;
     const note = document.getElementById('stockOutNote').value.trim();
     const msgEl = document.getElementById('stockOutMsg');
     if (!outDate) {
-      msgEl.textContent = '使用日を選択してください。';
+      msgEl.textContent = '出庫日を選択してください。';
       msgEl.className = 'msg msg-error';
       return;
     }
@@ -1273,10 +1324,11 @@ async function renderStockPage() {
       msgEl.className = 'msg msg-error';
       return;
     }
+    const purposeLabel = purpose === 'store' ? '店舗配達分の記録' : '自社使用';
     if (
       !confirm(
-        `${formatDateJp(outDate)}の自社使用(混${mixedBoxes}/S${sBoxes}/M${mBoxes}${
-          note ? `・用途:${note}` : ''
+        `${formatDateJp(outDate)}の出庫(${supplier}・${purposeLabel}・混${mixedBoxes}/S${sBoxes}/M${mBoxes}${
+          note ? `・${note}` : ''
         })を登録します。よろしいですか？`
       )
     )
@@ -1286,8 +1338,8 @@ async function renderStockPage() {
     msgEl.textContent = '登録中…';
     msgEl.className = 'msg';
     try {
-      await saveStockOutInternal({ outDate, mixedBoxes, sBoxes, mBoxes, note });
-      msgEl.textContent = `✓ ${formatDateJp(outDate)}の自社使用を登録しました。`;
+      await saveStockOutInternal({ outDate, mixedBoxes, sBoxes, mBoxes, supplier, purpose, note });
+      msgEl.textContent = `✓ ${formatDateJp(outDate)}の出庫を登録しました。`;
       msgEl.className = 'msg msg-success';
       document.getElementById('stockOutMixed').value = 0;
       document.getElementById('stockOutS').value = 0;
