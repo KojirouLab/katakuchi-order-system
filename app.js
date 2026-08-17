@@ -1335,9 +1335,42 @@ async function renderStockPage() {
           )}</div>`;
         }
 
+        // 一覧表示専用: その日の手動出庫を「店舗配送/自社使用」の合計と、仕入れ先ごとの合計に分けて
+        // コンパクトに表示する(店舗配送が何個、自社使用が何個、仕入れ先ごとに何個、合計何個)。
+        let breakdownHtml = '';
+        if (useEntries.length) {
+          const purposeTotal = { store: 0, self: 0 };
+          const perSupplierTotal = {};
+          STOCK_SUPPLIERS.forEach((s) => {
+            perSupplierTotal[s] = 0;
+          });
+          useEntries.forEach((r) => {
+            const boxes = (Number(r.mixed_boxes) || 0) + (Number(r.s_boxes) || 0) + (Number(r.m_boxes) || 0);
+            purposeTotal[r.purpose === 'store' ? 'store' : 'self'] += boxes;
+            if (perSupplierTotal[r.supplier] !== undefined) perSupplierTotal[r.supplier] += boxes;
+          });
+          const grandTotal = purposeTotal.store + purposeTotal.self;
+          const supplierParts = STOCK_SUPPLIERS.filter((s) => perSupplierTotal[s] > 0).map(
+            (s) => `${escapeHtml(s)}${perSupplierTotal[s]}`
+          );
+          breakdownHtml = `<div class="cal-breakdown">店舗配送${purposeTotal.store}・自社使用${purposeTotal.self}(計${grandTotal})${
+            supplierParts.length ? `<br>${supplierParts.join('・')}` : ''
+          }</div>`;
+        }
+
         const isToday = dateStr === todayStr();
         const hasAny = !!(inHtml || outHtml || useHtml || warnHtml || selfWarnHtml);
-        return { day, dateStr, isToday, hasAny, inHtml, outHtml, useHtml, warnHtml: warnHtml + selfWarnHtml };
+        return {
+          day,
+          dateStr,
+          isToday,
+          hasAny,
+          inHtml,
+          outHtml,
+          useHtml,
+          warnHtml: warnHtml + selfWarnHtml,
+          breakdownHtml,
+        };
       });
 
       if (stockView === 'list') {
@@ -1352,13 +1385,14 @@ async function renderStockPage() {
                   <td>${d.inHtml || ''}</td>
                   <td>${d.outHtml || ''}</td>
                   <td>${d.useHtml || ''}</td>
+                  <td>${d.breakdownHtml || ''}</td>
                   <td>${d.warnHtml || ''}</td>
                 </tr>`;
               })
               .join('')
-          : `<tr><td colspan="5" class="hint">この月は入出庫の記録がありません。</td></tr>`;
+          : `<tr><td colspan="6" class="hint">この月は入出庫の記録がありません。</td></tr>`;
         calendarEl.innerHTML = `<div class="cal-list-wrap"><table class="cal-list-table">
-          <thead><tr><th>日付</th><th>入庫</th><th>出荷(自動)</th><th>手動出庫</th><th>差分</th></tr></thead>
+          <thead><tr><th>日付</th><th>入庫</th><th>出荷(自動)</th><th>手動出庫</th><th>仕入れ先内訳</th><th>差分</th></tr></thead>
           <tbody>${rowsHtml}</tbody>
         </table></div>`;
       } else {
