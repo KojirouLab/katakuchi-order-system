@@ -1023,7 +1023,7 @@ async function renderStockPage() {
           <h2 id="calMonthLabel"></h2>
           <button id="calNextBtn" class="cal-nav-btn" type="button">▶</button>
         </div>
-        <p class="hint">緑=入庫、オレンジ=店舗への出荷(自動計算)、紫=手動で記録した出庫。入庫・出庫の「×」をタップすると削除できます。オレンジ・紫の出庫表示自体をタップすると、上の「出庫を記録する」フォームにその内容が読み込まれ、仕入れ先の記録・修正ができます。</p>
+        <p class="hint">緑=入庫、オレンジ=店舗への出荷(自動計算)、紫=手動で記録した出庫。入庫・出庫の「×」をタップすると削除できます。オレンジ・紫の出庫表示自体をタップすると、上の「出庫を記録する」フォームにその内容が読み込まれ、仕入れ先の記録・修正ができます。赤字の「⚠受注と差」は、受注システムの出荷数と店舗配達分として記録した仕入れ先内訳が合っていない日に表示されます(タップすると不足分がフォームに入力された状態で開きます)。</p>
         <div id="stockCalendar" class="stock-calendar"><p class="hint">読み込み中…</p></div>
       </div>
     </div>`;
@@ -1053,6 +1053,17 @@ async function renderStockPage() {
     return parts.length ? parts.join('/') : '0';
   }
 
+  // 受注システム(発注データから自動計算した出荷数=オレンジ)と、手動で記録した
+  // 「店舗配達分」の仕入れ先内訳(紫・purpose==='store')の差分を符号付きで表示する。
+  // 正の値=まだ仕入れ先が記録できていない分、負の値=記録が実際の出荷より多い(入力ミスの疑い)。
+  function compactDiff(mixed, s, m) {
+    const parts = [];
+    if (mixed) parts.push(`混${mixed > 0 ? '+' : ''}${mixed}`);
+    if (s) parts.push(`S${s > 0 ? '+' : ''}${s}`);
+    if (m) parts.push(`M${m > 0 ? '+' : ''}${m}`);
+    return parts.join('/');
+  }
+
   // カレンダーの出庫表示をタップした時、下の「出庫を記録する」フォームに内容を読み込む。
   // editingStockOutId がセットされている間は「更新」、nullなら「新規登録」として扱う。
   let editingStockOutId = null;
@@ -1067,7 +1078,8 @@ async function renderStockPage() {
     document.getElementById('stockOutM').value = mBoxes;
   }
 
-  // mode: 'edit'(既存の手動出庫を編集) or 'prefill'(店舗出荷分に仕入れ先を新規記録)
+  // mode: 'edit'(既存の手動出庫を編集) / 'prefill'(店舗出荷分に仕入れ先を新規記録) /
+  //       'warn'(受注データとの差分を埋めるための新規記録)
   function selectStockOutForEdit(entry, mode) {
     editingStockOutId = entry.id || null;
     fillStockOutForm(entry);
@@ -1075,10 +1087,15 @@ async function renderStockPage() {
     const banner = document.getElementById('stockOutEditBanner');
     const cancelBtn = document.getElementById('stockOutCancelBtn');
     submitBtn.textContent = editingStockOutId ? 'この出庫記録を更新する' : '出庫を登録する';
-    banner.textContent =
-      mode === 'edit'
-        ? `${formatDateJp(entry.outDate)}の出庫記録を編集中です。内容を直して「更新する」を押してください。`
-        : `${formatDateJp(entry.outDate)}の店舗出荷分です。仕入れ先を確認・修正して登録してください。`;
+    if (mode === 'edit') {
+      banner.textContent = `${formatDateJp(entry.outDate)}の出庫記録を編集中です。内容を直して「更新する」を押してください。`;
+    } else if (mode === 'warn') {
+      banner.textContent = `${formatDateJp(
+        entry.outDate
+      )}は受注データと仕入れ先記録の数が合っていません(未記録分がある場合、下の数量に自動で入力済みです)。内容を確認して登録してください。`;
+    } else {
+      banner.textContent = `${formatDateJp(entry.outDate)}の店舗出荷分です。仕入れ先を確認・修正して登録してください。`;
+    }
     banner.style.display = '';
     cancelBtn.style.display = '';
     document.getElementById('stockOutCard').scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -1190,12 +1207,45 @@ async function renderStockPage() {
             )}${detail ? `(${escapeHtml(detail)})` : ''}<button class="cal-deluse-btn" data-id="${r.id}">×</button></div>`;
           })
           .join('');
+
+        // 受注システムの出荷数(オレンジ)と、店舗配達分として記録した仕入れ先内訳(紫・purpose==='store')の
+        // 合計が一致しているかチェックする。在庫管理開始日より前は出荷データ自体を取得していないので対象外。
+        let warnHtml = '';
+        if (dateStr >= KAKI_STOCK_TRACKING_START_DATE) {
+          const storeManualTotal = useEntries
+            .filter((r) => r.purpose === 'store')
+            .reduce(
+              (acc, r) => {
+                acc.mixed += Number(r.mixed_boxes) || 0;
+                acc.s += Number(r.s_boxes) || 0;
+                acc.m += Number(r.m_boxes) || 0;
+                return acc;
+              },
+              { mixed: 0, s: 0, m: 0 }
+            );
+          const shippedForCompare = shipped || { mixed: 0, s: 0, m: 0 };
+          const diffMixed = shippedForCompare.mixed - storeManualTotal.mixed;
+          const diffS = shippedForCompare.s - storeManualTotal.s;
+          const diffM = shippedForCompare.m - storeManualTotal.m;
+          if (diffMixed !== 0 || diffS !== 0 || diffM !== 0) {
+            warnHtml = `<div class="cal-warn cal-warn-clickable" data-date="${dateStr}" data-mixed="${Math.max(
+              diffMixed,
+              0
+            )}" data-s="${Math.max(diffS, 0)}" data-m="${Math.max(diffM, 0)}">⚠受注と差${compactDiff(
+              diffMixed,
+              diffS,
+              diffM
+            )}</div>`;
+          }
+        }
+
         const isToday = dateStr === todayStr();
         return `<div class="cal-cell${isToday ? ' cal-today' : ''}">
           <div class="cal-daynum">${day}</div>
           ${inHtml}
           ${outHtml}
           ${useHtml}
+          ${warnHtml}
         </div>`;
       }).join('');
 
@@ -1264,6 +1314,23 @@ async function renderStockPage() {
               note: el.dataset.note || '',
             },
             'edit'
+          );
+        });
+      });
+      calendarEl.querySelectorAll('.cal-warn-clickable').forEach((el) => {
+        el.addEventListener('click', () => {
+          selectStockOutForEdit(
+            {
+              id: null,
+              outDate: el.dataset.date,
+              mixedBoxes: Number(el.dataset.mixed) || 0,
+              sBoxes: Number(el.dataset.s) || 0,
+              mBoxes: Number(el.dataset.m) || 0,
+              supplier: STOCK_OUT_DEFAULT_SUPPLIER,
+              purpose: 'store',
+              note: '',
+            },
+            'warn'
           );
         });
       });
