@@ -1027,7 +1027,7 @@ async function renderStockPage() {
           <h2 id="calMonthLabel"></h2>
           <button id="calNextBtn" class="cal-nav-btn" type="button">▶</button>
         </div>
-        <p class="hint">緑=入庫、オレンジ=店舗への出荷(自動計算)、紫=手動で記録した出庫。入庫・出庫の「×」をタップすると削除できます。オレンジ・紫の出庫表示自体をタップすると、上の「出庫を記録する」フォームにその内容が読み込まれ、仕入れ先の記録・修正ができます。赤字の「⚠受注と差」は、受注システムの出荷数と店舗配達分として記録した仕入れ先内訳が合っていない日に表示されます(タップすると不足分がフォームに入力された状態で開きます)。一覧表示では、その月のうち入出庫があった日だけを表形式で並べます。</p>
+        <p class="hint">緑=入庫、オレンジ=店舗への出荷(自動計算)、紫=手動で記録した出庫。入庫・出庫の「×」をタップすると削除できます。オレンジ・紫の出庫表示自体をタップすると、上の「出庫を記録する」フォームにその内容が読み込まれ、仕入れ先の記録・修正ができます。赤字の「⚠受注と差」は、受注システムの出荷数と店舗配達分として記録した仕入れ先内訳が合っていない日に表示されます(タップすると不足分がフォームに入力された状態で開きます)。赤字の「⚠自社使用の仕入れ先未記録」は、自社使用の出庫のうちどこの牡蠣を使ったか(仕入れ先)が記録されていない日に表示されます(タップするとその記録が編集できる状態で開きます)。一覧表示では、その月のうち入出庫があった日だけを表形式で並べます。</p>
         <div id="stockCalendar" class="stock-calendar"><p class="hint">読み込み中…</p></div>
       </div>
     </div>`;
@@ -1098,7 +1098,7 @@ async function renderStockPage() {
   }
 
   // mode: 'edit'(既存の手動出庫を編集) / 'prefill'(店舗出荷分に仕入れ先を新規記録) /
-  //       'warn'(受注データとの差分を埋めるための新規記録)
+  //       'warn'(受注データとの差分を埋めるための新規記録) / 'selfwarn'(仕入れ先未記録の自社使用を編集)
   function selectStockOutForEdit(entry, mode) {
     editingStockOutId = entry.id || null;
     fillStockOutForm(entry);
@@ -1112,6 +1112,10 @@ async function renderStockPage() {
       banner.textContent = `${formatDateJp(
         entry.outDate
       )}は受注データと仕入れ先記録の数が合っていません(未記録分がある場合、下の数量に自動で入力済みです)。内容を確認して登録してください。`;
+    } else if (mode === 'selfwarn') {
+      banner.textContent = `${formatDateJp(
+        entry.outDate
+      )}の自社使用は、どこの牡蠣を使ったか(仕入れ先)が記録されていません。仕入れ先を選んで「更新する」を押してください。`;
     } else {
       banner.textContent = `${formatDateJp(entry.outDate)}の店舗出荷分です。仕入れ先を確認・修正して登録してください。`;
     }
@@ -1258,9 +1262,39 @@ async function renderStockPage() {
           }
         }
 
+        // 自社使用(purpose!=='store')の出庫のうち、仕入れ先(STOCK_SUPPLIERS)が記録されていないものを
+        // チェックする。1件でもあれば、最初の1件をタップで開いて仕入れ先を直せるようにする。
+        const selfUnknownEntries = useEntries.filter(
+          (r) => r.purpose !== 'store' && !STOCK_SUPPLIERS.includes(r.supplier)
+        );
+        let selfWarnHtml = '';
+        if (selfUnknownEntries.length) {
+          const selfUnknownTotal = selfUnknownEntries.reduce(
+            (acc, r) => {
+              acc.mixed += Number(r.mixed_boxes) || 0;
+              acc.s += Number(r.s_boxes) || 0;
+              acc.m += Number(r.m_boxes) || 0;
+              return acc;
+            },
+            { mixed: 0, s: 0, m: 0 }
+          );
+          const first = selfUnknownEntries[0];
+          selfWarnHtml = `<div class="cal-warn cal-selfwarn-clickable" data-id="${first.id}" data-date="${dateStr}" data-mixed="${Number(
+            first.mixed_boxes
+          )}" data-s="${Number(first.s_boxes)}" data-m="${Number(first.m_boxes)}" data-supplier="${escapeHtml(
+            first.supplier || ''
+          )}" data-purpose="${escapeHtml(first.purpose || 'self')}" data-note="${escapeHtml(
+            first.note || ''
+          )}">⚠自社使用の仕入れ先未記録 ${compactQty(
+            selfUnknownTotal.mixed,
+            selfUnknownTotal.s,
+            selfUnknownTotal.m
+          )}</div>`;
+        }
+
         const isToday = dateStr === todayStr();
-        const hasAny = !!(inHtml || outHtml || useHtml || warnHtml);
-        return { day, dateStr, isToday, hasAny, inHtml, outHtml, useHtml, warnHtml };
+        const hasAny = !!(inHtml || outHtml || useHtml || warnHtml || selfWarnHtml);
+        return { day, dateStr, isToday, hasAny, inHtml, outHtml, useHtml, warnHtml: warnHtml + selfWarnHtml };
       });
 
       if (stockView === 'list') {
@@ -1379,6 +1413,23 @@ async function renderStockPage() {
               note: '',
             },
             'warn'
+          );
+        });
+      });
+      calendarEl.querySelectorAll('.cal-selfwarn-clickable').forEach((el) => {
+        el.addEventListener('click', () => {
+          selectStockOutForEdit(
+            {
+              id: el.dataset.id,
+              outDate: el.dataset.date,
+              mixedBoxes: Number(el.dataset.mixed) || 0,
+              sBoxes: Number(el.dataset.s) || 0,
+              mBoxes: Number(el.dataset.m) || 0,
+              supplier: el.dataset.supplier || STOCK_OUT_DEFAULT_SUPPLIER,
+              purpose: el.dataset.purpose || 'self',
+              note: el.dataset.note || '',
+            },
+            'selfwarn'
           );
         });
       });
