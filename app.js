@@ -968,9 +968,10 @@ async function renderStockPage() {
         <button id="stockInSubmitBtn" class="primary">入庫を登録する</button>
         <p id="stockInMsg" class="msg"></p>
       </div>
-      <div class="card">
+      <div class="card" id="stockOutCard">
         <h2>出庫を記録する</h2>
-        <p class="hint">自社使用(イベントなど)や、店舗配達分がどの仕入れ先の在庫から出たかを記録できます。「自社使用」は全体の在庫残高からも差し引かれます。「店舗配達分の記録」は仕入れ先ごとの残りにだけ反映され、全体の在庫残高には影響しません(店舗への出荷は発注データから別途自動計算されているため)。</p>
+        <p class="hint">自社使用(イベントなど)や、店舗配達分がどの仕入れ先の在庫から出たかを記録できます。「自社使用」は全体の在庫残高からも差し引かれます。「店舗配達分の記録」は仕入れ先ごとの残りにだけ反映され、全体の在庫残高には影響しません(店舗への出荷は発注データから別途自動計算されているため)。下のカレンダーの出庫表示をタップすると、この日の内容を編集・記録できます。</p>
+        <p id="stockOutEditBanner" class="form-edit-banner" style="display:none;"></p>
         <div class="field">
           <label for="stockOutDate">出庫日</label>
           <input type="date" id="stockOutDate" value="${todayStr()}">
@@ -1013,6 +1014,7 @@ async function renderStockPage() {
           </div>
         </div>
         <button id="stockOutSubmitBtn" class="primary">出庫を登録する</button>
+        <button id="stockOutCancelBtn" type="button" class="btn-plain" style="display:none;">キャンセル(新規登録に戻す)</button>
         <p id="stockOutMsg" class="msg"></p>
       </div>
       <div class="card">
@@ -1021,7 +1023,7 @@ async function renderStockPage() {
           <h2 id="calMonthLabel"></h2>
           <button id="calNextBtn" class="cal-nav-btn" type="button">▶</button>
         </div>
-        <p class="hint">緑=入庫、オレンジ=店舗への出荷(自動計算)、紫=手動で記録した出庫。入庫・出庫の「×」をタップすると削除できます。</p>
+        <p class="hint">緑=入庫、オレンジ=店舗への出荷(自動計算)、紫=手動で記録した出庫。入庫・出庫の「×」をタップすると削除できます。オレンジ・紫の出庫表示自体をタップすると、上の「出庫を記録する」フォームにその内容が読み込まれ、仕入れ先の記録・修正ができます。</p>
         <div id="stockCalendar" class="stock-calendar"><p class="hint">読み込み中…</p></div>
       </div>
     </div>`;
@@ -1049,6 +1051,60 @@ async function renderStockPage() {
     if (s) parts.push(`S${s}`);
     if (m) parts.push(`M${m}`);
     return parts.length ? parts.join('/') : '0';
+  }
+
+  // カレンダーの出庫表示をタップした時、下の「出庫を記録する」フォームに内容を読み込む。
+  // editingStockOutId がセットされている間は「更新」、nullなら「新規登録」として扱う。
+  let editingStockOutId = null;
+
+  function fillStockOutForm({ outDate, mixedBoxes, sBoxes, mBoxes, supplier, purpose, note }) {
+    document.getElementById('stockOutDate').value = outDate;
+    document.getElementById('stockOutSupplier').value = supplier;
+    document.getElementById('stockOutPurpose').value = purpose;
+    document.getElementById('stockOutNote').value = note;
+    document.getElementById('stockOutMixed').value = mixedBoxes;
+    document.getElementById('stockOutS').value = sBoxes;
+    document.getElementById('stockOutM').value = mBoxes;
+  }
+
+  // mode: 'edit'(既存の手動出庫を編集) or 'prefill'(店舗出荷分に仕入れ先を新規記録)
+  function selectStockOutForEdit(entry, mode) {
+    editingStockOutId = entry.id || null;
+    fillStockOutForm(entry);
+    const submitBtn = document.getElementById('stockOutSubmitBtn');
+    const banner = document.getElementById('stockOutEditBanner');
+    const cancelBtn = document.getElementById('stockOutCancelBtn');
+    submitBtn.textContent = editingStockOutId ? 'この出庫記録を更新する' : '出庫を登録する';
+    banner.textContent =
+      mode === 'edit'
+        ? `${formatDateJp(entry.outDate)}の出庫記録を編集中です。内容を直して「更新する」を押してください。`
+        : `${formatDateJp(entry.outDate)}の店舗出荷分です。仕入れ先を確認・修正して登録してください。`;
+    banner.style.display = '';
+    cancelBtn.style.display = '';
+    document.getElementById('stockOutCard').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  // 編集モードの表示だけを解除する(日付・仕入れ先などの入力値はそのまま残す)。
+  // 保存成功直後は同じ日付・仕入れ先で続けて記録したいことが多いため。
+  function exitStockOutEditMode() {
+    editingStockOutId = null;
+    document.getElementById('stockOutSubmitBtn').textContent = '出庫を登録する';
+    document.getElementById('stockOutEditBanner').style.display = 'none';
+    document.getElementById('stockOutCancelBtn').style.display = 'none';
+  }
+
+  // 「キャンセル」ボタン用: 編集モードを抜けたうえでフォーム全体も初期値に戻す。
+  function clearStockOutSelection() {
+    exitStockOutEditMode();
+    fillStockOutForm({
+      outDate: todayStr(),
+      mixedBoxes: 0,
+      sBoxes: 0,
+      mBoxes: 0,
+      supplier: STOCK_OUT_DEFAULT_SUPPLIER,
+      purpose: 'self',
+      note: '',
+    });
   }
 
   async function loadCalendar() {
@@ -1111,13 +1167,23 @@ async function renderStockPage() {
           )
           .join('');
         const outHtml =
-          shippedTotal > 0 ? `<div class="cal-out">出 ${compactQty(shipped.mixed, shipped.s, shipped.m)}</div>` : '';
+          shippedTotal > 0
+            ? `<div class="cal-out cal-out-clickable" data-date="${dateStr}" data-mixed="${shipped.mixed}" data-s="${shipped.s}" data-m="${shipped.m}">出 ${compactQty(
+                shipped.mixed,
+                shipped.s,
+                shipped.m
+              )}</div>`
+            : '';
         const useEntries = internalOutByDate[dateStr] || [];
         const useHtml = useEntries
           .map((r) => {
             const purposeLabel = r.purpose === 'store' ? '店舗配達分' : '自社使用';
             const detail = [r.supplier, purposeLabel, r.note].filter(Boolean).join('・');
-            return `<div class="cal-use">出 ${compactQty(
+            return `<div class="cal-use cal-use-clickable" data-id="${r.id}" data-date="${dateStr}" data-mixed="${Number(
+              r.mixed_boxes
+            )}" data-s="${Number(r.s_boxes)}" data-m="${Number(r.m_boxes)}" data-supplier="${escapeHtml(
+              r.supplier || ''
+            )}" data-purpose="${escapeHtml(r.purpose || 'self')}" data-note="${escapeHtml(r.note || '')}">出 ${compactQty(
               Number(r.mixed_boxes),
               Number(r.s_boxes),
               Number(r.m_boxes)
@@ -1151,7 +1217,8 @@ async function renderStockPage() {
         });
       });
       calendarEl.querySelectorAll('.cal-deluse-btn').forEach((btn) => {
-        btn.addEventListener('click', async () => {
+        btn.addEventListener('click', async (e) => {
+          e.stopPropagation();
           if (!confirm('この出庫記録を削除します。よろしいですか？')) return;
           btn.disabled = true;
           try {
@@ -1163,6 +1230,41 @@ async function renderStockPage() {
             alert('削除に失敗しました。通信状況を確認してもう一度お試しください。');
             btn.disabled = false;
           }
+        });
+      });
+      calendarEl.querySelectorAll('.cal-out-clickable').forEach((el) => {
+        el.addEventListener('click', () => {
+          selectStockOutForEdit(
+            {
+              id: null,
+              outDate: el.dataset.date,
+              mixedBoxes: Number(el.dataset.mixed) || 0,
+              sBoxes: Number(el.dataset.s) || 0,
+              mBoxes: Number(el.dataset.m) || 0,
+              supplier: STOCK_OUT_DEFAULT_SUPPLIER,
+              purpose: 'store',
+              note: '',
+            },
+            'prefill'
+          );
+        });
+      });
+      calendarEl.querySelectorAll('.cal-use-clickable').forEach((el) => {
+        el.addEventListener('click', (e) => {
+          if (e.target.closest('button')) return; // ×(削除)は個別のハンドラに任せる
+          selectStockOutForEdit(
+            {
+              id: el.dataset.id,
+              outDate: el.dataset.date,
+              mixedBoxes: Number(el.dataset.mixed) || 0,
+              sBoxes: Number(el.dataset.s) || 0,
+              mBoxes: Number(el.dataset.m) || 0,
+              supplier: el.dataset.supplier || STOCK_OUT_DEFAULT_SUPPLIER,
+              purpose: el.dataset.purpose || 'self',
+              note: el.dataset.note || '',
+            },
+            'edit'
+          );
         });
       });
     } catch (e) {
@@ -1334,22 +1436,29 @@ async function renderStockPage() {
       return;
     }
     const purposeLabel = purpose === 'store' ? '店舗配達分の記録' : '自社使用';
+    const isEdit = !!editingStockOutId;
     if (
       !confirm(
         `${formatDateJp(outDate)}の出庫(${supplier}・${purposeLabel}・混${mixedBoxes}/S${sBoxes}/M${mBoxes}${
           note ? `・${note}` : ''
-        })を登録します。よろしいですか？`
+        })を${isEdit ? '更新' : '登録'}します。よろしいですか？`
       )
     )
       return;
     const btn = document.getElementById('stockOutSubmitBtn');
     btn.disabled = true;
-    msgEl.textContent = '登録中…';
+    msgEl.textContent = isEdit ? '更新中…' : '登録中…';
     msgEl.className = 'msg';
     try {
-      await saveStockOutInternal({ outDate, mixedBoxes, sBoxes, mBoxes, supplier, purpose, note });
-      msgEl.textContent = `✓ ${formatDateJp(outDate)}の出庫を登録しました。`;
+      if (isEdit) {
+        await updateStockOutInternal(editingStockOutId, { outDate, mixedBoxes, sBoxes, mBoxes, supplier, purpose, note });
+        msgEl.textContent = `✓ ${formatDateJp(outDate)}の出庫記録を更新しました。`;
+      } else {
+        await saveStockOutInternal({ outDate, mixedBoxes, sBoxes, mBoxes, supplier, purpose, note });
+        msgEl.textContent = `✓ ${formatDateJp(outDate)}の出庫を登録しました。`;
+      }
       msgEl.className = 'msg msg-success';
+      exitStockOutEditMode();
       document.getElementById('stockOutMixed').value = 0;
       document.getElementById('stockOutS').value = 0;
       document.getElementById('stockOutM').value = 0;
@@ -1358,11 +1467,17 @@ async function renderStockPage() {
       loadCalendar();
     } catch (e) {
       console.error(e);
-      msgEl.textContent = '登録に失敗しました。通信状況を確認してもう一度お試しください。';
+      msgEl.textContent = `${isEdit ? '更新' : '登録'}に失敗しました。通信状況を確認してもう一度お試しください。`;
       msgEl.className = 'msg msg-error';
     } finally {
       btn.disabled = false;
     }
+  });
+
+  document.getElementById('stockOutCancelBtn').addEventListener('click', () => {
+    clearStockOutSelection();
+    document.getElementById('stockOutMsg').textContent = '';
+    document.getElementById('stockOutMsg').className = 'msg';
   });
 
   load();

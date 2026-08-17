@@ -182,6 +182,37 @@
     padding: 0 2px;
     line-height: 1;
   }
+  .cal-out-clickable,
+  .cal-use-clickable {
+    cursor: pointer;
+  }
+  .cal-out-clickable:hover,
+  .cal-use-clickable:hover {
+    text-decoration: underline;
+  }
+  .form-edit-banner {
+    font-size: 13px;
+    color: var(--primary-dark);
+    background: #e3f0ec;
+    border-radius: 8px;
+    padding: 8px 10px;
+    margin: 4px 0 10px;
+  }
+  .btn-plain {
+    width: 100%;
+    padding: 11px;
+    font-size: 14px;
+    font-weight: 600;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: #fff;
+    color: var(--text);
+    cursor: pointer;
+    margin-top: 8px;
+  }
+  .btn-plain:disabled {
+    opacity: 0.5;
+  }
   .range-calendar .cal-cell {
     min-height: 0;
     display: flex;
@@ -556,7 +587,7 @@
 </head>
 <body>
 <div id="app"></div>
-<script src="storage.js?v=202608171251"></script>
-<script src="app.js?v=202608171251"></script>
+<script src="storage.js?v=202608171406"></script>
+<script src="app.js?v=202608171406"></script>
 </body>
 </html>

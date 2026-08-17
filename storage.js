@@ -214,6 +214,25 @@ async function saveStockOutInternal({ outDate, mixedBoxes, sBoxes, mBoxes, suppl
   if (error) throw error;
 }
 
+async function updateStockOutInternal(id, { outDate, mixedBoxes, sBoxes, mBoxes, supplier, purpose, note }) {
+  assertClient();
+  const { data, error } = await sb
+    .from('kaki_stock_out_internal')
+    .update({
+      out_date: outDate,
+      mixed_boxes: mixedBoxes,
+      s_boxes: sBoxes,
+      m_boxes: mBoxes,
+      supplier: supplier || '',
+      purpose: purpose || 'self',
+      note: note || '',
+    })
+    .eq('id', id)
+    .select();
+  if (error) throw error;
+  if (!data || data.length === 0) throw new Error('更新できませんでした(権限設定が反映されていない可能性があります)');
+}
+
 async function deleteStockOutInternal(id) {
   assertClient();
   const { data, error } = await sb.from('kaki_stock_out_internal').delete().eq('id', id).select();
