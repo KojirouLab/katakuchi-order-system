@@ -1049,6 +1049,15 @@ async function renderStockPage() {
     return parts.length ? parts.join('/') : '0';
   }
 
+  // 仕入れ先別出庫の内訳表示用: Sが0でも省略せず必ず表示する(混合は0なら省略)。
+  function breakdownQty(mixed, s, m) {
+    const parts = [];
+    if (mixed) parts.push(`混${mixed}`);
+    parts.push(`S${s}`);
+    parts.push(`M${m}`);
+    return parts.join('/');
+  }
+
   // 受注システム(発注データから自動計算した出荷数=オレンジ)と、手動で記録した
   // 「店舗配達分」の仕入れ先内訳(紫・purpose==='store')の差分を符号付きで表示する。
   // 正の値=まだ仕入れ先が記録できていない分、負の値=記録が実際の出荷より多い(入力ミスの疑い)。
@@ -1362,16 +1371,16 @@ async function renderStockPage() {
           const supplierParts = STOCK_SUPPLIERS.filter((s) => {
             const b = perSupplierTotal[s];
             return b.mixed || b.s || b.m;
-          }).map((s) => `${escapeHtml(s)}${compactQty(perSupplierTotal[s].mixed, perSupplierTotal[s].s, perSupplierTotal[s].m)}`);
-          breakdownHtml = `<div class="cal-breakdown">店舗配送${compactQty(
+          }).map((s) => `${escapeHtml(s)}${breakdownQty(perSupplierTotal[s].mixed, perSupplierTotal[s].s, perSupplierTotal[s].m)}`);
+          breakdownHtml = `<div class="cal-breakdown">店舗配送${breakdownQty(
             purposeTotal.store.mixed,
             purposeTotal.store.s,
             purposeTotal.store.m
-          )}・自社使用${compactQty(purposeTotal.self.mixed, purposeTotal.self.s, purposeTotal.self.m)}(計${compactQty(
+          )}<br>自社使用${breakdownQty(purposeTotal.self.mixed, purposeTotal.self.s, purposeTotal.self.m)}<br>計${breakdownQty(
             grandTotal.mixed,
             grandTotal.s,
             grandTotal.m
-          )})${supplierParts.length ? `<br>${supplierParts.join('・')}` : ''}</div>`;
+          )}${supplierParts.length ? `<br>${supplierParts.join('・')}` : ''}</div>`;
         }
 
         const isToday = dateStr === todayStr();
@@ -1635,23 +1644,23 @@ async function renderStockPage() {
       const breakdownRows = STOCK_SUPPLIERS.map((s) => {
         const b = supplierPurposeBreakdown[s];
         const total = sumQty(b.store, b.self);
-        return `<tr><td>${escapeHtml(s)}</td><td>${compactQty(b.store.mixed, b.store.s, b.store.m)}</td><td>${compactQty(
+        return `<tr><td>${escapeHtml(s)}</td><td>${breakdownQty(b.store.mixed, b.store.s, b.store.m)}</td><td>${breakdownQty(
           b.self.mixed,
           b.self.s,
           b.self.m
-        )}</td><td>${compactQty(total.mixed, total.s, total.m)}</td></tr>`;
+        )}</td><td>${breakdownQty(total.mixed, total.s, total.m)}</td></tr>`;
       }).join('');
       const unknownTotal = sumQty(unknownSupplierBreakdown.store, unknownSupplierBreakdown.self);
       const unknownRow = qtyHasAny(unknownTotal)
-        ? `<tr class="supplier-breakdown-unknown"><td>仕入れ先未記録</td><td>${compactQty(
+        ? `<tr class="supplier-breakdown-unknown"><td>仕入れ先未記録</td><td>${breakdownQty(
             unknownSupplierBreakdown.store.mixed,
             unknownSupplierBreakdown.store.s,
             unknownSupplierBreakdown.store.m
-          )}</td><td>${compactQty(
+          )}</td><td>${breakdownQty(
             unknownSupplierBreakdown.self.mixed,
             unknownSupplierBreakdown.self.s,
             unknownSupplierBreakdown.self.m
-          )}</td><td>${compactQty(unknownTotal.mixed, unknownTotal.s, unknownTotal.m)}</td></tr>`
+          )}</td><td>${breakdownQty(unknownTotal.mixed, unknownTotal.s, unknownTotal.m)}</td></tr>`
         : '';
       const grandStore = STOCK_SUPPLIERS.reduce(
         (sum, s) => sumQty(sum, supplierPurposeBreakdown[s].store),
@@ -1683,11 +1692,11 @@ async function renderStockPage() {
               <tbody>
                 ${breakdownRows}
                 ${unknownRow}
-                <tr class="supplier-breakdown-total"><td>合計</td><td>${compactQty(
+                <tr class="supplier-breakdown-total"><td>合計</td><td>${breakdownQty(
                   grandStoreAll.mixed,
                   grandStoreAll.s,
                   grandStoreAll.m
-                )}</td><td>${compactQty(grandSelfAll.mixed, grandSelfAll.s, grandSelfAll.m)}</td><td>${compactQty(
+                )}</td><td>${breakdownQty(grandSelfAll.mixed, grandSelfAll.s, grandSelfAll.m)}</td><td>${breakdownQty(
                   grandAll.mixed,
                   grandAll.s,
                   grandAll.m
