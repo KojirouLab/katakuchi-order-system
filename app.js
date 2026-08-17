@@ -1562,6 +1562,34 @@ async function renderStockPage() {
         return `<li><span class="recent-store">${escapeHtml(s)}</span><span class="oyster-qty">混 ${b.mixed} / S ${b.s} / M ${b.m}</span></li>`;
       }).join('');
 
+      // 仕入れ先別・用途別(店舗配送/自社使用)の出庫内訳(ケース数の合計、混合+S+M合算)。
+      const supplierPurposeBreakdown = {};
+      STOCK_SUPPLIERS.forEach((s) => {
+        supplierPurposeBreakdown[s] = { store: 0, self: 0 };
+      });
+      const unknownSupplierBreakdown = { store: 0, self: 0 };
+      internalOutRowsUpToDate.forEach((r) => {
+        const boxes = (Number(r.mixed_boxes) || 0) + (Number(r.s_boxes) || 0) + (Number(r.m_boxes) || 0);
+        const bucket = r.purpose === 'store' ? 'store' : 'self';
+        if (supplierPurposeBreakdown[r.supplier]) {
+          supplierPurposeBreakdown[r.supplier][bucket] += boxes;
+        } else {
+          unknownSupplierBreakdown[bucket] += boxes;
+        }
+      });
+      const breakdownRows = STOCK_SUPPLIERS.map((s) => {
+        const b = supplierPurposeBreakdown[s];
+        return `<tr><td>${escapeHtml(s)}</td><td>${b.store}</td><td>${b.self}</td><td>${b.store + b.self}</td></tr>`;
+      }).join('');
+      const unknownTotal = unknownSupplierBreakdown.store + unknownSupplierBreakdown.self;
+      const unknownRow = unknownTotal
+        ? `<tr class="supplier-breakdown-unknown"><td>仕入れ先未記録</td><td>${unknownSupplierBreakdown.store}</td><td>${unknownSupplierBreakdown.self}</td><td>${unknownTotal}</td></tr>`
+        : '';
+      const grandStore =
+        STOCK_SUPPLIERS.reduce((sum, s) => sum + supplierPurposeBreakdown[s].store, 0) + unknownSupplierBreakdown.store;
+      const grandSelf =
+        STOCK_SUPPLIERS.reduce((sum, s) => sum + supplierPurposeBreakdown[s].self, 0) + unknownSupplierBreakdown.self;
+
       balanceEl.innerHTML = `
         <div class="card">
           <h2>${balanceHeading}</h2>
@@ -1573,6 +1601,20 @@ async function renderStockPage() {
           <h2>仕入れ先ごとの残り(${formatDateJp(asOfDate)}時点)</h2>
           <p class="hint">出庫記録で仕入れ先を指定した分だけが反映されます(未記録の出庫は仕入れ先不明のまま全体在庫からのみ引かれます)。</p>
           <ul class="recent-list">${supplierRows}</ul>
+        </div>
+        <div class="card">
+          <h2>仕入れ先別の出庫内訳(${formatDateJp(asOfDate)}まで)</h2>
+          <p class="hint">出庫記録(手動)を仕入れ先・用途別に集計したケース数です(混合/S/Mを合わせた箱数)。</p>
+          <div class="cal-list-wrap">
+            <table class="cal-list-table supplier-breakdown-table">
+              <thead><tr><th>仕入れ先</th><th>店舗配送</th><th>自社使用</th><th>合計出庫</th></tr></thead>
+              <tbody>
+                ${breakdownRows}
+                ${unknownRow}
+                <tr class="supplier-breakdown-total"><td>合計</td><td>${grandStore}</td><td>${grandSelf}</td><td>${grandStore + grandSelf}</td></tr>
+              </tbody>
+            </table>
+          </div>
         </div>`;
     } catch (e) {
       console.error(e);

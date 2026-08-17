@@ -182,6 +182,17 @@
   .cal-list-today td {
     background: #e3f0ec;
   }
+  .supplier-breakdown-table th:not(:first-child),
+  .supplier-breakdown-table td:not(:first-child) {
+    text-align: right;
+  }
+  .supplier-breakdown-total td {
+    font-weight: 700;
+    border-top: 2px solid var(--border);
+  }
+  .supplier-breakdown-unknown td {
+    color: var(--hint);
+  }
   .cal-weekday {
     font-size: 11px;
     font-weight: 700;
@@ -664,7 +675,7 @@
 </head>
 <body>
 <div id="app"></div>
-<script src="storage.js?v=202608171523"></script>
-<script src="app.js?v=202608171523"></script>
+<script src="storage.js?v=202608171534"></script>
+<script src="app.js?v=202608171534"></script>
 </body>
 </html>
