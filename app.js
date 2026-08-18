@@ -1346,8 +1346,8 @@ async function renderStockPage() {
           )}</div>`;
         }
 
-        // 一覧表示専用: その日の手動出庫を「店舗配送/自社使用」の合計と、仕入れ先ごとの合計に分けて
-        // サイズ(混合/S/M)入りでコンパクトに表示する。
+        // 一覧表示専用: その日の手動出庫を「店舗配送/自社使用」それぞれについて、
+        // 合計とその内訳(どの仕入れ先から何個か)をセットで表示する。
         let breakdownHtml = '';
         if (useEntries.length) {
           const zero = () => ({ mixed: 0, s: 0, m: 0 });
@@ -1356,33 +1356,42 @@ async function renderStockPage() {
             acc.s += Number(r.s_boxes) || 0;
             acc.m += Number(r.m_boxes) || 0;
           };
-          const purposeTotal = { store: zero(), self: zero() };
-          const perSupplierTotal = {};
-          STOCK_SUPPLIERS.forEach((s) => {
-            perSupplierTotal[s] = zero();
-          });
-          useEntries.forEach((r) => {
-            addQty(purposeTotal[r.purpose === 'store' ? 'store' : 'self'], r);
-            if (perSupplierTotal[r.supplier]) addQty(perSupplierTotal[r.supplier], r);
-          });
+          const qtyHasAnyLocal = (q) => q.mixed || q.s || q.m;
+
+          // purpose('store'/'self')ごとに、合計と仕入れ先別の内訳行(インデント付き)を作る
+          function purposeSection(label, entries) {
+            const total = zero();
+            const perSupplier = {};
+            STOCK_SUPPLIERS.forEach((s) => {
+              perSupplier[s] = zero();
+            });
+            entries.forEach((r) => {
+              addQty(total, r);
+              if (perSupplier[r.supplier]) addQty(perSupplier[r.supplier], r);
+            });
+            const supplierLines = STOCK_SUPPLIERS.filter((s) => qtyHasAnyLocal(perSupplier[s])).map(
+              (s) => `<div class="cal-breakdown-sub">${escapeHtml(s)}${breakdownQty(perSupplier[s].mixed, perSupplier[s].s, perSupplier[s].m)}</div>`
+            );
+            return {
+              total,
+              html: `<div class="cal-breakdown-line">${label}${breakdownQty(total.mixed, total.s, total.m)}</div>${supplierLines.join('')}`,
+            };
+          }
+
+          const storeEntries = useEntries.filter((r) => r.purpose === 'store');
+          const selfEntries = useEntries.filter((r) => r.purpose !== 'store');
+          const storeSection = purposeSection('店舗配送', storeEntries);
+          const selfSection = purposeSection('自社使用', selfEntries);
           const grandTotal = {
-            mixed: purposeTotal.store.mixed + purposeTotal.self.mixed,
-            s: purposeTotal.store.s + purposeTotal.self.s,
-            m: purposeTotal.store.m + purposeTotal.self.m,
+            mixed: storeSection.total.mixed + selfSection.total.mixed,
+            s: storeSection.total.s + selfSection.total.s,
+            m: storeSection.total.m + selfSection.total.m,
           };
-          const supplierParts = STOCK_SUPPLIERS.filter((s) => {
-            const b = perSupplierTotal[s];
-            return b.mixed || b.s || b.m;
-          }).map((s) => `${escapeHtml(s)}${breakdownQty(perSupplierTotal[s].mixed, perSupplierTotal[s].s, perSupplierTotal[s].m)}`);
-          breakdownHtml = `<div class="cal-breakdown">店舗配送${breakdownQty(
-            purposeTotal.store.mixed,
-            purposeTotal.store.s,
-            purposeTotal.store.m
-          )}<br>自社使用${breakdownQty(purposeTotal.self.mixed, purposeTotal.self.s, purposeTotal.self.m)}<br>計${breakdownQty(
+          breakdownHtml = `<div class="cal-breakdown">${storeSection.html}${selfSection.html}<div class="cal-breakdown-line">計${breakdownQty(
             grandTotal.mixed,
             grandTotal.s,
             grandTotal.m
-          )}${supplierParts.length ? `<br>${supplierParts.join('・')}` : ''}</div>`;
+          )}</div></div>`;
         }
 
         const isToday = dateStr === todayStr();
