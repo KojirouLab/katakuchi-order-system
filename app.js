@@ -952,9 +952,15 @@ async function renderStockPage() {
         </div>
         <div class="field">
           <label for="stockInSupplier">仕入れ元</label>
-          <select id="stockInSupplier">${STOCK_SUPPLIERS.map((s) => `<option value="${escapeHtml(s)}">${escapeHtml(
-            s
-          )}</option>`).join('')}</select>
+          <select id="stockInSupplier">${[...STOCK_SUPPLIERS]
+            .sort((a, b) => (a === STOCK_OUT_DEFAULT_SUPPLIER ? -1 : b === STOCK_OUT_DEFAULT_SUPPLIER ? 1 : 0))
+            .map(
+              (s) =>
+                `<option value="${escapeHtml(s)}"${s === STOCK_OUT_DEFAULT_SUPPLIER ? ' selected' : ''}>${escapeHtml(
+                  s
+                )}</option>`
+            )
+            .join('')}</select>
         </div>
         <div class="field-row">
           <div class="field">
