@@ -264,9 +264,11 @@ function route() {
   const shopSlug = params.get('shop');
   const isParent = params.get('parent') === '1';
   const isStock = params.get('stock') === '1';
+  const isStockAudit = params.get('stock_audit') === '1';
   const isAdminMenu = params.get('admin') === '1';
   if (isAdminMenu) return renderAdminMenuPage();
   if (isParent) return renderParentOrderPage();
+  if (isStockAudit) return renderStockAuditPage();
   if (isStock) return renderStockPage();
   if (storeSlug) return renderOrderPage(storeSlug);
   if (shopSlug === 'custom') return renderCustomAggregatePage();
@@ -348,6 +350,7 @@ function renderAdminMenuPage() {
         <h2>牡蠣在庫管理(カタクチ商店冷凍庫)</h2>
         <ul class="home-links">
           <li><a href="?stock=1&ref=admin">在庫管理ページを開く</a></li>
+          <li><a href="?stock_audit=1&ref=admin">在庫の変更履歴を見る</a></li>
         </ul>
       </div>
     </div>`;
@@ -930,7 +933,9 @@ async function renderStockPage() {
     <div class="page wide">
       <h1>牡蠣在庫管理</h1>
       ${adminBackLinkHtml()}
-      <p class="hint">仙台のカタクチ商店冷凍庫にある牡蠣の在庫です。指定した日までに確定した入庫・各店舗への発注(牡蠣)から、その時点の在庫を計算します。それより先の発注はまだ出荷していないため在庫からは引かれません。</p>
+      <p class="hint">仙台のカタクチ商店冷凍庫にある牡蠣の在庫です。指定した日までに確定した入庫・各店舗への発注(牡蠣)から、その時点の在庫を計算します。それより先の発注はまだ出荷していないため在庫からは引かれません。<a href="?stock_audit=1${
+        new URLSearchParams(location.search).get('ref') === 'admin' ? '&ref=admin' : ''
+      }">在庫の変更履歴を見る →</a></p>
       <div class="card">
         <div class="field">
           <label for="asOfDate">この日時点の在庫を表示</label>
@@ -1857,6 +1862,113 @@ async function renderStockPage() {
   resetBreakdownRows();
   load();
   loadCalendar();
+}
+
+// 牡蠣在庫まわり(入庫/手動出庫/発注)の変更履歴ビュー。DBトリガーが自動記録した
+// kaki_stock_audit_log を、日付を指定して表示するだけの調査用ページ(?stock_audit=1)。
+const STOCK_AUDIT_TABLE_LABELS = {
+  kaki_stock_in: '入庫',
+  kaki_stock_out_internal: '出庫(手動)',
+  oyster_orders: '発注(牡蠣)',
+};
+const STOCK_AUDIT_OP_LABELS = { INSERT: '追加', UPDATE: '変更', DELETE: '削除' };
+
+function describeStockAuditRow(tableName, data) {
+  if (!data) return '';
+  if (tableName === 'kaki_stock_in') {
+    return `${data.in_date} 混${data.mixed_boxes}/S${data.s_boxes}/M${data.m_boxes} 仕入れ元:${escapeHtml(data.note || '(空欄)')}`;
+  }
+  if (tableName === 'kaki_stock_out_internal') {
+    const purposeLabel = data.purpose === 'store' ? '店舗配達分' : '自社使用';
+    return `${data.out_date} 混${data.mixed_boxes}/S${data.s_boxes}/M${data.m_boxes} ${escapeHtml(
+      data.supplier || '(仕入れ先未記入)'
+    )}・${purposeLabel}${data.note ? '・' + escapeHtml(data.note) : ''}`;
+  }
+  if (tableName === 'oyster_orders') {
+    return `${data.order_date} ${escapeHtml(data.store_slug)} 混${data.mixed_boxes}/S${data.s_boxes}/M${data.m_boxes}${
+      data.no_order ? '(この日は発注なし)' : ''
+    }`;
+  }
+  return escapeHtml(JSON.stringify(data));
+}
+
+async function renderStockAuditPage() {
+  const isAdminRef = new URLSearchParams(location.search).get('ref') === 'admin';
+  const backToStock = `?stock=1${isAdminRef ? '&ref=admin' : ''}`;
+  app.innerHTML = `
+    <div class="page wide">
+      <h1>牡蠣在庫の変更履歴</h1>
+      ${adminBackLinkHtml()}
+      <p class="hint">入庫・手動出庫・牡蠣の発注(自動出荷のもと)への追加・変更・削除を、システムが自動で記録したものです。<a href="${backToStock}">← 在庫管理ページに戻る</a></p>
+      <div class="card">
+        <div class="field-row">
+          <div class="field">
+            <label for="auditFrom">from</label>
+            <input type="date" id="auditFrom" value="${todayStr()}">
+          </div>
+          <div class="field">
+            <label for="auditTo">to</label>
+            <input type="date" id="auditTo" value="${todayStr()}">
+          </div>
+        </div>
+        <button id="auditApplyBtn" class="primary">表示</button>
+      </div>
+      <div id="auditResult"><p class="hint">読み込み中…</p></div>
+    </div>`;
+
+  const resultEl = document.getElementById('auditResult');
+
+  async function load() {
+    const from = document.getElementById('auditFrom').value;
+    const to = document.getElementById('auditTo').value;
+    if (!from || !to) return;
+    resultEl.innerHTML = '<p class="hint">読み込み中…</p>';
+    try {
+      const rows = await fetchStockAuditLog({ from, to });
+      if (!rows.length) {
+        resultEl.innerHTML = '<div class="card"><p class="hint">この期間の変更記録はありません。</p></div>';
+        return;
+      }
+      const rowsHtml = rows
+        .map((r) => {
+          const tableLabel = STOCK_AUDIT_TABLE_LABELS[r.table_name] || r.table_name;
+          const opLabel = STOCK_AUDIT_OP_LABELS[r.operation] || r.operation;
+          let bodyHtml;
+          if (r.operation === 'INSERT') {
+            bodyHtml = describeStockAuditRow(r.table_name, r.new_data);
+          } else if (r.operation === 'DELETE') {
+            bodyHtml = `<span class="audit-old">${describeStockAuditRow(r.table_name, r.old_data)}</span>`;
+          } else {
+            bodyHtml = `旧: <span class="audit-old">${describeStockAuditRow(
+              r.table_name,
+              r.old_data
+            )}</span><br>新: ${describeStockAuditRow(r.table_name, r.new_data)}`;
+          }
+          return `<tr>
+            <td class="cal-list-date">${formatDateTimeJp(r.changed_at)}</td>
+            <td>${escapeHtml(tableLabel)}</td>
+            <td class="audit-op audit-op-${r.operation.toLowerCase()}">${escapeHtml(opLabel)}</td>
+            <td>${bodyHtml}</td>
+          </tr>`;
+        })
+        .join('');
+      resultEl.innerHTML = `<div class="card">
+        <p class="hint">${rows.length}件(新しい順)</p>
+        <div class="cal-list-wrap">
+          <table class="cal-list-table">
+            <thead><tr><th>変更日時</th><th>対象</th><th>種別</th><th>内容</th></tr></thead>
+            <tbody>${rowsHtml}</tbody>
+          </table>
+        </div>
+      </div>`;
+    } catch (e) {
+      console.error(e);
+      resultEl.innerHTML = '<p class="msg-error">読み込みに失敗しました。</p>';
+    }
+  }
+
+  document.getElementById('auditApplyBtn').addEventListener('click', load);
+  load();
 }
 
 function renderTextOrderSummary(rows, stores, options = {}) {

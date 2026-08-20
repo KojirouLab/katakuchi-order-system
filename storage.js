@@ -239,3 +239,19 @@ async function deleteStockOutInternal(id) {
   if (error) throw error;
   if (!data || data.length === 0) throw new Error('削除できませんでした(権限設定が反映されていない可能性があります)');
 }
+
+// ---- 牡蠣在庫の変更履歴(監査ログ) ----
+// kaki_stock_in / kaki_stock_out_internal / oyster_orders への変更をDBトリガーが自動記録したもの。
+// 指定した日付範囲(changed_atの日付)で絞り込んで取得する。
+
+async function fetchStockAuditLog({ from, to }) {
+  assertClient();
+  const { data, error } = await sb
+    .from('kaki_stock_audit_log')
+    .select('*')
+    .gte('changed_at', `${from}T00:00:00+09:00`)
+    .lt('changed_at', `${to}T23:59:59.999+09:00`)
+    .order('changed_at', { ascending: false });
+  if (error) throw error;
+  return data || [];
+}
