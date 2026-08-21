@@ -1242,81 +1242,10 @@ async function buildAndDownloadStockExcel(from, to) {
 
   finishStockExcelSheet(sheet, row - 1, []);
 
-  return downloadWorkbook(wb, `牡蠣入出庫記録_${from}_${to}.xlsx`);
-}
-
-// 月別の帳票(日付指定なし、データがある全期間を自動集計し、最後に合計行を付ける)。
-async function buildAndDownloadStockExcelMonthly() {
-  // 在庫の入出庫記録はKAKI_STOCK_TRACKING_START_DATE以降しか付けていないため、
-  // それより前の受注データだけが単独で残ってしまわないよう、集計範囲もそこから始める。
-  const from = KAKI_STOCK_TRACKING_START_DATE;
-  const to = todayStr();
-  const [allStockInAll, allStockOutInternalAll, oysterOrdersInRange] = await Promise.all([
-    fetchStockInAll(),
-    fetchStockOutInternalAll(),
-    fetchOysterOrdersRange(from, to),
-  ]);
-  const allStockIn = allStockInAll.filter((r) => r.in_date >= from && r.in_date <= to);
-  const allStockOutInternal = allStockOutInternalAll.filter((r) => r.out_date >= from && r.out_date <= to);
-  const monthKey = (d) => d.slice(0, 7); // 'YYYY-MM'
-  const agg = aggregateStockRecords(allStockIn, allStockOutInternal, oysterOrdersInRange, monthKey);
-
-  const allMonthKeys = new Set([
-    ...Object.keys(agg.inByKey),
-    ...Object.keys(agg.storeTotalByKey),
-    ...Object.keys(agg.storeAttrByKey),
-    ...Object.keys(agg.selfAttrByKey),
-    ...Object.keys(agg.selfUnrecordedByKey),
-  ]);
-  if (!allMonthKeys.size) allMonthKeys.add(monthKey(to));
-  const sortedMonths = Array.from(allMonthKeys).sort();
-  // 抜けている月があっても連続で並ぶように、最初〜最後の月をすべて埋める
-  const months = [];
-  let cursor = `${sortedMonths[0]}-01`;
-  const lastMonthEnd = `${sortedMonths[sortedMonths.length - 1]}-01`;
-  while (cursor <= lastMonthEnd) {
-    months.push(monthKey(cursor));
-    const d = new Date(`${cursor}T00:00:00Z`);
-    d.setUTCMonth(d.getUTCMonth() + 1);
-    cursor = d.toISOString().slice(0, 10);
-  }
-
-  await loadExcelJs();
-  const wb = new ExcelJS.Workbook();
-  const sheet = setupStockExcelSheet(wb, '牡蠣入出庫記録(月別)', '月');
-
-  let row = 3;
-  months.forEach((mk) => {
-    const [y, m] = mk.split('-');
-    writeStockExcelRow(sheet, row, `${y}年${Number(m)}月`, {
-      inBySupplier: agg.inByKey[mk],
-      storeAttrBySupplier: agg.storeAttrByKey[mk],
-      storeTotal: agg.storeTotalByKey[mk],
-      storeAttrTotal: agg.storeAttrTotalByKey[mk],
-      selfAttrBySupplier: agg.selfAttrByKey[mk],
-      selfUnrecorded: agg.selfUnrecordedByKey[mk],
-    });
-    row += 1;
-  });
-
-  // 合計行: 各列を月別データ行の範囲でSUM(未記録の赤網掛けも含めて全列そのままSUMするので、
-  // 実質は「入庫合計」「出庫合計」と同じ考え方で全期間の総計になる)。
-  const firstDataRow = 3;
-  const lastDataRow = row - 1;
-  writeStockExcelTotalRow(sheet, row, '合計', firstDataRow, lastDataRow, {
-    font: sheet.totalFont,
-    fill: sheet.totalFill,
-    topBorder: true,
-  });
-  row += 1;
-
-  finishStockExcelSheet(sheet, row - 1, [
-    '※「未記録」列(赤網掛け)は、受注システムの出荷実績はあるが、どの仕入れ先の牡蠣を使ったか記録されていない分です。',
-    '※配達出庫の合計は受注システムの実出荷数(自動計算)、イベント出庫は手動で記録した自社使用分の合計です。',
-    '※一番下の「合計」行は、表示している全期間の合計です。',
-  ]);
-
-  return downloadWorkbook(wb, `牡蠣入出庫記録_月別_${sortedMonths[0]}〜${sortedMonths[sortedMonths.length - 1]}.xlsx`);
+  // from〜toがまるまる1ヶ月分ならファイル名も「YYYY-MM」で簡潔に
+  const isFullMonth = from.endsWith('-01') && addDaysStr(to, 1).slice(0, 7) !== to.slice(0, 7);
+  const filenameLabel = isFullMonth ? from.slice(0, 7) : `${from}_${to}`;
+  return downloadWorkbook(wb, `牡蠣入出庫記録_${filenameLabel}.xlsx`);
 }
 
 async function renderStockPage() {
@@ -1337,23 +1266,13 @@ async function renderStockPage() {
       <div id="stockBalance"><p class="hint">読み込み中…</p></div>
       <div class="card">
         <h2>帳票を出力(Excel)</h2>
-        <p class="hint">入庫・出庫(仕入れ先別)を日ごとにまとめた管理表をExcel形式でダウンロードします。ダウンロード後、ExcelやNumbersから印刷してください。</p>
-        <div class="field-row">
-          <div class="field">
-            <label for="exportFrom">from</label>
-            <input type="date" id="exportFrom" value="${KAKI_STOCK_TRACKING_START_DATE}">
-          </div>
-          <div class="field">
-            <label for="exportTo">to</label>
-            <input type="date" id="exportTo" value="${todayStr()}">
-          </div>
+        <p class="hint">指定した月の入庫・出庫(仕入れ先別)を1日ごとにまとめ、最終行に月計を付けた管理表をExcel形式でダウンロードします。入出庫が無い日も表示されます。ダウンロード後、ExcelやNumbersから印刷してください。</p>
+        <div class="field">
+          <label for="exportMonth">出力する月</label>
+          <input type="month" id="exportMonth" value="${todayStr().slice(0, 7)}">
         </div>
         <button id="exportExcelBtn" class="primary">Excelをダウンロード</button>
         <p id="exportMsg" class="msg"></p>
-        <hr style="margin:14px 0;border:none;border-top:1px solid #e0e0e0;">
-        <p class="hint">日付を指定せず、記録がある全期間を月ごとに集計して合計行付きで出力することもできます。</p>
-        <button id="exportExcelMonthlyBtn" class="btn-plain">月別で出力(合計つき)</button>
-        <p id="exportMonthlyMsg" class="msg"></p>
       </div>
       <div class="card">
         <h2>入庫を記録する</h2>
@@ -1443,38 +1362,23 @@ async function renderStockPage() {
 
   document.getElementById('asOfApplyBtn').addEventListener('click', load);
   document.getElementById('exportExcelBtn').addEventListener('click', async () => {
-    const from = document.getElementById('exportFrom').value;
-    const to = document.getElementById('exportTo').value;
+    const monthVal = document.getElementById('exportMonth').value; // 'YYYY-MM'
     const msgEl = document.getElementById('exportMsg');
-    if (!from || !to) {
-      msgEl.textContent = 'from/toを指定してください。';
+    if (!monthVal) {
+      msgEl.textContent = '出力する月を指定してください。';
       msgEl.className = 'msg msg-error';
       return;
     }
+    const [y, m] = monthVal.split('-').map(Number);
+    const from = `${monthVal}-01`;
+    const lastDay = new Date(Date.UTC(y, m, 0)).getUTCDate();
+    const to = `${monthVal}-${String(lastDay).padStart(2, '0')}`;
     const btn = document.getElementById('exportExcelBtn');
     btn.disabled = true;
     msgEl.textContent = '作成中…';
     msgEl.className = 'msg';
     try {
       await buildAndDownloadStockExcel(from, to);
-      msgEl.textContent = '✓ ダウンロードしました。';
-      msgEl.className = 'msg msg-success';
-    } catch (e) {
-      console.error(e);
-      msgEl.textContent = '作成に失敗しました。通信状況を確認してもう一度お試しください。';
-      msgEl.className = 'msg msg-error';
-    } finally {
-      btn.disabled = false;
-    }
-  });
-  document.getElementById('exportExcelMonthlyBtn').addEventListener('click', async () => {
-    const msgEl = document.getElementById('exportMonthlyMsg');
-    const btn = document.getElementById('exportExcelMonthlyBtn');
-    btn.disabled = true;
-    msgEl.textContent = '作成中…';
-    msgEl.className = 'msg';
-    try {
-      await buildAndDownloadStockExcelMonthly();
       msgEl.textContent = '✓ ダウンロードしました。';
       msgEl.className = 'msg msg-success';
     } catch (e) {
