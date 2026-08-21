@@ -1015,7 +1015,7 @@ async function renderStockPage() {
           <h2 id="calMonthLabel"></h2>
           <button id="calNextBtn" class="cal-nav-btn" type="button">▶</button>
         </div>
-        <p class="hint">緑=入庫、オレンジ=店舗への出荷(自動計算)、紫=手動で記録した出庫。入庫・出庫の「×」をタップすると削除できます。オレンジ・紫の出庫表示自体をタップすると、上の「出庫を記録する」フォームにその内容が読み込まれ、仕入れ先の記録・修正ができます。赤字の「⚠受注と差」は、受注システムの出荷数と店舗配達分として記録した仕入れ先内訳が合っていない日に表示されます(タップすると不足分がフォームに入力された状態で開きます)。赤字の「⚠自社使用の仕入れ先未記録」は、自社使用の出庫のうちどこの牡蠣を使ったか(仕入れ先)が記録されていない日に表示されます(タップするとその記録が編集できる状態で開きます)。一覧表示では、その月のうち入出庫があった日だけを表形式で並べます。</p>
+        <p class="hint">カレンダー表示は見やすさ優先で「入庫/配達(店舗への自動出荷)/他出庫(自社使用など)」の3行だけを表示します。オレンジの「配達」をタップすると、上の「出庫を記録する」フォームにその日の内容が読み込まれ、仕入れ先の記録・修正ができます。個別記録の削除・仕入れ先ごとの内訳・受注データとの差分警告など詳しい内容は「📋 一覧表示」でご確認ください(その月のうち入出庫があった日だけを表形式で並べます)。</p>
         <div id="stockCalendar" class="stock-calendar"><p class="hint">読み込み中…</p></div>
       </div>
       <div id="supplierBreakdown"></div>
@@ -1405,6 +1405,39 @@ async function renderStockPage() {
           )}</div></div>`;
         }
 
+        // カレンダー表示(グリッド)専用: 見やすさ優先で「入庫/配達/他出庫」の3行だけに簡略化する。
+        // 個別の削除・仕入れ先の細かい記録/修正は一覧表示側で行う想定。
+        const gridInHtml = inEntries
+          .map(
+            (r) =>
+              `<div class="cal-in">入庫 ${compactQty(Number(r.mixed_boxes), Number(r.s_boxes), Number(r.m_boxes))}${
+                r.note ? `(${escapeHtml(r.note)})` : ''
+              }</div>`
+          )
+          .join('');
+        const gridDeliveryHtml =
+          shippedTotal > 0
+            ? `<div class="cal-out cal-out-clickable" data-date="${dateStr}" data-mixed="${shipped.mixed}" data-s="${shipped.s}" data-m="${shipped.m}">配達 ${compactQty(
+                shipped.mixed,
+                shipped.s,
+                shipped.m
+              )}</div>`
+            : '';
+        const selfEntriesForGrid = useEntries.filter((r) => r.purpose !== 'store');
+        const selfTotalForGrid = selfEntriesForGrid.reduce(
+          (acc, r) => {
+            acc.mixed += Number(r.mixed_boxes) || 0;
+            acc.s += Number(r.s_boxes) || 0;
+            acc.m += Number(r.m_boxes) || 0;
+            return acc;
+          },
+          { mixed: 0, s: 0, m: 0 }
+        );
+        const gridOtherOutHtml =
+          selfEntriesForGrid.length > 0
+            ? `<div class="cal-use">他出庫 ${compactQty(selfTotalForGrid.mixed, selfTotalForGrid.s, selfTotalForGrid.m)}</div>`
+            : '';
+
         const isToday = dateStr === todayStr();
         const hasAny = !!(inHtml || outHtml || useHtml || warnHtml || selfWarnHtml);
         return {
@@ -1417,6 +1450,9 @@ async function renderStockPage() {
           useHtml,
           warnHtml: warnHtml + selfWarnHtml,
           breakdownHtml,
+          gridInHtml,
+          gridDeliveryHtml,
+          gridOtherOutHtml,
         };
       });
 
@@ -1445,10 +1481,9 @@ async function renderStockPage() {
           .map(
             (d) => `<div class="cal-cell${d.isToday ? ' cal-today' : ''}">
           <div class="cal-daynum">${d.day}</div>
-          ${d.inHtml}
-          ${d.outHtml}
-          ${d.useHtml}
-          ${d.warnHtml}
+          ${d.gridInHtml}
+          ${d.gridDeliveryHtml}
+          ${d.gridOtherOutHtml}
         </div>`
           )
           .join('');
