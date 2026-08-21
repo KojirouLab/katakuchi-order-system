@@ -1636,6 +1636,41 @@ async function renderStockPage() {
           supplierBalance[r.supplier].m -= Number(r.m_boxes) || 0;
         }
       });
+
+      // 店舗配達分のうち、仕入れ先が未記録の日は「標準で拓人」として拓人の残りから
+      // 自動的に差し引く(牡蠣の仕入れはほぼ拓人のため)。他の仕入れ先(勝又商店・カタクチ)から
+      // 出た分は、これまで通り出庫記録で明示的に記録すれば正しくそちらから引かれる。
+      const shippedByDateRaw = {};
+      shippedRows.forEach((r) => {
+        const key = r.order_date;
+        if (!shippedByDateRaw[key]) shippedByDateRaw[key] = { mixed: 0, s: 0, m: 0 };
+        shippedByDateRaw[key].mixed += Number(r.mixed_boxes) || 0;
+        shippedByDateRaw[key].s += Number(r.s_boxes) || 0;
+        shippedByDateRaw[key].m += Number(r.m_boxes) || 0;
+      });
+      const attributedStoreByDate = {};
+      internalOutRowsUpToDate
+        .filter((r) => r.purpose === 'store')
+        .forEach((r) => {
+          const key = r.out_date;
+          if (!attributedStoreByDate[key]) attributedStoreByDate[key] = { mixed: 0, s: 0, m: 0 };
+          attributedStoreByDate[key].mixed += Number(r.mixed_boxes) || 0;
+          attributedStoreByDate[key].s += Number(r.s_boxes) || 0;
+          attributedStoreByDate[key].m += Number(r.m_boxes) || 0;
+        });
+      Object.keys(shippedByDateRaw).forEach((d) => {
+        const shipped = shippedByDateRaw[d];
+        const attributed = attributedStoreByDate[d] || { mixed: 0, s: 0, m: 0 };
+        const unrecorded = {
+          mixed: Math.max(shipped.mixed - attributed.mixed, 0),
+          s: Math.max(shipped.s - attributed.s, 0),
+          m: Math.max(shipped.m - attributed.m, 0),
+        };
+        supplierBalance[STOCK_OUT_DEFAULT_SUPPLIER].mixed -= unrecorded.mixed;
+        supplierBalance[STOCK_OUT_DEFAULT_SUPPLIER].s -= unrecorded.s;
+        supplierBalance[STOCK_OUT_DEFAULT_SUPPLIER].m -= unrecorded.m;
+      });
+
       const supplierRows = STOCK_SUPPLIERS.map((s) => {
         const b = supplierBalance[s];
         return `<li><span class="recent-store">${escapeHtml(s)}</span><span class="oyster-qty">混 ${b.mixed} / S ${b.s} / M ${b.m}</span></li>`;
@@ -1702,7 +1737,7 @@ async function renderStockPage() {
         </div>
         <div class="card">
           <h2>仕入れ先ごとの残り(${formatDateJp(asOfDate)}時点)</h2>
-          <p class="hint">出庫記録で仕入れ先を指定した分だけが反映されます(未記録の出庫は仕入れ先不明のまま全体在庫からのみ引かれます)。</p>
+          <p class="hint">出庫記録で仕入れ先を指定した分に加えて、店舗配達分のうち仕入れ先が未記録の日は標準で拓人として計算しています(牡蠣の仕入れはほぼ拓人のため)。実際に他の仕入れ先(勝又商店・カタクチ)から出した場合は、出庫記録で明示的に記録してください。</p>
           <ul class="recent-list">${supplierRows}</ul>
         </div>`;
 
