@@ -996,10 +996,14 @@ function setupStockExcelSheet(wb, sheetName, firstColLabel) {
     { label: '配達出庫(店舗配送)', start: storeColStart },
     { label: 'イベント出庫(自社使用)', start: storeColStart + (EXPORT_SUPPLIERS.length + 1) * 2 + 1 },
   ];
+  // 配達出庫/イベント出庫の見出し1行目には、印刷時に見分けやすいよう仕入れ先名(略称)も付ける
+  // (未記録は特定の仕入れ先ではないので付けない)。ユーザー提供の様式(kaki_stock_log_by_supplier.xlsx)に合わせた表記。
+  const SUPPLIER_HEADER_ABBR = { 拓人: '拓人', 勝又商店: '勝又', カタクチ: 'カタクチ' };
   outGroups.forEach((group) => {
     [...EXPORT_SUPPLIERS, '未記録'].forEach((supplier, i) => {
       const c0 = group.start + i * 2;
-      setCell(1, c0, `${group.label}\n${supplier}`, {
+      const abbr = SUPPLIER_HEADER_ABBR[supplier] || '';
+      setCell(1, c0, `${group.label}${abbr}\n${supplier}`, {
         font: headerFont,
         fill: supplier === '未記録' ? unrecordedFill : headerFill,
       });
@@ -1019,6 +1023,8 @@ function setupStockExcelSheet(wb, sheetName, firstColLabel) {
   const outStartCol = outGroups[0].start;
   const outEndCol = outGroups[1].start + EXPORT_SUPPLIERS.length * 2 + 1;
   const inEndCol = inColStart + EXPORT_SUPPLIERS.length * 3 - 1;
+  // 空列(D/入庫と配達出庫の間、配達出庫とイベント出庫の間)。合計行の数式もここは飛ばす。
+  const spacerCols = [4, storeColStart - 1, outGroups[1].start - 1];
 
   return {
     ws,
@@ -1030,11 +1036,29 @@ function setupStockExcelSheet(wb, sheetName, firstColLabel) {
     selfCols,
     outStartCol,
     outEndCol,
+    spacerCols,
     unrecordedFill,
     totalFill,
     totalFont,
     noteFont,
   };
+}
+
+// 集計済みの行の下に合計行を書き込む(B〜outEndColをSUM数式で、空列は飛ばす)。
+function writeStockExcelTotalRow(sheet, row, label, firstDataRow, lastDataRow, { font, fill, topBorder } = {}) {
+  const { ws, setCell, outEndCol, spacerCols } = sheet;
+  setCell(row, 1, label, { font, fill });
+  for (let c = 2; c <= outEndCol; c++) {
+    if (spacerCols.includes(c)) continue;
+    const colLetter = ws.getColumn(c).letter;
+    setCell(row, c, { formula: `SUM(${colLetter}${firstDataRow}:${colLetter}${lastDataRow})` }, { font, fill });
+  }
+  if (topBorder) {
+    for (let c = 1; c <= outEndCol; c++) {
+      const cell = ws.getCell(row, c);
+      cell.border = { ...cell.border, top: { style: 'medium', color: { argb: 'FFB0B0B0' } } };
+    }
+  }
 }
 
 // 集計済みの1行分(その日/その月の合計)をシートに書き込む。B/C列はSUM数式。
@@ -1211,10 +1235,12 @@ async function buildAndDownloadStockExcel(from, to) {
     cur = addDaysStr(cur, 1);
   }
 
-  finishStockExcelSheet(sheet, row - 1, [
-    '※「未記録」列(赤網掛け)は、受注システムの出荷実績はあるが、どの仕入れ先の牡蠣を使ったか記録されていない分です。',
-    '※配達出庫の合計は受注システムの実出荷数(自動計算)、イベント出庫は手動で記録した自社使用分の合計です。',
-  ]);
+  const firstDataRow = 3;
+  const lastDataRow = row - 1;
+  writeStockExcelTotalRow(sheet, row, '月計', firstDataRow, lastDataRow, { topBorder: true });
+  row += 1;
+
+  finishStockExcelSheet(sheet, row - 1, []);
 
   return downloadWorkbook(wb, `牡蠣入出庫記録_${from}_${to}.xlsx`);
 }
@@ -1277,15 +1303,11 @@ async function buildAndDownloadStockExcelMonthly() {
   // 実質は「入庫合計」「出庫合計」と同じ考え方で全期間の総計になる)。
   const firstDataRow = 3;
   const lastDataRow = row - 1;
-  const { ws, setCell, outEndCol, totalFill, totalFont } = sheet;
-  setCell(row, 1, '合計', { font: totalFont, fill: totalFill });
-  for (let c = 2; c <= outEndCol; c++) {
-    const colLetter = ws.getColumn(c).letter;
-    setCell(row, c, { formula: `SUM(${colLetter}${firstDataRow}:${colLetter}${lastDataRow})` }, {
-      font: totalFont,
-      fill: totalFill,
-    });
-  }
+  writeStockExcelTotalRow(sheet, row, '合計', firstDataRow, lastDataRow, {
+    font: sheet.totalFont,
+    fill: sheet.totalFill,
+    topBorder: true,
+  });
   row += 1;
 
   finishStockExcelSheet(sheet, row - 1, [
