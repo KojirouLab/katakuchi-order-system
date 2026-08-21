@@ -944,78 +944,20 @@ function buildStockoutForecast(balance, shippedByDate, asOfDate) {
   return `直近の曜日別出荷ペース(祝日は日曜相当で計算)だと、${sPart}、${mPart}まで在庫が持つ見込みです。余裕をもって入庫の手配をおすすめします。`;
 }
 
-// 牡蠣在庫の帳票(Excel)を生成してダウンロードする。
-// 列構成: A日付/B入庫合計/C出庫合計/ 入庫(仕入れ先×混合・S・M)/ 配達出庫・イベント出庫
+// 牡蠣在庫の帳票(Excel)の列構成を作る共通処理。
+// A日付/B入庫合計/C出庫合計/ 入庫(仕入れ先×混合・S・M)/ 配達出庫・イベント出庫
 // (それぞれ仕入れ先×S・M + 未記録)。ユーザーに個別配布していたxlsxと同じ様式。
-async function buildAndDownloadStockExcel(from, to) {
-  const [allStockIn, allStockOutInternal, oysterOrdersInRange] = await Promise.all([
-    fetchStockInAll(),
-    fetchStockOutInternalAll(),
-    fetchOysterOrdersRange(from, to),
-  ]);
-
-  const stockIn = allStockIn.filter((r) => r.in_date >= from && r.in_date <= to);
-  const stockOutInternal = allStockOutInternal.filter((r) => r.out_date >= from && r.out_date <= to);
-  const boxesOf = (r) => (Number(r.mixed_boxes) || 0) + (Number(r.s_boxes) || 0) + (Number(r.m_boxes) || 0);
-
-  const inByDate = {};
-  stockIn.forEach((r) => {
-    const d = r.in_date;
-    const supplier = r.note || '';
-    if (!inByDate[d]) inByDate[d] = {};
-    if (!inByDate[d][supplier]) inByDate[d][supplier] = [0, 0, 0];
-    inByDate[d][supplier][0] += Number(r.mixed_boxes) || 0;
-    inByDate[d][supplier][1] += Number(r.s_boxes) || 0;
-    inByDate[d][supplier][2] += Number(r.m_boxes) || 0;
-  });
-
-  const storeTotalByDate = {};
-  oysterOrdersInRange.forEach((r) => {
-    if (r.no_order) return;
-    const d = r.order_date;
-    storeTotalByDate[d] = (storeTotalByDate[d] || 0) + boxesOf(r);
-  });
-
-  const storeAttrByDate = {};
-  const storeAttrTotalByDate = {};
-  const selfAttrByDate = {};
-  const selfUnrecordedByDate = {};
-  stockOutInternal.forEach((r) => {
-    const d = r.out_date;
-    const supplier = r.supplier || '';
-    const s = Number(r.s_boxes) || 0;
-    const m = Number(r.m_boxes) || 0;
-    if (r.purpose === 'store') {
-      if (STOCK_SUPPLIERS.includes(supplier)) {
-        if (!storeAttrByDate[d]) storeAttrByDate[d] = {};
-        if (!storeAttrByDate[d][supplier]) storeAttrByDate[d][supplier] = [0, 0];
-        storeAttrByDate[d][supplier][0] += s;
-        storeAttrByDate[d][supplier][1] += m;
-      }
-      storeAttrTotalByDate[d] = (storeAttrTotalByDate[d] || 0) + boxesOf(r);
-    } else {
-      if (STOCK_SUPPLIERS.includes(supplier)) {
-        if (!selfAttrByDate[d]) selfAttrByDate[d] = {};
-        if (!selfAttrByDate[d][supplier]) selfAttrByDate[d][supplier] = [0, 0];
-        selfAttrByDate[d][supplier][0] += s;
-        selfAttrByDate[d][supplier][1] += m;
-      } else {
-        if (!selfUnrecordedByDate[d]) selfUnrecordedByDate[d] = [0, 0];
-        selfUnrecordedByDate[d][0] += s;
-        selfUnrecordedByDate[d][1] += m;
-      }
-    }
-  });
-
-  await loadExcelJs();
-  const wb = new ExcelJS.Workbook();
-  const ws = wb.addWorksheet('牡蠣入出庫記録(仕入れ先別)');
+// 日別・月別のどちらの帳票もこのヘッダー構成を共有する。
+function setupStockExcelSheet(wb, sheetName, firstColLabel) {
+  const ws = wb.addWorksheet(sheetName);
 
   const headerFont = { name: '游ゴシック', bold: true, size: 10 };
   const normalFont = { name: '游ゴシック', size: 10 };
+  const totalFont = { name: '游ゴシック', bold: true, size: 10 };
   const noteFont = { name: '游ゴシック', size: 9, italic: true, color: { argb: 'FF767671' } };
   const headerFill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF2F2F2' } };
   const unrecordedFill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFBE9E7' } };
+  const totalFill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE3F0EC' } };
   const thin = { style: 'thin', color: { argb: 'FFD9D9D9' } };
   const border = { top: thin, left: thin, bottom: thin, right: thin };
   const center = { horizontal: 'center', vertical: 'middle', wrapText: true };
@@ -1032,7 +974,7 @@ async function buildAndDownloadStockExcel(from, to) {
 
   const EXPORT_SUPPLIERS = ['拓人', '勝又商店', 'カタクチ'];
 
-  setCell(1, 1, '日付', { font: headerFont, fill: headerFill });
+  setCell(1, 1, firstColLabel, { font: headerFont, fill: headerFill });
   ws.mergeCells(1, 1, 2, 1);
   setCell(1, 2, '入庫合計', { font: headerFont, fill: headerFill });
   ws.mergeCells(1, 2, 2, 2);
@@ -1078,89 +1020,281 @@ async function buildAndDownloadStockExcel(from, to) {
   const outEndCol = outGroups[1].start + EXPORT_SUPPLIERS.length * 2 + 1;
   const inEndCol = inColStart + EXPORT_SUPPLIERS.length * 3 - 1;
 
-  function addDaysStr(dateStr, delta) {
-    const d = new Date(`${dateStr}T00:00:00Z`);
-    d.setUTCDate(d.getUTCDate() + delta);
-    return d.toISOString().slice(0, 10);
+  return {
+    ws,
+    setCell,
+    EXPORT_SUPPLIERS,
+    inColStart,
+    inEndCol,
+    storeCols,
+    selfCols,
+    outStartCol,
+    outEndCol,
+    unrecordedFill,
+    totalFill,
+    totalFont,
+    noteFont,
+  };
+}
+
+// 集計済みの1行分(その日/その月の合計)をシートに書き込む。B/C列はSUM数式。
+function writeStockExcelRow(sheet, row, rowLabel, { inBySupplier, storeAttrBySupplier, storeTotal, storeAttrTotal, selfAttrBySupplier, selfUnrecorded }) {
+  const { setCell, EXPORT_SUPPLIERS, inColStart, inEndCol, storeCols, selfCols, outStartCol, outEndCol, unrecordedFill, ws } = sheet;
+  setCell(row, 1, rowLabel);
+
+  let hasIn = false;
+  EXPORT_SUPPLIERS.forEach((supplier, i) => {
+    const vals = (inBySupplier && inBySupplier[supplier]) || [0, 0, 0];
+    const c0 = inColStart + i * 3;
+    vals.forEach((v, j) => {
+      if (v) {
+        setCell(row, c0 + j, v);
+        hasIn = true;
+      }
+    });
+  });
+
+  let hasOut = false;
+  const storeAttr = storeAttrBySupplier || {};
+  EXPORT_SUPPLIERS.forEach((supplier) => {
+    const [s, m] = storeAttr[supplier] || [0, 0];
+    if (s) { setCell(row, storeCols[supplier], s); hasOut = true; }
+    if (m) { setCell(row, storeCols[supplier] + 1, m); hasOut = true; }
+  });
+  const storeUnrecorded = (storeTotal || 0) - (storeAttrTotal || 0);
+  if (storeUnrecorded > 0) {
+    setCell(row, storeCols['未記録'], storeUnrecorded, { fill: unrecordedFill });
+    hasOut = true;
   }
+  const selfAttr = selfAttrBySupplier || {};
+  EXPORT_SUPPLIERS.forEach((supplier) => {
+    const [s, m] = selfAttr[supplier] || [0, 0];
+    if (s) { setCell(row, selfCols[supplier], s); hasOut = true; }
+    if (m) { setCell(row, selfCols[supplier] + 1, m); hasOut = true; }
+  });
+  const [selfUnS, selfUnM] = selfUnrecorded || [0, 0];
+  if (selfUnS) { setCell(row, selfCols['未記録'], selfUnS, { fill: unrecordedFill }); hasOut = true; }
+  if (selfUnM) { setCell(row, selfCols['未記録'] + 1, selfUnM, { fill: unrecordedFill }); hasOut = true; }
 
-  let row = 3;
-  let cur = from;
-  while (cur <= to) {
-    const d = new Date(`${cur}T00:00:00Z`);
-    setCell(row, 1, `${d.getUTCMonth() + 1}月${d.getUTCDate()}日`);
+  if (hasIn) setCell(row, 2, { formula: `SUM(${ws.getColumn(inColStart).letter}${row}:${ws.getColumn(inEndCol).letter}${row})` });
+  if (hasOut) setCell(row, 3, { formula: `SUM(${ws.getColumn(outStartCol).letter}${row}:${ws.getColumn(outEndCol).letter}${row})` });
+  return hasIn || hasOut;
+}
 
-    let hasIn = false;
-    EXPORT_SUPPLIERS.forEach((supplier, i) => {
-      const vals = (inByDate[cur] && inByDate[cur][supplier]) || [0, 0, 0];
-      const c0 = inColStart + i * 3;
-      vals.forEach((v, j) => {
-        if (v) {
-          setCell(row, c0 + j, v);
-          hasIn = true;
-        }
-      });
-    });
+function finishStockExcelSheet(sheet, lastDataRow, notes) {
+  const { ws, outEndCol, noteFont } = sheet;
+  let noteRow = lastDataRow + 1;
+  notes.forEach((text) => {
+    const cell = ws.getCell(noteRow, 1);
+    cell.value = text;
+    cell.font = noteFont;
+    ws.mergeCells(noteRow, 1, noteRow, outEndCol);
+    noteRow += 1;
+  });
 
-    let hasOut = false;
-    const storeAttr = storeAttrByDate[cur] || {};
-    EXPORT_SUPPLIERS.forEach((supplier) => {
-      const [s, m] = storeAttr[supplier] || [0, 0];
-      if (s) { setCell(row, storeCols[supplier], s); hasOut = true; }
-      if (m) { setCell(row, storeCols[supplier] + 1, m); hasOut = true; }
-    });
-    const storeUnrecorded = (storeTotalByDate[cur] || 0) - (storeAttrTotalByDate[cur] || 0);
-    if (storeUnrecorded > 0) {
-      setCell(row, storeCols['未記録'], storeUnrecorded, { fill: unrecordedFill });
-      hasOut = true;
-    }
-    const selfAttr = selfAttrByDate[cur] || {};
-    EXPORT_SUPPLIERS.forEach((supplier) => {
-      const [s, m] = selfAttr[supplier] || [0, 0];
-      if (s) { setCell(row, selfCols[supplier], s); hasOut = true; }
-      if (m) { setCell(row, selfCols[supplier] + 1, m); hasOut = true; }
-    });
-    const [selfUnS, selfUnM] = selfUnrecordedByDate[cur] || [0, 0];
-    if (selfUnS) { setCell(row, selfCols['未記録'], selfUnS, { fill: unrecordedFill }); hasOut = true; }
-    if (selfUnM) { setCell(row, selfCols['未記録'] + 1, selfUnM, { fill: unrecordedFill }); hasOut = true; }
-
-    if (hasIn) setCell(row, 2, { formula: `SUM(${ws.getColumn(inColStart).letter}${row}:${ws.getColumn(inEndCol).letter}${row})` });
-    if (hasOut) setCell(row, 3, { formula: `SUM(${ws.getColumn(outStartCol).letter}${row}:${ws.getColumn(outEndCol).letter}${row})` });
-
-    row += 1;
-    cur = addDaysStr(cur, 1);
-  }
-
-  const lastColLetter = ws.getColumn(outEndCol).letter;
-  const note1 = ws.getCell(row + 1, 1);
-  note1.value =
-    '※「未記録」列(赤網掛け)は、受注システムの出荷実績はあるが、どの仕入れ先の牡蠣を使ったか記録されていない分です。';
-  note1.font = noteFont;
-  ws.mergeCells(row + 1, 1, row + 1, outEndCol);
-  const note2 = ws.getCell(row + 2, 1);
-  note2.value = '※配達出庫の合計は受注システムの実出荷数(自動計算)、イベント出庫は手動で記録した自社使用分の合計です。';
-  note2.font = noteFont;
-  ws.mergeCells(row + 2, 1, row + 2, outEndCol);
-
-  ws.getColumn(1).width = 10;
+  ws.getColumn(1).width = 12;
   ws.getColumn(2).width = 9;
   ws.getColumn(3).width = 9;
   for (let c = 4; c <= outEndCol; c++) ws.getColumn(c).width = 6.5;
   ws.getRow(1).height = 32;
   ws.getRow(2).height = 16;
   ws.views = [{ state: 'frozen', ySplit: 2 }];
+}
 
+async function downloadWorkbook(wb, filename) {
   const buffer = await wb.xlsx.writeBuffer();
   const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `牡蠣入出庫記録_${from}_${to}.xlsx`;
+  a.download = filename;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
   setTimeout(() => URL.revokeObjectURL(url), 10000);
   return buffer;
+}
+
+function boxesOfRow(r) {
+  return (Number(r.mixed_boxes) || 0) + (Number(r.s_boxes) || 0) + (Number(r.m_boxes) || 0);
+}
+
+// 入庫・手動出庫・発注データから、日付キー(YYYY-MM-DDでもYYYY-MMでも可)ごとの集計マップを作る。
+// keyFn(dateStr) でグルーピング単位(日別/月別)を切り替える。
+function aggregateStockRecords(stockIn, stockOutInternal, oysterOrders, keyFn) {
+  const inByKey = {};
+  stockIn.forEach((r) => {
+    const key = keyFn(r.in_date);
+    const supplier = r.note || '';
+    if (!inByKey[key]) inByKey[key] = {};
+    if (!inByKey[key][supplier]) inByKey[key][supplier] = [0, 0, 0];
+    inByKey[key][supplier][0] += Number(r.mixed_boxes) || 0;
+    inByKey[key][supplier][1] += Number(r.s_boxes) || 0;
+    inByKey[key][supplier][2] += Number(r.m_boxes) || 0;
+  });
+
+  const storeTotalByKey = {};
+  oysterOrders.forEach((r) => {
+    if (r.no_order) return;
+    const key = keyFn(r.order_date);
+    storeTotalByKey[key] = (storeTotalByKey[key] || 0) + boxesOfRow(r);
+  });
+
+  const storeAttrByKey = {};
+  const storeAttrTotalByKey = {};
+  const selfAttrByKey = {};
+  const selfUnrecordedByKey = {};
+  stockOutInternal.forEach((r) => {
+    const key = keyFn(r.out_date);
+    const supplier = r.supplier || '';
+    const s = Number(r.s_boxes) || 0;
+    const m = Number(r.m_boxes) || 0;
+    if (r.purpose === 'store') {
+      if (STOCK_SUPPLIERS.includes(supplier)) {
+        if (!storeAttrByKey[key]) storeAttrByKey[key] = {};
+        if (!storeAttrByKey[key][supplier]) storeAttrByKey[key][supplier] = [0, 0];
+        storeAttrByKey[key][supplier][0] += s;
+        storeAttrByKey[key][supplier][1] += m;
+      }
+      storeAttrTotalByKey[key] = (storeAttrTotalByKey[key] || 0) + boxesOfRow(r);
+    } else {
+      if (STOCK_SUPPLIERS.includes(supplier)) {
+        if (!selfAttrByKey[key]) selfAttrByKey[key] = {};
+        if (!selfAttrByKey[key][supplier]) selfAttrByKey[key][supplier] = [0, 0];
+        selfAttrByKey[key][supplier][0] += s;
+        selfAttrByKey[key][supplier][1] += m;
+      } else {
+        if (!selfUnrecordedByKey[key]) selfUnrecordedByKey[key] = [0, 0];
+        selfUnrecordedByKey[key][0] += s;
+        selfUnrecordedByKey[key][1] += m;
+      }
+    }
+  });
+
+  return { inByKey, storeTotalByKey, storeAttrByKey, storeAttrTotalByKey, selfAttrByKey, selfUnrecordedByKey };
+}
+
+function addDaysStr(dateStr, delta) {
+  const d = new Date(`${dateStr}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + delta);
+  return d.toISOString().slice(0, 10);
+}
+
+// 日別の帳票(from〜to指定)。
+async function buildAndDownloadStockExcel(from, to) {
+  const [allStockIn, allStockOutInternal, oysterOrdersInRange] = await Promise.all([
+    fetchStockInAll(),
+    fetchStockOutInternalAll(),
+    fetchOysterOrdersRange(from, to),
+  ]);
+  const stockIn = allStockIn.filter((r) => r.in_date >= from && r.in_date <= to);
+  const stockOutInternal = allStockOutInternal.filter((r) => r.out_date >= from && r.out_date <= to);
+  const agg = aggregateStockRecords(stockIn, stockOutInternal, oysterOrdersInRange, (d) => d);
+
+  await loadExcelJs();
+  const wb = new ExcelJS.Workbook();
+  const sheet = setupStockExcelSheet(wb, '牡蠣入出庫記録(仕入れ先別)', '日付');
+
+  let row = 3;
+  let cur = from;
+  while (cur <= to) {
+    const d = new Date(`${cur}T00:00:00Z`);
+    writeStockExcelRow(sheet, row, `${d.getUTCMonth() + 1}月${d.getUTCDate()}日`, {
+      inBySupplier: agg.inByKey[cur],
+      storeAttrBySupplier: agg.storeAttrByKey[cur],
+      storeTotal: agg.storeTotalByKey[cur],
+      storeAttrTotal: agg.storeAttrTotalByKey[cur],
+      selfAttrBySupplier: agg.selfAttrByKey[cur],
+      selfUnrecorded: agg.selfUnrecordedByKey[cur],
+    });
+    row += 1;
+    cur = addDaysStr(cur, 1);
+  }
+
+  finishStockExcelSheet(sheet, row - 1, [
+    '※「未記録」列(赤網掛け)は、受注システムの出荷実績はあるが、どの仕入れ先の牡蠣を使ったか記録されていない分です。',
+    '※配達出庫の合計は受注システムの実出荷数(自動計算)、イベント出庫は手動で記録した自社使用分の合計です。',
+  ]);
+
+  return downloadWorkbook(wb, `牡蠣入出庫記録_${from}_${to}.xlsx`);
+}
+
+// 月別の帳票(日付指定なし、データがある全期間を自動集計し、最後に合計行を付ける)。
+async function buildAndDownloadStockExcelMonthly() {
+  // 在庫の入出庫記録はKAKI_STOCK_TRACKING_START_DATE以降しか付けていないため、
+  // それより前の受注データだけが単独で残ってしまわないよう、集計範囲もそこから始める。
+  const from = KAKI_STOCK_TRACKING_START_DATE;
+  const to = todayStr();
+  const [allStockInAll, allStockOutInternalAll, oysterOrdersInRange] = await Promise.all([
+    fetchStockInAll(),
+    fetchStockOutInternalAll(),
+    fetchOysterOrdersRange(from, to),
+  ]);
+  const allStockIn = allStockInAll.filter((r) => r.in_date >= from && r.in_date <= to);
+  const allStockOutInternal = allStockOutInternalAll.filter((r) => r.out_date >= from && r.out_date <= to);
+  const monthKey = (d) => d.slice(0, 7); // 'YYYY-MM'
+  const agg = aggregateStockRecords(allStockIn, allStockOutInternal, oysterOrdersInRange, monthKey);
+
+  const allMonthKeys = new Set([
+    ...Object.keys(agg.inByKey),
+    ...Object.keys(agg.storeTotalByKey),
+    ...Object.keys(agg.storeAttrByKey),
+    ...Object.keys(agg.selfAttrByKey),
+    ...Object.keys(agg.selfUnrecordedByKey),
+  ]);
+  if (!allMonthKeys.size) allMonthKeys.add(monthKey(to));
+  const sortedMonths = Array.from(allMonthKeys).sort();
+  // 抜けている月があっても連続で並ぶように、最初〜最後の月をすべて埋める
+  const months = [];
+  let cursor = `${sortedMonths[0]}-01`;
+  const lastMonthEnd = `${sortedMonths[sortedMonths.length - 1]}-01`;
+  while (cursor <= lastMonthEnd) {
+    months.push(monthKey(cursor));
+    const d = new Date(`${cursor}T00:00:00Z`);
+    d.setUTCMonth(d.getUTCMonth() + 1);
+    cursor = d.toISOString().slice(0, 10);
+  }
+
+  await loadExcelJs();
+  const wb = new ExcelJS.Workbook();
+  const sheet = setupStockExcelSheet(wb, '牡蠣入出庫記録(月別)', '月');
+
+  let row = 3;
+  months.forEach((mk) => {
+    const [y, m] = mk.split('-');
+    writeStockExcelRow(sheet, row, `${y}年${Number(m)}月`, {
+      inBySupplier: agg.inByKey[mk],
+      storeAttrBySupplier: agg.storeAttrByKey[mk],
+      storeTotal: agg.storeTotalByKey[mk],
+      storeAttrTotal: agg.storeAttrTotalByKey[mk],
+      selfAttrBySupplier: agg.selfAttrByKey[mk],
+      selfUnrecorded: agg.selfUnrecordedByKey[mk],
+    });
+    row += 1;
+  });
+
+  // 合計行: 各列を月別データ行の範囲でSUM(未記録の赤網掛けも含めて全列そのままSUMするので、
+  // 実質は「入庫合計」「出庫合計」と同じ考え方で全期間の総計になる)。
+  const firstDataRow = 3;
+  const lastDataRow = row - 1;
+  const { ws, setCell, outEndCol, totalFill, totalFont } = sheet;
+  setCell(row, 1, '合計', { font: totalFont, fill: totalFill });
+  for (let c = 2; c <= outEndCol; c++) {
+    const colLetter = ws.getColumn(c).letter;
+    setCell(row, c, { formula: `SUM(${colLetter}${firstDataRow}:${colLetter}${lastDataRow})` }, {
+      font: totalFont,
+      fill: totalFill,
+    });
+  }
+  row += 1;
+
+  finishStockExcelSheet(sheet, row - 1, [
+    '※「未記録」列(赤網掛け)は、受注システムの出荷実績はあるが、どの仕入れ先の牡蠣を使ったか記録されていない分です。',
+    '※配達出庫の合計は受注システムの実出荷数(自動計算)、イベント出庫は手動で記録した自社使用分の合計です。',
+    '※一番下の「合計」行は、表示している全期間の合計です。',
+  ]);
+
+  return downloadWorkbook(wb, `牡蠣入出庫記録_月別_${sortedMonths[0]}〜${sortedMonths[sortedMonths.length - 1]}.xlsx`);
 }
 
 async function renderStockPage() {
@@ -1194,6 +1328,10 @@ async function renderStockPage() {
         </div>
         <button id="exportExcelBtn" class="primary">Excelをダウンロード</button>
         <p id="exportMsg" class="msg"></p>
+        <hr style="margin:14px 0;border:none;border-top:1px solid #e0e0e0;">
+        <p class="hint">日付を指定せず、記録がある全期間を月ごとに集計して合計行付きで出力することもできます。</p>
+        <button id="exportExcelMonthlyBtn" class="btn-plain">月別で出力(合計つき)</button>
+        <p id="exportMonthlyMsg" class="msg"></p>
       </div>
       <div class="card">
         <h2>入庫を記録する</h2>
@@ -1297,6 +1435,24 @@ async function renderStockPage() {
     msgEl.className = 'msg';
     try {
       await buildAndDownloadStockExcel(from, to);
+      msgEl.textContent = '✓ ダウンロードしました。';
+      msgEl.className = 'msg msg-success';
+    } catch (e) {
+      console.error(e);
+      msgEl.textContent = '作成に失敗しました。通信状況を確認してもう一度お試しください。';
+      msgEl.className = 'msg msg-error';
+    } finally {
+      btn.disabled = false;
+    }
+  });
+  document.getElementById('exportExcelMonthlyBtn').addEventListener('click', async () => {
+    const msgEl = document.getElementById('exportMonthlyMsg');
+    const btn = document.getElementById('exportExcelMonthlyBtn');
+    btn.disabled = true;
+    msgEl.textContent = '作成中…';
+    msgEl.className = 'msg';
+    try {
+      await buildAndDownloadStockExcelMonthly();
       msgEl.textContent = '✓ ダウンロードしました。';
       msgEl.className = 'msg msg-success';
     } catch (e) {
