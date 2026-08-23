@@ -15,6 +15,9 @@ const STORES = [
 const PIZZA_STORES = STORES.filter((s) => s.categories.includes('pizza'));
 const OYSTER_STORES = STORES.filter((s) => s.categories.includes('oyster'));
 const STORES_BY_CATEGORY = { pizza: PIZZA_STORES, oyster: OYSTER_STORES };
+// 宅配便発送(トラック配送に載らない)店舗のslug一覧。牡蠣在庫管理・受注集計のどちらでも、
+// 「配送」扱いの集計から除いて「宅配発送」として別枠にするために使う。
+const COURIER_STORE_SLUGS = new Set(STORES.filter((s) => s.shipping === 'courier').map((s) => s.slug));
 
 const ADMIN_SHOPS = {
   katakuchi: { name: 'カタクチ商店', categories: ['pizza'] },
@@ -734,32 +737,52 @@ async function renderAdminPage(slug) {
     summaryEl.innerHTML = '<p class="hint">読み込み中…</p>';
     const showOysterToo = slug === 'katakuchi' && document.getElementById('showOysterToo').checked;
     const categories = showOysterToo ? [...shop.categories, 'oyster'] : shop.categories;
+    // 美人罠など宅配便発送の牡蠣店舗は、牡蠣受注店・配送受注店ページの集計には含めず、
+    // 発注品は牡蠣でもカタクチ商店(ピザ集計)ページ側にまとめて表示する。
+    const courierOysterStores = OYSTER_STORES.filter((s) => s.shipping === 'courier');
     try {
       const pizzaRowsByKey = {};
       const oysterRowsByKey = {};
+      let oysterRowsCache = null;
+      const fetchOysterRowsOnce = async () => {
+        if (!oysterRowsCache) oysterRowsCache = await fetchOysterOrdersRange(from, to);
+        return oysterRowsCache;
+      };
       const sections = await Promise.all(
         categories.map(async (category) => {
           const def = PRODUCT_DEFS[category];
-          const stores = STORES_BY_CATEGORY[category];
-          const rows = await def.fetchRange(from, to);
+          const isOyster = category === 'oyster';
+          const stores = isOyster ? STORES_BY_CATEGORY.oyster.filter((s) => s.shipping !== 'courier') : STORES_BY_CATEGORY[category];
+          const rows = isOyster ? await fetchOysterRowsOnce() : await def.fetchRange(from, to);
           if (category === 'pizza') {
             rows.forEach((r) => {
               pizzaRowsByKey[`${r.order_date}__${r.store_slug}`] = r;
             });
-          } else if (category === 'oyster') {
+          } else if (isOyster) {
             rows.forEach((r) => {
               oysterRowsByKey[`${r.order_date}__${r.store_slug}`] = r;
             });
           }
           const heading = categories.length > 1 ? `<h2 class="section-title">${def.label}</h2>` : '';
-          const body =
-            category === 'oyster'
-              ? renderOysterSummary(rows, stores, { showPrint: showOysterToo })
-              : renderTextOrderSummary(rows, stores, { showActions: slug === 'katakuchi' });
+          const body = isOyster
+            ? renderOysterSummary(rows, stores, { showPrint: showOysterToo })
+            : renderTextOrderSummary(rows, stores, { showActions: slug === 'katakuchi' });
           return heading + body;
         })
       );
-      summaryEl.innerHTML = sections.join('');
+
+      let courierSection = '';
+      if (slug === 'katakuchi' && courierOysterStores.length > 0) {
+        const rows = await fetchOysterRowsOnce();
+        rows.forEach((r) => {
+          oysterRowsByKey[`${r.order_date}__${r.store_slug}`] = r;
+        });
+        courierSection =
+          '<h2 class="section-title">牡蠣の発注(宅配発送)</h2>' +
+          renderOysterSummary(rows, courierOysterStores, { showPrint: true });
+      }
+
+      summaryEl.innerHTML = sections.join('') + courierSection;
       const bindConfirmToggle = (selector, action, resetLabel) => {
         summaryEl.querySelectorAll(selector).forEach((btn) => {
           btn.addEventListener('click', async () => {
@@ -1216,7 +1239,9 @@ async function buildAndDownloadStockExcel(from, to) {
   ]);
   const stockIn = allStockIn.filter((r) => r.in_date >= from && r.in_date <= to);
   const stockOutInternal = allStockOutInternal.filter((r) => r.out_date >= from && r.out_date <= to);
-  const agg = aggregateStockRecords(stockIn, stockOutInternal, oysterOrdersInRange, (d) => d);
+  // 美人罠など宅配便発送分は配送トラックの「配達出庫(店舗配送)」には含めない。
+  const truckOysterOrders = oysterOrdersInRange.filter((r) => !COURIER_STORE_SLUGS.has(r.store_slug));
+  const agg = aggregateStockRecords(stockIn, stockOutInternal, truckOysterOrders, (d) => d);
 
   await loadExcelJs();
   const wb = new ExcelJS.Workbook();
@@ -1602,13 +1627,21 @@ async function renderStockPage() {
           if (!internalOutByDate[r.out_date]) internalOutByDate[r.out_date] = [];
           internalOutByDate[r.out_date].push(r);
         });
+      // shippedByDate: 全店舗合計(⚠受注と差の判定・仕入れ先残り計算に使う。配送方法を問わず出荷した分は全部含む)。
+      // truckShippedByDate/courierShippedByDate: 表示ラベル「配達」「宅配」を分けるための内訳
+      // (美人罠など宅配便発送の店舗は配送トラックには載らないため)。
       const shippedByDate = {};
+      const truckShippedByDate = {};
+      const courierShippedByDate = {};
       shippedRows.forEach((r) => {
         const key = r.order_date;
-        if (!shippedByDate[key]) shippedByDate[key] = { mixed: 0, s: 0, m: 0 };
-        shippedByDate[key].mixed += Number(r.mixed_boxes) || 0;
-        shippedByDate[key].s += Number(r.s_boxes) || 0;
-        shippedByDate[key].m += Number(r.m_boxes) || 0;
+        const isCourier = COURIER_STORE_SLUGS.has(r.store_slug);
+        [shippedByDate, isCourier ? courierShippedByDate : truckShippedByDate].forEach((bucket) => {
+          if (!bucket[key]) bucket[key] = { mixed: 0, s: 0, m: 0 };
+          bucket[key].mixed += Number(r.mixed_boxes) || 0;
+          bucket[key].s += Number(r.s_boxes) || 0;
+          bucket[key].m += Number(r.m_boxes) || 0;
+        });
       });
 
       const firstWeekday = new Date(`${monthStart}T00:00:00Z`).getUTCDay();
@@ -1621,7 +1654,10 @@ async function renderStockPage() {
         const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
         const inEntries = stockInByDate[dateStr] || [];
         const shipped = shippedByDate[dateStr];
-        const shippedTotal = shipped ? shipped.mixed + shipped.s + shipped.m : 0;
+        const truckShipped = truckShippedByDate[dateStr];
+        const truckShippedTotal = truckShipped ? truckShipped.mixed + truckShipped.s + truckShipped.m : 0;
+        const courierShipped = courierShippedByDate[dateStr];
+        const courierShippedTotal = courierShipped ? courierShipped.mixed + courierShipped.s + courierShipped.m : 0;
         const inHtml = inEntries
           .map(
             (r) =>
@@ -1633,13 +1669,20 @@ async function renderStockPage() {
           )
           .join('');
         const outHtml =
-          shippedTotal > 0
-            ? `<div class="cal-out cal-out-clickable" data-date="${dateStr}" data-mixed="${shipped.mixed}" data-s="${shipped.s}" data-m="${shipped.m}">出 ${compactQty(
-                shipped.mixed,
-                shipped.s,
-                shipped.m
+          (truckShippedTotal > 0
+            ? `<div class="cal-out cal-out-clickable" data-date="${dateStr}" data-mixed="${truckShipped.mixed}" data-s="${truckShipped.s}" data-m="${truckShipped.m}">出 ${compactQty(
+                truckShipped.mixed,
+                truckShipped.s,
+                truckShipped.m
               )}</div>`
-            : '';
+            : '') +
+          (courierShippedTotal > 0
+            ? `<div class="cal-out cal-out-clickable" data-date="${dateStr}" data-mixed="${courierShipped.mixed}" data-s="${courierShipped.s}" data-m="${courierShipped.m}">宅配 ${compactQty(
+                courierShipped.mixed,
+                courierShipped.s,
+                courierShipped.m
+              )}</div>`
+            : '');
         const useEntries = internalOutByDate[dateStr] || [];
         const useHtml = useEntries
           .map((r) => {
@@ -1777,13 +1820,20 @@ async function renderStockPage() {
           )
           .join('');
         const gridDeliveryHtml =
-          shippedTotal > 0
-            ? `<div class="cal-out cal-out-clickable" data-date="${dateStr}" data-mixed="${shipped.mixed}" data-s="${shipped.s}" data-m="${shipped.m}">配達 ${compactQty(
-                shipped.mixed,
-                shipped.s,
-                shipped.m
+          (truckShippedTotal > 0
+            ? `<div class="cal-out cal-out-clickable" data-date="${dateStr}" data-mixed="${truckShipped.mixed}" data-s="${truckShipped.s}" data-m="${truckShipped.m}">配達 ${compactQty(
+                truckShipped.mixed,
+                truckShipped.s,
+                truckShipped.m
               )}</div>`
-            : '';
+            : '') +
+          (courierShippedTotal > 0
+            ? `<div class="cal-out cal-out-clickable" data-date="${dateStr}" data-mixed="${courierShipped.mixed}" data-s="${courierShipped.s}" data-m="${courierShipped.m}">宅配 ${compactQty(
+                courierShipped.mixed,
+                courierShipped.s,
+                courierShipped.m
+              )}</div>`
+            : '');
         const selfEntriesForGrid = useEntries.filter((r) => r.purpose !== 'store');
         const selfTotalForGrid = selfEntriesForGrid.reduce(
           (acc, r) => {
@@ -2471,9 +2521,13 @@ function renderOysterSummary(rows, stores, options = {}) {
 
   // 宅配便発送の店舗(例: 美人罠)は配送トラックには載らないため、積み込み量の目安になる
   // 「日別合計」「期間合計」からは分けて、宅配発送分として別枠で表示する。
-  const deliveryStores = stores.filter((st) => st.shipping !== 'courier');
-  const courierStores = stores.filter((st) => st.shipping === 'courier');
-  const hasCourier = courierStores.length > 0;
+  // (配送店舗・宅配発送店舗が混在するリストが渡された場合のみ分ける。katakuchi専用の
+  // 宅配発送セクションのように、渡された店舗が全て宅配発送の場合はここでは分けない)
+  const hasCourierStore = stores.some((st) => st.shipping === 'courier');
+  const hasDeliveryStore = stores.some((st) => st.shipping !== 'courier');
+  const splitMode = hasCourierStore && hasDeliveryStore;
+  const deliveryStores = splitMode ? stores.filter((st) => st.shipping !== 'courier') : stores;
+  const courierStores = splitMode ? stores.filter((st) => st.shipping === 'courier') : [];
 
   const sumStores = (date, targetStores) => {
     let mixed = 0;
@@ -2503,7 +2557,7 @@ function renderOysterSummary(rows, stores, options = {}) {
       )}</span><span class="oyster-qty">混 ${mixed} / S ${s} / M ${m}</span><span class="recent-submitted">合計${total}CS(${
         total * 15
       }kg)</span></li>`;
-      if (hasCourier) {
+      if (splitMode) {
         const c = sumStores(date, courierStores);
         courierGrandTotal.mixed += c.mixed;
         courierGrandTotal.s += c.s;
@@ -2518,14 +2572,15 @@ function renderOysterSummary(rows, stores, options = {}) {
     .join('');
   const grandTotalCases = grandTotal.mixed + grandTotal.s + grandTotal.m;
   const courierGrandTotalCases = courierGrandTotal.mixed + courierGrandTotal.s + courierGrandTotal.m;
+  const grandHeadingLabel = splitMode ? '期間合計・配送分' : hasCourierStore ? '期間合計(宅配発送分)' : '期間合計';
   const grandTotalCard =
     dates.length > 1
       ? `<div class="card grand-total-card">
-          <h2>期間合計・配送分(${formatDateJp(dates[0])}〜${formatDateJp(dates[dates.length - 1])})</h2>
+          <h2>${grandHeadingLabel}(${formatDateJp(dates[0])}〜${formatDateJp(dates[dates.length - 1])})</h2>
           <span class="oyster-qty">混 ${grandTotal.mixed} / S ${grandTotal.s} / M ${grandTotal.m}</span>
           <span class="recent-submitted">合計${grandTotalCases}CS(${grandTotalCases * 15}kg)</span>
           ${
-            hasCourier && courierGrandTotalCases > 0
+            splitMode && courierGrandTotalCases > 0
               ? `<p class="hint">宅配発送分(配送トラックには含まれません): 混 ${courierGrandTotal.mixed} / S ${courierGrandTotal.s} / M ${courierGrandTotal.m}(合計${courierGrandTotalCases}CS/${courierGrandTotalCases * 15}kg)</p>`
               : ''
           }
@@ -2542,7 +2597,7 @@ function renderOysterSummary(rows, stores, options = {}) {
           if (!r.no_order && total === 0) return '';
           const bodyClass = r.no_order ? 'recent-body' : 'oyster-qty';
           const body = r.no_order ? '発注なし' : `混 ${r.mixed_boxes} / S ${r.s_boxes} / M ${r.m_boxes}`;
-          const courierTag = st.shipping === 'courier' ? '<span class="courier-tag">宅配発送</span>' : '';
+          const courierTag = splitMode && st.shipping === 'courier' ? '<span class="courier-tag">宅配発送</span>' : '';
           const printBtn = showPrint
             ? `<button class="print-btn" data-store="${st.slug}" data-date="${date}" data-storename="${escapeHtml(
                 st.name
@@ -2564,11 +2619,12 @@ function renderOysterSummary(rows, stores, options = {}) {
     .filter(Boolean)
     .join('');
 
+  const dailyHeadingLabel = splitMode ? '日別合計・配送分' : hasCourierStore ? '日別合計(宅配発送分)' : '日別合計';
   return `
     ${grandTotalCard}
     <div class="card">
-      <h2>日別合計・配送分(1ケース=15kg)</h2>
-      ${hasCourier ? '<p class="hint">宅配発送分(美人罠など)は含みません。配送トラックへの積み込み量の目安にご利用ください。</p>' : ''}
+      <h2>${dailyHeadingLabel}(1ケース=15kg)</h2>
+      ${splitMode ? '<p class="hint">宅配発送分(美人罠など)は含みません。配送トラックへの積み込み量の目安にご利用ください。</p>' : ''}
       <ul class="recent-list">${dailyTotalItems}</ul>
     </div>
     <div class="card">
