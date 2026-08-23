@@ -641,6 +641,7 @@ async function renderAdminPage(slug) {
             : ''
         }
         <button id="applyBtn" class="primary">表示</button>
+        ${slug === 'katakuchi' ? '<button id="showOysterBtn" class="btn-plain" type="button">牡蠣も確認</button>' : ''}
       </div>
       <div id="summary"></div>
     </div>`;
@@ -729,6 +730,12 @@ async function renderAdminPage(slug) {
   renderRangeCalendar();
 
   document.getElementById('applyBtn').addEventListener('click', load);
+  if (slug === 'katakuchi') {
+    document.getElementById('showOysterBtn').addEventListener('click', () => {
+      document.getElementById('showOysterToo').checked = true;
+      load();
+    });
+  }
 
   async function load() {
     const from = rangeStart;
