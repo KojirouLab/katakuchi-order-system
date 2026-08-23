@@ -7,7 +7,9 @@ const STORES = [
   { slug: 'kaki-higashiichi', name: '牡蠣小屋東一店', categories: ['oyster'] },
   { slug: 'kai-hakko', name: '貝小屋はっこ', categories: ['oyster'] },
   { slug: 'choinomi-takahashi', name: 'ちょい飲みたかはし', categories: ['oyster'] },
-  { slug: 'bijinwana', name: '美人罠', categories: ['oyster'] },
+  // shipping: 'courier' の店舗は配送トラックには載らず宅配便で発送するため、
+  // 牡蠣受注の集計ではトラック積み込み用の「配送分」とは別に「宅配発送分」として扱う。
+  { slug: 'bijinwana', name: '美人罠', categories: ['oyster'], shipping: 'courier' },
 ];
 
 const PIZZA_STORES = STORES.filter((s) => s.categories.includes('pizza'));
@@ -2467,37 +2469,66 @@ function renderOysterSummary(rows, stores, options = {}) {
     byKey[`${r.order_date}__${r.store_slug}`] = r;
   });
 
+  // 宅配便発送の店舗(例: 美人罠)は配送トラックには載らないため、積み込み量の目安になる
+  // 「日別合計」「期間合計」からは分けて、宅配発送分として別枠で表示する。
+  const deliveryStores = stores.filter((st) => st.shipping !== 'courier');
+  const courierStores = stores.filter((st) => st.shipping === 'courier');
+  const hasCourier = courierStores.length > 0;
+
+  const sumStores = (date, targetStores) => {
+    let mixed = 0;
+    let s = 0;
+    let m = 0;
+    targetStores.forEach((st) => {
+      const r = byKey[`${date}__${st.slug}`];
+      if (!r) return;
+      mixed += Number(r.mixed_boxes) || 0;
+      s += Number(r.s_boxes) || 0;
+      m += Number(r.m_boxes) || 0;
+    });
+    return { mixed, s, m };
+  };
+
   const grandTotal = { mixed: 0, s: 0, m: 0 };
+  const courierGrandTotal = { mixed: 0, s: 0, m: 0 };
   const dailyTotalItems = dates
     .map((date) => {
-      let mixed = 0;
-      let s = 0;
-      let m = 0;
-      stores.forEach((st) => {
-        const r = byKey[`${date}__${st.slug}`];
-        if (!r) return;
-        mixed += Number(r.mixed_boxes) || 0;
-        s += Number(r.s_boxes) || 0;
-        m += Number(r.m_boxes) || 0;
-      });
+      const { mixed, s, m } = sumStores(date, deliveryStores);
       grandTotal.mixed += mixed;
       grandTotal.s += s;
       grandTotal.m += m;
       const total = mixed + s + m;
-      return `<li><span class="recent-date">${formatDateJp(
+      let line = `<li><span class="recent-date">${formatDateJp(
         date
       )}</span><span class="oyster-qty">混 ${mixed} / S ${s} / M ${m}</span><span class="recent-submitted">合計${total}CS(${
         total * 15
       }kg)</span></li>`;
+      if (hasCourier) {
+        const c = sumStores(date, courierStores);
+        courierGrandTotal.mixed += c.mixed;
+        courierGrandTotal.s += c.s;
+        courierGrandTotal.m += c.m;
+        const cTotal = c.mixed + c.s + c.m;
+        if (cTotal > 0) {
+          line += `<li class="courier-total"><span class="recent-date">└宅配発送分</span><span class="oyster-qty">混 ${c.mixed} / S ${c.s} / M ${c.m}</span><span class="recent-submitted">合計${cTotal}CS(${cTotal * 15}kg)</span></li>`;
+        }
+      }
+      return line;
     })
     .join('');
   const grandTotalCases = grandTotal.mixed + grandTotal.s + grandTotal.m;
+  const courierGrandTotalCases = courierGrandTotal.mixed + courierGrandTotal.s + courierGrandTotal.m;
   const grandTotalCard =
     dates.length > 1
       ? `<div class="card grand-total-card">
-          <h2>期間合計(${formatDateJp(dates[0])}〜${formatDateJp(dates[dates.length - 1])})</h2>
+          <h2>期間合計・配送分(${formatDateJp(dates[0])}〜${formatDateJp(dates[dates.length - 1])})</h2>
           <span class="oyster-qty">混 ${grandTotal.mixed} / S ${grandTotal.s} / M ${grandTotal.m}</span>
           <span class="recent-submitted">合計${grandTotalCases}CS(${grandTotalCases * 15}kg)</span>
+          ${
+            hasCourier && courierGrandTotalCases > 0
+              ? `<p class="hint">宅配発送分(配送トラックには含まれません): 混 ${courierGrandTotal.mixed} / S ${courierGrandTotal.s} / M ${courierGrandTotal.m}(合計${courierGrandTotalCases}CS/${courierGrandTotalCases * 15}kg)</p>`
+              : ''
+          }
         </div>`
       : '';
 
@@ -2511,6 +2542,7 @@ function renderOysterSummary(rows, stores, options = {}) {
           if (!r.no_order && total === 0) return '';
           const bodyClass = r.no_order ? 'recent-body' : 'oyster-qty';
           const body = r.no_order ? '発注なし' : `混 ${r.mixed_boxes} / S ${r.s_boxes} / M ${r.m_boxes}`;
+          const courierTag = st.shipping === 'courier' ? '<span class="courier-tag">宅配発送</span>' : '';
           const printBtn = showPrint
             ? `<button class="print-btn" data-store="${st.slug}" data-date="${date}" data-storename="${escapeHtml(
                 st.name
@@ -2518,7 +2550,7 @@ function renderOysterSummary(rows, stores, options = {}) {
             : '';
           return `<li><span class="recent-store">${escapeHtml(
             st.name
-          )}</span><span class="recent-submitted">発注日時: ${formatDateTimeJp(
+          )}${courierTag}</span><span class="recent-submitted">発注日時: ${formatDateTimeJp(
             r.updated_at
           )}</span><span class="${bodyClass}">${body}</span>${printBtn}</li>`;
         })
@@ -2535,7 +2567,8 @@ function renderOysterSummary(rows, stores, options = {}) {
   return `
     ${grandTotalCard}
     <div class="card">
-      <h2>日別合計(1ケース=15kg)</h2>
+      <h2>日別合計・配送分(1ケース=15kg)</h2>
+      ${hasCourier ? '<p class="hint">宅配発送分(美人罠など)は含みません。配送トラックへの積み込み量の目安にご利用ください。</p>' : ''}
       <ul class="recent-list">${dailyTotalItems}</ul>
     </div>
     <div class="card">
