@@ -809,6 +809,8 @@ async function renderAdminPage(slug) {
       };
       bindConfirmToggle('.confirm-btn', confirmPizzaOrder, '確認済みにする');
       bindConfirmToggle('.unconfirm-btn', unconfirmPizzaOrder, '未確認に戻す');
+      bindConfirmToggle('.confirm-btn-oyster', confirmOysterOrder, '確認済みにする');
+      bindConfirmToggle('.unconfirm-btn-oyster', unconfirmOysterOrder, '未確認に戻す');
       summaryEl.querySelectorAll('.print-btn').forEach((btn) => {
         btn.addEventListener('click', () => {
           const key = `${btn.dataset.date}__${btn.dataset.store}`;
@@ -2605,6 +2607,13 @@ function renderOysterSummary(rows, stores, options = {}) {
           const bodyClass = r.no_order ? 'recent-body' : 'oyster-qty';
           const body = r.no_order ? '発注なし' : `混 ${r.mixed_boxes} / S ${r.s_boxes} / M ${r.m_boxes}`;
           const courierTag = splitMode && st.shipping === 'courier' ? '<span class="courier-tag">宅配発送</span>' : '';
+          const status = showPrint
+            ? r.confirmed_at
+              ? `<span class="confirm-badge confirmed">✓ 確認済み(${formatDateTimeJp(
+                  r.confirmed_at
+                )})</span> <button class="unconfirm-btn-oyster" data-store="${st.slug}" data-date="${date}">未確認に戻す</button>`
+              : `<button class="confirm-btn-oyster" data-store="${st.slug}" data-date="${date}">確認済みにする</button>`
+            : '';
           const printBtn = showPrint
             ? `<button class="print-btn" data-store="${st.slug}" data-date="${date}" data-storename="${escapeHtml(
                 st.name
@@ -2614,7 +2623,7 @@ function renderOysterSummary(rows, stores, options = {}) {
             st.name
           )}${courierTag}</span><span class="recent-submitted">発注日時: ${formatDateTimeJp(
             r.updated_at
-          )}</span><span class="${bodyClass}">${body}</span>${printBtn}</li>`;
+          )}</span><span class="${bodyClass}">${body}</span>${status} ${printBtn}</li>`;
         })
         .filter(Boolean)
         .join('');

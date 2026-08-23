@@ -125,11 +125,36 @@ async function saveOysterOrder({ storeSlug, storeName, date, mixedBoxes, sBoxes,
       s_boxes: sBoxes,
       m_boxes: mBoxes,
       no_order: !!noOrder,
+      confirmed_at: null,
       updated_at: new Date().toISOString(),
     },
     { onConflict: 'store_slug,order_date' }
   );
   if (error) throw error;
+}
+
+async function confirmOysterOrder(storeSlug, date) {
+  assertClient();
+  const { data, error } = await sb
+    .from('oyster_orders')
+    .update({ confirmed_at: new Date().toISOString() })
+    .eq('store_slug', storeSlug)
+    .eq('order_date', date)
+    .select();
+  if (error) throw error;
+  if (!data || data.length === 0) throw new Error('更新できませんでした(権限設定が反映されていない可能性があります)');
+}
+
+async function unconfirmOysterOrder(storeSlug, date) {
+  assertClient();
+  const { data, error } = await sb
+    .from('oyster_orders')
+    .update({ confirmed_at: null })
+    .eq('store_slug', storeSlug)
+    .eq('order_date', date)
+    .select();
+  if (error) throw error;
+  if (!data || data.length === 0) throw new Error('更新できませんでした(権限設定が反映されていない可能性があります)');
 }
 
 async function deleteOysterOrder(storeSlug, date) {
