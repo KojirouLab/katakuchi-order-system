@@ -1770,53 +1770,69 @@ async function renderStockPage() {
           )}</div>`;
         }
 
-        // 一覧表示専用: その日の手動出庫を「店舗配送/自社使用」それぞれについて、
-        // 合計とその内訳(どの仕入れ先から何個か)をセットで表示する。
-        let breakdownHtml = '';
-        if (useEntries.length) {
-          const zero = () => ({ mixed: 0, s: 0, m: 0 });
-          const addQty = (acc, r) => {
-            acc.mixed += Number(r.mixed_boxes) || 0;
-            acc.s += Number(r.s_boxes) || 0;
-            acc.m += Number(r.m_boxes) || 0;
-          };
-          const qtyHasAnyLocal = (q) => q.mixed || q.s || q.m;
+        // 一覧表示専用(新デザイン): 入庫/出庫(理由別)/出庫元(仕入れ先別)の3列でシンプルに表示する。
+        // 「出庫」列 = 配達(トラック)/宅配/自社使用(メモごと)の理由別合計。
+        // 「出庫元」列 = 用途を問わず仕入れ先ごとの合計。どちらも同じ出庫の合計を別の軸で見せている。
+        const listLine = (mixed, s, m, label, rows) => {
+          const single = rows && rows.length === 1 ? rows[0] : null;
+          const delBtn = single ? `<button class="cal-deluse-btn" data-id="${single.id}">×</button>` : '';
+          return `<div class="cal-list-line">${compactQty(mixed, s, m)}<span class="cal-list-line-label">(${escapeHtml(
+            label
+          )})</span>${delBtn}</div>`;
+        };
 
-          // purpose('store'/'self')ごとに、合計と仕入れ先別の内訳行(インデント付き)を作る
-          function purposeSection(label, entries) {
-            const total = zero();
-            const perSupplier = {};
-            STOCK_SUPPLIERS.forEach((s) => {
-              perSupplier[s] = zero();
-            });
-            entries.forEach((r) => {
-              addQty(total, r);
-              if (perSupplier[r.supplier]) addQty(perSupplier[r.supplier], r);
-            });
-            const supplierLines = STOCK_SUPPLIERS.filter((s) => qtyHasAnyLocal(perSupplier[s])).map(
-              (s) => `<div class="cal-breakdown-sub">${escapeHtml(s)}${breakdownQty(perSupplier[s].mixed, perSupplier[s].s, perSupplier[s].m)}</div>`
-            );
-            return {
-              total,
-              html: `<div class="cal-breakdown-line">${label}${breakdownQty(total.mixed, total.s, total.m)}</div>${supplierLines.join('')}`,
-            };
-          }
-
-          const storeEntries = useEntries.filter((r) => r.purpose === 'store');
-          const selfEntries = useEntries.filter((r) => r.purpose !== 'store');
-          const storeSection = purposeSection('店舗配送', storeEntries);
-          const selfSection = purposeSection('自社使用', selfEntries);
-          const grandTotal = {
-            mixed: storeSection.total.mixed + selfSection.total.mixed,
-            s: storeSection.total.s + selfSection.total.s,
-            m: storeSection.total.m + selfSection.total.m,
-          };
-          breakdownHtml = `<div class="cal-breakdown">${storeSection.html}${selfSection.html}<div class="cal-breakdown-line">計${breakdownQty(
-            grandTotal.mixed,
-            grandTotal.s,
-            grandTotal.m
-          )}</div></div>`;
+        const reasonGroups = [];
+        if (truckShippedTotal > 0) {
+          reasonGroups.push({ label: '配達', mixed: truckShipped.mixed, s: truckShipped.s, m: truckShipped.m, rows: null });
         }
+        if (courierShippedTotal > 0) {
+          reasonGroups.push({ label: '宅配', mixed: courierShipped.mixed, s: courierShipped.s, m: courierShipped.m, rows: null });
+        }
+        const selfByNote = {};
+        useEntries
+          .filter((r) => r.purpose !== 'store')
+          .forEach((r) => {
+            const label = r.note && r.note.trim() ? r.note.trim() : '自社使用';
+            if (!selfByNote[label]) selfByNote[label] = { mixed: 0, s: 0, m: 0, rows: [] };
+            selfByNote[label].mixed += Number(r.mixed_boxes) || 0;
+            selfByNote[label].s += Number(r.s_boxes) || 0;
+            selfByNote[label].m += Number(r.m_boxes) || 0;
+            selfByNote[label].rows.push(r);
+          });
+        Object.keys(selfByNote).forEach((label) => {
+          const g = selfByNote[label];
+          reasonGroups.push({ label, mixed: g.mixed, s: g.s, m: g.m, rows: g.rows });
+        });
+        const listOutHtml =
+          reasonGroups.map((g) => listLine(g.mixed, g.s, g.m, g.label, g.rows)).join('') + warnHtml;
+
+        const supplierTotals = {};
+        useEntries.forEach((r) => {
+          const key = r.supplier && r.supplier.trim() ? r.supplier : '未記録';
+          if (!supplierTotals[key]) supplierTotals[key] = { mixed: 0, s: 0, m: 0, rows: [] };
+          supplierTotals[key].mixed += Number(r.mixed_boxes) || 0;
+          supplierTotals[key].s += Number(r.s_boxes) || 0;
+          supplierTotals[key].m += Number(r.m_boxes) || 0;
+          supplierTotals[key].rows.push(r);
+        });
+        const supplierOrder = [...STOCK_SUPPLIERS, ...Object.keys(supplierTotals).filter((k) => !STOCK_SUPPLIERS.includes(k))];
+        const listSupplierHtml =
+          supplierOrder
+            .filter((key) => supplierTotals[key] && (supplierTotals[key].mixed || supplierTotals[key].s || supplierTotals[key].m))
+            .map((key) => {
+              const g = supplierTotals[key];
+              return listLine(g.mixed, g.s, g.m, key, g.rows);
+            })
+            .join('') + selfWarnHtml;
+
+        const listInHtml = inEntries
+          .map(
+            (r) =>
+              `<div class="cal-list-line">${compactQty(Number(r.mixed_boxes), Number(r.s_boxes), Number(r.m_boxes))}${
+                r.note ? `<span class="cal-list-line-label">(${escapeHtml(r.note)})</span>` : ''
+              }<button class="cal-del-btn" data-id="${r.id}">×</button></div>`
+          )
+          .join('');
 
         // カレンダー表示(グリッド)専用: 見やすさ優先で「入庫/配達/他出庫」の3行だけに簡略化する。
         // 個別の削除・仕入れ先の細かい記録/修正は一覧表示側で行う想定。
@@ -1868,8 +1884,9 @@ async function renderStockPage() {
           inHtml,
           outHtml,
           useHtml,
-          warnHtml: warnHtml + selfWarnHtml,
-          breakdownHtml,
+          listInHtml,
+          listOutHtml,
+          listSupplierHtml,
           gridInHtml,
           gridDeliveryHtml,
           gridOtherOutHtml,
@@ -1885,15 +1902,15 @@ async function renderStockPage() {
                 const dow = new Date(`${d.dateStr}T00:00:00Z`).getUTCDay();
                 return `<tr class="${d.isToday ? 'cal-list-today' : ''}">
                   <td class="cal-list-date">${d.day}日(${weekdayLabels[dow]})</td>
-                  <td>${d.inHtml || ''}</td>
-                  <td>${d.outHtml || ''}${d.useHtml || ''}</td>
-                  <td>${d.breakdownHtml || ''}${d.warnHtml || ''}</td>
+                  <td>${d.listInHtml || ''}</td>
+                  <td>${d.listOutHtml || ''}</td>
+                  <td>${d.listSupplierHtml || ''}</td>
                 </tr>`;
               })
               .join('')
           : `<tr><td colspan="4" class="hint">この月は入出庫の記録がありません。</td></tr>`;
         calendarEl.innerHTML = `<div class="cal-list-wrap"><table class="cal-list-table">
-          <thead><tr><th>日付</th><th>入庫</th><th>出庫</th><th>仕入れ先別出庫</th></tr></thead>
+          <thead><tr><th>日付</th><th>入庫</th><th>出庫</th><th>出庫元</th></tr></thead>
           <tbody>${rowsHtml}</tbody>
         </table></div>`;
       } else {
