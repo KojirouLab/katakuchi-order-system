@@ -185,11 +185,14 @@
   .cal-list-line {
     display: flex;
     align-items: baseline;
-    justify-content: space-between;
-    gap: 6px;
+    justify-content: flex-start;
     color: var(--text);
     line-height: 1.7;
     white-space: nowrap;
+  }
+  .cal-list-line .cal-deluse-btn,
+  .cal-list-line .cal-del-btn {
+    margin-left: 4px;
   }
   .cal-list-line-label {
     color: var(--hint);
@@ -744,7 +747,7 @@
 </head>
 <body>
 <div id="app"></div>
-<script src="storage.js?v=202608251830"></script>
-<script src="app.js?v=202608251830"></script>
+<script src="storage.js?v=202608251836"></script>
+<script src="app.js?v=202608251836"></script>
 </body>
 </html>
