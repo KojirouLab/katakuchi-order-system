@@ -1732,11 +1732,11 @@ async function renderStockPage() {
             warnHtml = `<div class="cal-warn cal-warn-clickable" data-date="${dateStr}" data-mixed="${Math.max(
               diffMixed,
               0
-            )}" data-s="${Math.max(diffS, 0)}" data-m="${Math.max(diffM, 0)}">⚠受注と差${compactDiff(
+            )}" data-s="${Math.max(diffS, 0)}" data-m="${Math.max(diffM, 0)}">⚠差${compactDiff(
               diffMixed,
               diffS,
               diffM
-            )}</div>`;
+            )} 出庫元を登録してください</div>`;
           }
         }
 
@@ -1803,8 +1803,7 @@ async function renderStockPage() {
           const g = selfByNote[label];
           reasonGroups.push({ label, mixed: g.mixed, s: g.s, m: g.m, rows: g.rows });
         });
-        const listOutHtml =
-          reasonGroups.map((g) => listLine(g.mixed, g.s, g.m, g.label, g.rows)).join('') + warnHtml;
+        const listOutHtml = reasonGroups.map((g) => listLine(g.mixed, g.s, g.m, g.label, g.rows)).join('');
 
         const supplierTotals = {};
         useEntries.forEach((r) => {
@@ -1823,7 +1822,7 @@ async function renderStockPage() {
               const g = supplierTotals[key];
               return listLine(g.mixed, g.s, g.m, key, g.rows);
             })
-            .join('') + selfWarnHtml;
+            .join('') + warnHtml + selfWarnHtml;
 
         const listInHtml = inEntries
           .map(
