@@ -6,9 +6,9 @@ const STORES = [
   { slug: 'kaki-mouikko', name: '牡蠣小屋もういっこ', categories: ['oyster'] },
   { slug: 'kaki-higashiichi', name: '牡蠣小屋東一店', categories: ['oyster'] },
   { slug: 'kai-hakko', name: '貝小屋はっこ', categories: ['oyster'] },
-  { slug: 'choinomi-takahashi', name: 'ちょい飲みたかはし', categories: ['oyster'] },
   // shipping: 'courier' の店舗は配送トラックには載らず宅配便で発送するため、
   // 牡蠣受注の集計ではトラック積み込み用の「配送分」とは別に「宅配発送分」として扱う。
+  { slug: 'choinomi-takahashi', name: 'ちょい飲みたかはし', categories: ['oyster'], shipping: 'courier' },
   { slug: 'bijinwana', name: '美人罠', categories: ['oyster'], shipping: 'courier' },
 ];
 
