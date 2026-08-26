@@ -1285,16 +1285,50 @@ async function buildAndDownloadStockExcel(from, to) {
   return downloadWorkbook(wb, `牡蠣入出庫記録_${filenameLabel}.xlsx`);
 }
 
+// 牡蠣在庫の数量表示用フォーマッタ(在庫確認ページ・日別詳細ページで共通利用)。
+function stockCompactQty(mixed, s, m) {
+  const parts = [];
+  if (mixed) parts.push(`混${mixed}`);
+  if (s) parts.push(`S${s}`);
+  if (m) parts.push(`M${m}`);
+  return parts.length ? parts.join('/') : '0';
+}
+
+function stockCompactDiff(mixed, s, m) {
+  const parts = [];
+  if (mixed) parts.push(`混${mixed > 0 ? '+' : ''}${mixed}`);
+  if (s) parts.push(`S${s > 0 ? '+' : ''}${s}`);
+  if (m) parts.push(`M${m > 0 ? '+' : ''}${m}`);
+  return parts.join('/');
+}
+
+function stockZeroQty() {
+  return { mixed: 0, s: 0, m: 0 };
+}
+
+function stockSumQty(rows) {
+  return rows.reduce(
+    (acc, r) => ({
+      mixed: acc.mixed + (Number(r.mixed_boxes) || 0),
+      s: acc.s + (Number(r.s_boxes) || 0),
+      m: acc.m + (Number(r.m_boxes) || 0),
+    }),
+    stockZeroQty()
+  );
+}
+
 // 牡蠣在庫管理: まず「何をするか」を選ぶメニューを挟み、選んだ内容ごとに専用ページを表示する。
 // ?stock=1              → メニュー
 // ?stock=1&view=balance → 在庫確認(現在庫・仕入れ先ごとの残り・Excel出力・カレンダー/一覧表示)
 // ?stock=1&view=in      → 入庫を記録する
 // ?stock=1&view=out     → 出庫を記録する(在庫確認ページのカレンダーからも編集用にリンクされる)
+// ?stock=1&view=day&date=YYYY-MM-DD → その日の入庫・出庫(配達先/出荷元)をまとめて確認・修正する
 async function renderStockPage() {
   const view = new URLSearchParams(location.search).get('view');
   if (view === 'balance') return renderStockBalancePage();
   if (view === 'in') return renderStockInPage();
   if (view === 'out') return renderStockOutPage();
+  if (view === 'day') return renderStockDayPage();
   return renderStockMenuPage();
 }
 
@@ -1333,6 +1367,16 @@ function navigateToStockOutForm({ id, outDate, mixedBoxes, sBoxes, mBoxes, suppl
   params.set('purpose', purpose || 'self');
   if (note) params.set('note', note);
   params.set('mode', mode || 'prefill');
+  if (new URLSearchParams(location.search).get('ref') === 'admin') params.set('ref', 'admin');
+  location.href = `?${params.toString()}`;
+}
+
+// カレンダー/一覧表示の日付をタップした時に、その日の詳細ページへ移動する。
+function navigateToStockDayPage(dateStr) {
+  const params = new URLSearchParams();
+  params.set('stock', '1');
+  params.set('view', 'day');
+  params.set('date', dateStr);
   if (new URLSearchParams(location.search).get('ref') === 'admin') params.set('ref', 'admin');
   location.href = `?${params.toString()}`;
 }
@@ -1777,7 +1821,7 @@ async function renderStockBalancePage() {
               .map((d) => {
                 const dow = new Date(`${d.dateStr}T00:00:00Z`).getUTCDay();
                 return `<tr class="${d.isToday ? 'cal-list-today' : ''}">
-                  <td class="cal-list-date">${d.day}日(${weekdayLabels[dow]})</td>
+                  <td class="cal-list-date cal-day-clickable" data-date="${d.dateStr}">${d.day}日(${weekdayLabels[dow]})</td>
                   <td>${d.listInHtml || ''}</td>
                   <td>${d.listOutHtml || ''}</td>
                   <td>${d.listSupplierHtml || ''}</td>
@@ -1793,7 +1837,7 @@ async function renderStockBalancePage() {
         const dayCells = dayInfos
           .map(
             (d) => `<div class="cal-cell${d.isToday ? ' cal-today' : ''}">
-          <div class="cal-daynum">${d.day}</div>
+          <div class="cal-daynum cal-day-clickable" data-date="${d.dateStr}">${d.day}</div>
           ${d.gridInHtml}
           ${d.gridDeliveryHtml}
           ${d.gridOtherOutHtml}
@@ -1802,6 +1846,14 @@ async function renderStockBalancePage() {
           .join('');
         calendarEl.innerHTML = weekdayHeaders + leadingBlanks + dayCells;
       }
+
+      // 日付をタップすると、その日の入庫・出庫(配達先/出荷元)をまとめて確認・修正できるページへ移動する。
+      calendarEl.querySelectorAll('.cal-day-clickable').forEach((el) => {
+        el.addEventListener('click', (e) => {
+          if (e.target.closest('button')) return;
+          navigateToStockDayPage(el.dataset.date);
+        });
+      });
 
       calendarEl.querySelectorAll('.cal-del-btn').forEach((btn) => {
         btn.addEventListener('click', async () => {
@@ -2471,6 +2523,255 @@ function renderStockOutPage() {
       params.get('mode')
     );
   }
+}
+
+// その日の入庫・出庫(配達先=理由別/出荷元=仕入れ先別)をまとめて確認・修正するページ。
+// 在庫確認ページのカレンダー/一覧表示の日付をタップすると、ここに移動してくる。
+async function renderStockDayPage() {
+  const params = new URLSearchParams(location.search);
+  const dateStr = params.get('date') || todayStr();
+  const ref = stockRefSuffix();
+
+  app.innerHTML = `
+    <div class="page">
+      <h1>牡蠣在庫管理</h1>
+      ${adminBackLinkHtml()}
+      ${stockSubNavHtml('balance')}
+      <p class="hint"><a href="?stock=1&view=balance${ref}">← 在庫確認ページに戻る</a></p>
+      <h2>${formatDateJp(dateStr)}の記録</h2>
+      <div id="dayShippedCard" class="card"><p class="hint">読み込み中…</p></div>
+      <div id="dayOutCard" class="card"><p class="hint">読み込み中…</p></div>
+      <div id="dayInCard" class="card"><p class="hint">読み込み中…</p></div>
+    </div>`;
+
+  const shippedCardEl = document.getElementById('dayShippedCard');
+  const outCardEl = document.getElementById('dayOutCard');
+  const inCardEl = document.getElementById('dayInCard');
+
+  async function load() {
+    shippedCardEl.innerHTML = '<p class="hint">読み込み中…</p>';
+    outCardEl.innerHTML = '<p class="hint">読み込み中…</p>';
+    inCardEl.innerHTML = '<p class="hint">読み込み中…</p>';
+    try {
+      const [allStockIn, allStockOut, shippedRows] = await Promise.all([
+        fetchStockInAll(),
+        fetchStockOutInternalAll(),
+        fetchOysterOrdersRange(dateStr, dateStr),
+      ]);
+      const inRows = allStockIn.filter((r) => r.in_date === dateStr);
+      const outRows = allStockOut.filter((r) => r.out_date === dateStr);
+
+      // 受注システムの自動出荷実績(配送/宅配)。ここは直接編集できない参考情報。
+      const truckTotal = stockSumQty(shippedRows.filter((r) => !r.no_order && !COURIER_STORE_SLUGS.has(r.store_slug)));
+      const courierTotal = stockSumQty(shippedRows.filter((r) => !r.no_order && COURIER_STORE_SLUGS.has(r.store_slug)));
+      const storeManualTotal = stockSumQty(outRows.filter((r) => r.purpose === 'store'));
+      const diff = {
+        mixed: truckTotal.mixed - storeManualTotal.mixed,
+        s: truckTotal.s - storeManualTotal.s,
+        m: truckTotal.m - storeManualTotal.m,
+      };
+      const hasDiff = diff.mixed !== 0 || diff.s !== 0 || diff.m !== 0;
+      const hasCourier = courierTotal.mixed || courierTotal.s || courierTotal.m;
+
+      shippedCardEl.innerHTML = `
+        <h2>受注システムの出荷実績(自動計算)</h2>
+        <p class="hint">各店舗の発注データから自動計算した実際の出荷数です。ここは直接編集できません。過不足があれば下の「出庫(配達先・出荷元)」で仕入れ先を記録してください。</p>
+        <ul class="recent-list">
+          <li><span class="recent-date">配送(トラック)</span><span class="oyster-qty">${stockCompactQty(
+            truckTotal.mixed,
+            truckTotal.s,
+            truckTotal.m
+          )}</span></li>
+          ${
+            hasCourier
+              ? `<li><span class="recent-date">宅配発送</span><span class="oyster-qty">${stockCompactQty(
+                  courierTotal.mixed,
+                  courierTotal.s,
+                  courierTotal.m
+                )}</span></li>`
+              : ''
+          }
+        </ul>
+        ${
+          hasDiff
+            ? `<p class="cal-warn">⚠ 出庫(配達先・出荷元)の登録合計との差: ${stockCompactDiff(
+                diff.mixed,
+                diff.s,
+                diff.m
+              )}(プラスは未記録、マイナスは記録しすぎの可能性)</p>
+               <button id="dayAddMissingBtn" type="button" class="btn-plain">不足分を出荷元として登録する</button>`
+            : ''
+        }`;
+
+      if (hasDiff) {
+        document.getElementById('dayAddMissingBtn').addEventListener('click', () => {
+          navigateToStockOutForm({
+            id: null,
+            outDate: dateStr,
+            mixedBoxes: Math.max(diff.mixed, 0),
+            sBoxes: Math.max(diff.s, 0),
+            mBoxes: Math.max(diff.m, 0),
+            supplier: STOCK_OUT_DEFAULT_SUPPLIER,
+            purpose: 'store',
+            note: '',
+            mode: 'warn',
+          });
+        });
+      }
+
+      // 出庫(手動記録): 配達先(用途)と出荷元(仕入れ先)を1件ずつ確認・修正できる一覧。
+      const outRowsHtml = outRows
+        .map((r) => {
+          const purposeLabel = r.purpose === 'store' ? '店舗配達分' : '自社使用';
+          return `<tr>
+            <td>${escapeHtml(purposeLabel)}</td>
+            <td>${escapeHtml(r.supplier || '未記録')}</td>
+            <td>${stockCompactQty(Number(r.mixed_boxes), Number(r.s_boxes), Number(r.m_boxes))}</td>
+            <td>${escapeHtml(r.note || '')}</td>
+            <td class="day-row-actions">
+              <button type="button" class="btn-plain day-edit-btn" data-id="${r.id}">編集</button>
+              <button type="button" class="btn-plain day-del-out-btn" data-id="${r.id}">削除</button>
+            </td>
+          </tr>`;
+        })
+        .join('');
+      outCardEl.innerHTML = `
+        <h2>出庫(配達先・出荷元)</h2>
+        <p class="hint">その日に手動で記録した出庫です。「配達先」は用途(店舗配達分/自社使用)、「出荷元」は仕入れ先を表します。「編集」で数量・仕入れ先などをまとめて修正できます。</p>
+        <div class="cal-list-wrap">
+          <table class="cal-list-table">
+            <thead><tr><th>配達先(用途)</th><th>出荷元(仕入れ先)</th><th>数量</th><th>メモ</th><th></th></tr></thead>
+            <tbody>${outRowsHtml || '<tr><td colspan="5" class="hint">この日の出庫記録はありません。</td></tr>'}</tbody>
+          </table>
+        </div>
+        <button id="dayAddOutBtn" type="button" class="btn-plain">+ 出庫を追加する</button>`;
+
+      outCardEl.querySelectorAll('.day-edit-btn').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const r = outRows.find((row) => row.id === btn.dataset.id);
+          if (!r) return;
+          navigateToStockOutForm({
+            id: r.id,
+            outDate: dateStr,
+            mixedBoxes: Number(r.mixed_boxes),
+            sBoxes: Number(r.s_boxes),
+            mBoxes: Number(r.m_boxes),
+            supplier: r.supplier || STOCK_OUT_DEFAULT_SUPPLIER,
+            purpose: r.purpose || 'self',
+            note: r.note || '',
+            mode: 'edit',
+          });
+        });
+      });
+      outCardEl.querySelectorAll('.day-del-out-btn').forEach((btn) => {
+        btn.addEventListener('click', async () => {
+          if (!confirm('この出庫記録を削除します。よろしいですか？')) return;
+          btn.disabled = true;
+          try {
+            await deleteStockOutInternal(btn.dataset.id);
+            load();
+          } catch (e) {
+            console.error(e);
+            alert('削除に失敗しました。通信状況を確認してもう一度お試しください。');
+            btn.disabled = false;
+          }
+        });
+      });
+      document.getElementById('dayAddOutBtn').addEventListener('click', () => {
+        navigateToStockOutForm({
+          id: null,
+          outDate: dateStr,
+          mixedBoxes: 0,
+          sBoxes: 0,
+          mBoxes: 0,
+          supplier: STOCK_OUT_DEFAULT_SUPPLIER,
+          purpose: 'self',
+          note: '',
+          mode: 'prefill',
+        });
+      });
+
+      // 入庫
+      const inRowsHtml = inRows
+        .map(
+          (r) => `<tr>
+            <td>${escapeHtml(r.note || '')}</td>
+            <td>${stockCompactQty(Number(r.mixed_boxes), Number(r.s_boxes), Number(r.m_boxes))}</td>
+            <td class="day-row-actions"><button type="button" class="btn-plain day-del-in-btn" data-id="${r.id}">削除</button></td>
+          </tr>`
+        )
+        .join('');
+      inCardEl.innerHTML = `
+        <h2>入庫</h2>
+        <div class="cal-list-wrap">
+          <table class="cal-list-table">
+            <thead><tr><th>仕入れ先</th><th>数量</th><th></th></tr></thead>
+            <tbody>${inRowsHtml || '<tr><td colspan="3" class="hint">この日の入庫記録はありません。</td></tr>'}</tbody>
+          </table>
+        </div>
+        <div class="field-row" style="margin-top:12px;">
+          <div class="field">
+            <label for="dayInSupplier">仕入れ先</label>
+            <select id="dayInSupplier">${[...STOCK_SUPPLIERS]
+              .sort((a, b) => (a === STOCK_OUT_DEFAULT_SUPPLIER ? -1 : b === STOCK_OUT_DEFAULT_SUPPLIER ? 1 : 0))
+              .map((s) => `<option value="${escapeHtml(s)}">${escapeHtml(s)}</option>`)
+              .join('')}</select>
+          </div>
+          <div class="field"><label for="dayInMixed">混合</label><select id="dayInMixed">${qtyOptionsHtml(100)}</select></div>
+          <div class="field"><label for="dayInS">S</label><select id="dayInS">${qtyOptionsHtml(100)}</select></div>
+          <div class="field"><label for="dayInM">M</label><select id="dayInM">${qtyOptionsHtml(100)}</select></div>
+        </div>
+        <button id="dayInAddBtn" class="primary">この日の入庫を追加する</button>
+        <p id="dayInMsg" class="msg"></p>`;
+
+      inCardEl.querySelectorAll('.day-del-in-btn').forEach((btn) => {
+        btn.addEventListener('click', async () => {
+          if (!confirm('この入庫記録を削除します。よろしいですか？')) return;
+          btn.disabled = true;
+          try {
+            await deleteStockIn(btn.dataset.id);
+            load();
+          } catch (e) {
+            console.error(e);
+            alert('削除に失敗しました。通信状況を確認してもう一度お試しください。');
+            btn.disabled = false;
+          }
+        });
+      });
+      document.getElementById('dayInAddBtn').addEventListener('click', async () => {
+        const mixedBoxes = Number(document.getElementById('dayInMixed').value) || 0;
+        const sBoxes = Number(document.getElementById('dayInS').value) || 0;
+        const mBoxes = Number(document.getElementById('dayInM').value) || 0;
+        const supplier = document.getElementById('dayInSupplier').value;
+        const msgEl = document.getElementById('dayInMsg');
+        if (mixedBoxes === 0 && sBoxes === 0 && mBoxes === 0) {
+          msgEl.textContent = 'ケース数を入力してください。';
+          msgEl.className = 'msg msg-error';
+          return;
+        }
+        const btn = document.getElementById('dayInAddBtn');
+        btn.disabled = true;
+        msgEl.textContent = '登録中…';
+        msgEl.className = 'msg';
+        try {
+          await saveStockIn({ inDate: dateStr, mixedBoxes, sBoxes, mBoxes, note: supplier });
+          load();
+        } catch (e) {
+          console.error(e);
+          msgEl.textContent = '登録に失敗しました。通信状況を確認してもう一度お試しください。';
+          msgEl.className = 'msg msg-error';
+          btn.disabled = false;
+        }
+      });
+    } catch (e) {
+      console.error(e);
+      shippedCardEl.innerHTML = '<p class="msg-error">読み込みに失敗しました。</p>';
+      outCardEl.innerHTML = '';
+      inCardEl.innerHTML = '';
+    }
+  }
+
+  load();
 }
 
 // 牡蠣在庫まわり(入庫/手動出庫/発注)の変更履歴ビュー。DBトリガーが自動記録した
