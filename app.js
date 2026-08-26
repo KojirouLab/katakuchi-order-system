@@ -1321,13 +1321,15 @@ function stockSumQty(rows) {
 // ?stock=1              → メニュー
 // ?stock=1&view=balance → 在庫確認(現在庫・仕入れ先ごとの残り・Excel出力・カレンダー/一覧表示)
 // ?stock=1&view=in      → 入庫を記録する
-// ?stock=1&view=out     → 出庫を記録する(在庫確認ページのカレンダーからも編集用にリンクされる)
+// ?stock=1&view=out     → 出庫(自社使用)を記録する
+// ?stock=1&view=storeout → 配達の仕入れ先を記録する(在庫確認ページのカレンダーからも編集用にリンクされる)
 // ?stock=1&view=day&date=YYYY-MM-DD → その日の入庫・出庫(配達先/出荷元)をまとめて確認・修正する
 async function renderStockPage() {
   const view = new URLSearchParams(location.search).get('view');
   if (view === 'balance') return renderStockBalancePage();
   if (view === 'in') return renderStockInPage();
   if (view === 'out') return renderStockOutPage();
+  if (view === 'storeout') return renderStoreOutPage();
   if (view === 'day') return renderStockDayPage();
   return renderStockMenuPage();
 }
@@ -1341,7 +1343,8 @@ function stockSubNavHtml(current) {
   const items = [
     { key: 'balance', label: '📊 在庫確認' },
     { key: 'in', label: '📥 入庫を記録' },
-    { key: 'out', label: '📤 出庫を記録' },
+    { key: 'out', label: '📤 自社使用を記録' },
+    { key: 'storeout', label: '🚚 配達の仕入れ先' },
   ];
   return `<div class="view-toggle stock-subnav">${items
     .map(
@@ -1354,10 +1357,11 @@ function stockSubNavHtml(current) {
 }
 
 // カレンダーの「配達/宅配/⚠」表示をタップした時に、出庫を記録するページへ内容を渡して移動する。
+// purposeによって行き先(自社使用ページ/配達の仕入れ先ページ)が変わる。
 function navigateToStockOutForm({ id, outDate, mixedBoxes, sBoxes, mBoxes, supplier, purpose, note, mode }) {
   const params = new URLSearchParams();
   params.set('stock', '1');
-  params.set('view', 'out');
+  params.set('view', purpose === 'store' ? 'storeout' : 'out');
   if (id) params.set('edit', id);
   params.set('date', outDate);
   params.set('mixed', String(mixedBoxes || 0));
@@ -1392,7 +1396,8 @@ function renderStockMenuPage() {
         <ul class="home-links">
           <li><a href="?stock=1&view=balance${ref}">📊 在庫を確認する</a></li>
           <li><a href="?stock=1&view=in${ref}">📥 入庫を記録する</a></li>
-          <li><a href="?stock=1&view=out${ref}">📤 出庫を記録する</a></li>
+          <li><a href="?stock=1&view=out${ref}">📤 出庫(自社使用)を記録する</a></li>
+          <li><a href="?stock=1&view=storeout${ref}">🚚 配達の仕入れ先を記録する</a></li>
         </ul>
       </div>
     </div>`;
@@ -1433,7 +1438,7 @@ async function renderStockBalancePage() {
           <h2 id="calMonthLabel"></h2>
           <button id="calNextBtn" class="cal-nav-btn" type="button">▶</button>
         </div>
-        <p class="hint">カレンダー表示は見やすさ優先で「入庫/配達(店舗への自動出荷)/他出庫(自社使用など)」の3行だけを表示します。オレンジの「配達」をタップすると「出庫を記録する」ページにその日の内容を読み込んで移動します。個別記録の削除・仕入れ先ごとの内訳・受注データとの差分警告など詳しい内容は「📋 一覧表示」でご確認ください(その月のうち入出庫があった日だけを表形式で並べます)。</p>
+        <p class="hint">カレンダー表示は見やすさ優先で「入庫/配達(店舗への自動出荷)/他出庫(自社使用など)」の3行だけを表示します。日付をタップすると、その日の入庫・出庫をまとめて確認・修正できるページに移動します。個別記録の削除・仕入れ先ごとの内訳・受注データとの差分警告など詳しい内容は「📋 一覧表示」でご確認ください(その月のうち入出庫があった日だけを表形式で並べます)。</p>
         <div id="stockCalendar" class="stock-calendar"><p class="hint">読み込み中…</p></div>
       </div>
       <div id="supplierBreakdown"></div>
@@ -2257,26 +2262,22 @@ function renderStockInPage() {
   });
 }
 
-function renderStockOutPage() {
+// 出庫の記録は「自社使用(在庫残高からも差し引く)」と「配達の仕入れ先の記録(在庫残高には
+// 影響せず、仕入れ先ごとの残りにのみ反映)」で用途が全く異なるため、別々の専用ページにしている
+// (以前は1ページで用途を選択させていたが、間違えやすいため分割した)。用途はページ固定で選ばせない。
+function renderStockOutFormPageImpl({ purpose, navKey, heading, hint }) {
   app.innerHTML = `
     <div class="page">
       <h1>牡蠣在庫管理</h1>
       ${adminBackLinkHtml()}
-      ${stockSubNavHtml('out')}
+      ${stockSubNavHtml(navKey)}
       <div class="card" id="stockOutCard">
-        <h2>出庫を記録する</h2>
-        <p class="hint">自社使用(イベントなど)や、店舗配達分がどの仕入れ先の在庫から出たかを記録できます。「自社使用」は全体の在庫残高からも差し引かれます。「店舗配達分の記録」は仕入れ先ごとの残りにだけ反映され、全体の在庫残高には影響しません(店舗への出荷は発注データから別途自動計算されているため)。<a href="?stock=1&view=balance${stockRefSuffix()}">在庫確認ページ</a>のカレンダーの出庫表示から、この日の内容を読み込んで編集することもできます。</p>
+        <h2>${heading}</h2>
+        <p class="hint">${hint}</p>
         <p id="stockOutEditBanner" class="form-edit-banner" style="display:none;"></p>
         <div class="field">
           <label for="stockOutDate">出庫日</label>
           <input type="date" id="stockOutDate" value="${todayStr()}">
-        </div>
-        <div class="field">
-          <label for="stockOutPurpose">用途</label>
-          <select id="stockOutPurpose">
-            <option value="self">自社使用など(在庫残高からも差し引く)</option>
-            <option value="store">店舗配達分の記録(仕入れ先の残りにのみ反映)</option>
-          </select>
         </div>
         <div class="field">
           <label for="stockOutNote">メモ(任意)</label>
@@ -2362,9 +2363,8 @@ function renderStockOutPage() {
     updateBreakdownRemoveButtons();
   });
 
-  function fillStockOutForm({ outDate, mixedBoxes, sBoxes, mBoxes, supplier, purpose, note }) {
+  function fillStockOutForm({ outDate, mixedBoxes, sBoxes, mBoxes, supplier, note }) {
     document.getElementById('stockOutDate').value = outDate;
-    document.getElementById('stockOutPurpose').value = purpose;
     document.getElementById('stockOutNote').value = note;
     resetBreakdownRows([{ supplier, mixed: mixedBoxes, s: sBoxes, m: mBoxes }]);
   }
@@ -2417,14 +2417,12 @@ function renderStockOutPage() {
       sBoxes: 0,
       mBoxes: 0,
       supplier: STOCK_OUT_DEFAULT_SUPPLIER,
-      purpose: 'self',
       note: '',
     });
   }
 
   document.getElementById('stockOutSubmitBtn').addEventListener('click', async () => {
     const outDate = document.getElementById('stockOutDate').value;
-    const purpose = document.getElementById('stockOutPurpose').value;
     const note = document.getElementById('stockOutNote').value.trim();
     const msgEl = document.getElementById('stockOutMsg');
     const isEdit = !!editingStockOutId;
@@ -2517,12 +2515,33 @@ function renderStockOutPage() {
         sBoxes: Number(params.get('s')) || 0,
         mBoxes: Number(params.get('m')) || 0,
         supplier: params.get('supplier') || STOCK_OUT_DEFAULT_SUPPLIER,
-        purpose: params.get('purpose') || 'self',
         note: params.get('note') || '',
       },
       params.get('mode')
     );
   }
+}
+
+// 自社使用(イベントなど)の出庫を記録する専用ページ。在庫残高からも差し引かれる。
+function renderStockOutPage() {
+  renderStockOutFormPageImpl({
+    purpose: 'self',
+    navKey: 'out',
+    heading: '出庫を記録する(自社使用)',
+    hint: `イベントなど、自社で使用した牡蠣の出庫を記録します。全体の在庫残高からも差し引かれます。配送などで店舗に出荷した牡蠣がどの仕入れ先のものかを記録したい場合は「配達の仕入れ先」ページをご利用ください。<a href="?stock=1&view=balance${stockRefSuffix()}">在庫確認ページ</a>のカレンダーの出庫表示から、この日の内容を読み込んで編集することもできます。`,
+  });
+}
+
+// 店舗への配達で出荷した牡蠣が、どの仕入れ先のものかを記録する専用ページ。
+// 全体の在庫残高には影響せず(店舗への出荷は発注データから別途自動計算されているため)、
+// 仕入れ先ごとの残りにのみ反映される。
+function renderStoreOutPage() {
+  renderStockOutFormPageImpl({
+    purpose: 'store',
+    navKey: 'storeout',
+    heading: '配達の仕入れ先を記録する',
+    hint: `店舗への配達で出荷した牡蠣が、どの仕入れ先のものかを記録します。仕入れ先ごとの残りにのみ反映され、全体の在庫残高には影響しません(店舗への出荷は発注データから別途自動計算されているため)。<a href="?stock=1&view=balance${stockRefSuffix()}">在庫確認ページ</a>のカレンダーの出庫表示から、この日の内容を読み込んで編集することもできます。`,
+  });
 }
 
 // その日の入庫・出庫(配達先=理由別/出荷元=仕入れ先別)をまとめて確認・修正するページ。
@@ -2583,9 +2602,9 @@ async function renderStockDayPage() {
 
       shippedCardEl.innerHTML = `
         <h2>受注システムの出荷実績(自動計算)</h2>
-        <p class="hint">各店舗の発注データから自動計算した実際の出荷数です。ここは直接編集できません。過不足があれば下の「出庫(配達先・出荷元)」で仕入れ先を記録してください。</p>
+        <p class="hint">各店舗の発注データから自動計算した実際の出荷数です。ここは直接編集できません。過不足があれば下の「配達の仕入れ先」で記録してください。</p>
         <ul class="recent-list">
-          <li><span class="recent-date">配送(トラック)</span><span class="oyster-qty">${stockCompactQty(
+          <li><span class="recent-date">店舗配送</span><span class="oyster-qty">${stockCompactQty(
             truckTotal.mixed,
             truckTotal.s,
             truckTotal.m
@@ -2652,7 +2671,8 @@ async function renderStockDayPage() {
             <tbody>${outRowsHtml || '<tr><td colspan="5" class="hint">この日の出庫記録はありません。</td></tr>'}</tbody>
           </table>
         </div>
-        <button id="dayAddOutBtn" type="button" class="btn-plain">+ 出庫を追加する</button>`;
+        <button id="dayAddSelfOutBtn" type="button" class="btn-plain">+ 自社使用を追加する</button>
+        <button id="dayAddStoreOutBtn" type="button" class="btn-plain">+ 配達の仕入れ先を追加する</button>`;
 
       outCardEl.querySelectorAll('.day-edit-btn').forEach((btn) => {
         btn.addEventListener('click', () => {
@@ -2685,7 +2705,7 @@ async function renderStockDayPage() {
           }
         });
       });
-      document.getElementById('dayAddOutBtn').addEventListener('click', () => {
+      document.getElementById('dayAddSelfOutBtn').addEventListener('click', () => {
         navigateToStockOutForm({
           id: null,
           outDate: dateStr,
@@ -2694,6 +2714,19 @@ async function renderStockDayPage() {
           mBoxes: 0,
           supplier: STOCK_OUT_DEFAULT_SUPPLIER,
           purpose: 'self',
+          note: '',
+          mode: 'prefill',
+        });
+      });
+      document.getElementById('dayAddStoreOutBtn').addEventListener('click', () => {
+        navigateToStockOutForm({
+          id: null,
+          outDate: dateStr,
+          mixedBoxes: 0,
+          sBoxes: 0,
+          mBoxes: 0,
+          supplier: STOCK_OUT_DEFAULT_SUPPLIER,
+          purpose: 'store',
           note: '',
           mode: 'prefill',
         });
