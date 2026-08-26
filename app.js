@@ -2564,11 +2564,19 @@ async function renderStockDayPage() {
       // 受注システムの自動出荷実績(配送/宅配)。ここは直接編集できない参考情報。
       const truckTotal = stockSumQty(shippedRows.filter((r) => !r.no_order && !COURIER_STORE_SLUGS.has(r.store_slug)));
       const courierTotal = stockSumQty(shippedRows.filter((r) => !r.no_order && COURIER_STORE_SLUGS.has(r.store_slug)));
+      // 差分チェックは配送(トラック)+宅配発送の合計と比較する(出庫記録側は配送方法を区別せず
+      // 「店舗配達分」としてまとめて記録されるため。配送分だけと比べると、宅配発送分を記録した日に
+      // 「記録しすぎ」と誤検知してしまう)。
+      const shippedTotalAll = {
+        mixed: truckTotal.mixed + courierTotal.mixed,
+        s: truckTotal.s + courierTotal.s,
+        m: truckTotal.m + courierTotal.m,
+      };
       const storeManualTotal = stockSumQty(outRows.filter((r) => r.purpose === 'store'));
       const diff = {
-        mixed: truckTotal.mixed - storeManualTotal.mixed,
-        s: truckTotal.s - storeManualTotal.s,
-        m: truckTotal.m - storeManualTotal.m,
+        mixed: shippedTotalAll.mixed - storeManualTotal.mixed,
+        s: shippedTotalAll.s - storeManualTotal.s,
+        m: shippedTotalAll.m - storeManualTotal.m,
       };
       const hasDiff = diff.mixed !== 0 || diff.s !== 0 || diff.m !== 0;
       const hasCourier = courierTotal.mixed || courierTotal.s || courierTotal.m;
