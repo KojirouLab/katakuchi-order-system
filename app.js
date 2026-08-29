@@ -1306,6 +1306,13 @@ function stockZeroQty() {
   return { mixed: 0, s: 0, m: 0 };
 }
 
+// kaki_stock_out_internalのpurposeの表示ラベル('store'/'factory'/それ以外=自社使用)。
+function stockPurposeLabel(purpose) {
+  if (purpose === 'store') return '店舗配達分';
+  if (purpose === 'factory') return '工場出庫';
+  return '自社使用';
+}
+
 function stockSumQty(rows) {
   return rows.reduce(
     (acc, r) => ({
@@ -1323,6 +1330,7 @@ function stockSumQty(rows) {
 // ?stock=1&view=in      → 入庫を記録する
 // ?stock=1&view=out     → 出庫(自社使用)を記録する
 // ?stock=1&view=storeout → 配達の仕入れ先を記録する(在庫確認ページのカレンダーからも編集用にリンクされる)
+// ?stock=1&view=factoryout → 工場出庫(キロ単位)を記録する
 // ?stock=1&view=day&date=YYYY-MM-DD → その日の入庫・出庫(配達先/出荷元)をまとめて確認・修正する
 async function renderStockPage() {
   const view = new URLSearchParams(location.search).get('view');
@@ -1330,6 +1338,7 @@ async function renderStockPage() {
   if (view === 'in') return renderStockInPage();
   if (view === 'out') return renderStockOutPage();
   if (view === 'storeout') return renderStoreOutPage();
+  if (view === 'factoryout') return renderFactoryOutPage();
   if (view === 'day') return renderStockDayPage();
   return renderStockMenuPage();
 }
@@ -1345,6 +1354,7 @@ function stockSubNavHtml(current) {
     { key: 'in', label: '📥 入庫を記録' },
     { key: 'out', label: '📤 自社使用を記録' },
     { key: 'storeout', label: '🚚 配達の仕入れ先' },
+    { key: 'factoryout', label: '🏭 工場出庫' },
   ];
   return `<div class="view-toggle stock-subnav">${items
     .map(
@@ -1357,11 +1367,11 @@ function stockSubNavHtml(current) {
 }
 
 // カレンダーの「配達/宅配/⚠」表示をタップした時に、出庫を記録するページへ内容を渡して移動する。
-// purposeによって行き先(自社使用ページ/配達の仕入れ先ページ)が変わる。
+// purposeによって行き先(自社使用ページ/配達の仕入れ先ページ/工場出庫ページ)が変わる。
 function navigateToStockOutForm({ id, outDate, mixedBoxes, sBoxes, mBoxes, supplier, purpose, note, mode }) {
   const params = new URLSearchParams();
   params.set('stock', '1');
-  params.set('view', purpose === 'store' ? 'storeout' : 'out');
+  params.set('view', purpose === 'store' ? 'storeout' : purpose === 'factory' ? 'factoryout' : 'out');
   if (id) params.set('edit', id);
   params.set('date', outDate);
   params.set('mixed', String(mixedBoxes || 0));
@@ -1398,6 +1408,7 @@ function renderStockMenuPage() {
           <li><a href="?stock=1&view=in${ref}">📥 入庫を記録する</a></li>
           <li><a href="?stock=1&view=out${ref}">📤 出庫(自社使用)を記録する</a></li>
           <li><a href="?stock=1&view=storeout${ref}">🚚 配達の仕入れ先を記録する</a></li>
+          <li><a href="?stock=1&view=factoryout${ref}">🏭 工場出庫(キロ単位)を記録する</a></li>
         </ul>
       </div>
     </div>`;
@@ -1621,7 +1632,7 @@ async function renderStockBalancePage() {
         const useEntries = internalOutByDate[dateStr] || [];
         const useHtml = useEntries
           .map((r) => {
-            const purposeLabel = r.purpose === 'store' ? '店舗配達分' : '自社使用';
+            const purposeLabel = stockPurposeLabel(r.purpose);
             const detail = [r.supplier, purposeLabel, r.note].filter(Boolean).join('・');
             return `<div class="cal-use cal-use-clickable" data-id="${r.id}" data-date="${dateStr}" data-mixed="${Number(
               r.mixed_boxes
@@ -2075,38 +2086,44 @@ async function renderStockBalancePage() {
         return `<li><span class="recent-store">${escapeHtml(s)}</span><span class="oyster-qty">混 ${b.mixed} / S ${b.s} / M ${b.m}</span></li>`;
       }).join('');
 
-      // 仕入れ先別・用途別(店舗配送/自社使用)の出庫内訳(混合/S/Mのサイズ別)。
+      // 仕入れ先別・用途別(店舗配送/自社使用/工場出庫)の出庫内訳(混合/S/Mのサイズ別)。
       const zeroQty = () => ({ mixed: 0, s: 0, m: 0 });
       const addQtyTo = (acc, r) => {
         acc.mixed += Number(r.mixed_boxes) || 0;
         acc.s += Number(r.s_boxes) || 0;
         acc.m += Number(r.m_boxes) || 0;
       };
+      const purposeBucketOf = (p) => (p === 'store' ? 'store' : p === 'factory' ? 'factory' : 'self');
       const supplierPurposeBreakdown = {};
       STOCK_SUPPLIERS.forEach((s) => {
-        supplierPurposeBreakdown[s] = { store: zeroQty(), self: zeroQty() };
+        supplierPurposeBreakdown[s] = { store: zeroQty(), self: zeroQty(), factory: zeroQty() };
       });
-      const unknownSupplierBreakdown = { store: zeroQty(), self: zeroQty() };
+      const unknownSupplierBreakdown = { store: zeroQty(), self: zeroQty(), factory: zeroQty() };
       internalOutRowsUpToDate.forEach((r) => {
-        const bucket = r.purpose === 'store' ? 'store' : 'self';
+        const bucket = purposeBucketOf(r.purpose);
         if (supplierPurposeBreakdown[r.supplier]) {
           addQtyTo(supplierPurposeBreakdown[r.supplier][bucket], r);
         } else {
           addQtyTo(unknownSupplierBreakdown[bucket], r);
         }
       });
-      const sumQty = (a, b) => ({ mixed: a.mixed + b.mixed, s: a.s + b.s, m: a.m + b.m });
+      const sumQty = (...qs) =>
+        qs.reduce((acc, q) => ({ mixed: acc.mixed + q.mixed, s: acc.s + q.s, m: acc.m + q.m }), zeroQty());
       const qtyHasAny = (q) => q.mixed || q.s || q.m;
       const breakdownRows = STOCK_SUPPLIERS.map((s) => {
         const b = supplierPurposeBreakdown[s];
-        const total = sumQty(b.store, b.self);
+        const total = sumQty(b.store, b.self, b.factory);
         return `<tr><td>${escapeHtml(s)}</td><td>${breakdownQty(b.store.mixed, b.store.s, b.store.m)}</td><td>${breakdownQty(
           b.self.mixed,
           b.self.s,
           b.self.m
-        )}</td><td>${breakdownQty(total.mixed, total.s, total.m)}</td></tr>`;
+        )}</td><td>${breakdownQty(b.factory.mixed, b.factory.s, b.factory.m)}</td><td>${breakdownQty(
+          total.mixed,
+          total.s,
+          total.m
+        )}</td></tr>`;
       }).join('');
-      const unknownTotal = sumQty(unknownSupplierBreakdown.store, unknownSupplierBreakdown.self);
+      const unknownTotal = sumQty(unknownSupplierBreakdown.store, unknownSupplierBreakdown.self, unknownSupplierBreakdown.factory);
       const unknownRow = qtyHasAny(unknownTotal)
         ? `<tr class="supplier-breakdown-unknown"><td>仕入れ先未記録</td><td>${breakdownQty(
             unknownSupplierBreakdown.store.mixed,
@@ -2116,6 +2133,10 @@ async function renderStockBalancePage() {
             unknownSupplierBreakdown.self.mixed,
             unknownSupplierBreakdown.self.s,
             unknownSupplierBreakdown.self.m
+          )}</td><td>${breakdownQty(
+            unknownSupplierBreakdown.factory.mixed,
+            unknownSupplierBreakdown.factory.s,
+            unknownSupplierBreakdown.factory.m
           )}</td><td>${breakdownQty(unknownTotal.mixed, unknownTotal.s, unknownTotal.m)}</td></tr>`
         : '';
       const grandStore = STOCK_SUPPLIERS.reduce(
@@ -2125,7 +2146,9 @@ async function renderStockBalancePage() {
       const grandStoreAll = sumQty(grandStore, unknownSupplierBreakdown.store);
       const grandSelf = STOCK_SUPPLIERS.reduce((sum, s) => sumQty(sum, supplierPurposeBreakdown[s].self), zeroQty());
       const grandSelfAll = sumQty(grandSelf, unknownSupplierBreakdown.self);
-      const grandAll = sumQty(grandStoreAll, grandSelfAll);
+      const grandFactory = STOCK_SUPPLIERS.reduce((sum, s) => sumQty(sum, supplierPurposeBreakdown[s].factory), zeroQty());
+      const grandFactoryAll = sumQty(grandFactory, unknownSupplierBreakdown.factory);
+      const grandAll = sumQty(grandStoreAll, grandSelfAll, grandFactoryAll);
 
       balanceEl.innerHTML = `
         <div class="card">
@@ -2147,7 +2170,7 @@ async function renderStockBalancePage() {
           <p class="hint">出庫記録(手動)を仕入れ先・用途別に集計した数量です(混合/S/M)。</p>
           <div class="cal-list-wrap">
             <table class="cal-list-table supplier-breakdown-table">
-              <thead><tr><th>仕入れ先</th><th>店舗配送</th><th>自社使用</th><th>合計出庫</th></tr></thead>
+              <thead><tr><th>仕入れ先</th><th>店舗配送</th><th>自社使用</th><th>工場出庫</th><th>合計出庫</th></tr></thead>
               <tbody>
                 ${breakdownRows}
                 ${unknownRow}
@@ -2156,6 +2179,10 @@ async function renderStockBalancePage() {
                   grandStoreAll.s,
                   grandStoreAll.m
                 )}</td><td>${breakdownQty(grandSelfAll.mixed, grandSelfAll.s, grandSelfAll.m)}</td><td>${breakdownQty(
+                  grandFactoryAll.mixed,
+                  grandFactoryAll.s,
+                  grandFactoryAll.m
+                )}</td><td>${breakdownQty(
                   grandAll.mixed,
                   grandAll.s,
                   grandAll.m
@@ -2544,6 +2571,179 @@ function renderStoreOutPage() {
   });
 }
 
+// 工場からキロ単位で牡蠣を出庫する場合の記録ページ。ケース単位(混合/S/M)の在庫と同じ
+// 全体残高から差し引くため、キロをケース換算(1ケース=15kg)してkaki_stock_out_internalに
+// purpose: 'factory' として保存する(purpose!=='storeの扱いなので、既存の「全体在庫からも
+// 差し引く」ロジックにそのまま乗る)。どのサイズ(混合/S/M)から出たかは1件ずつ選んで記録する。
+function renderFactoryOutPage() {
+  const KG_PER_CASE = 15;
+  app.innerHTML = `
+    <div class="page">
+      <h1>牡蠣在庫管理</h1>
+      ${adminBackLinkHtml()}
+      ${stockSubNavHtml('factoryout')}
+      <div class="card" id="stockOutCard">
+        <h2>工場出庫を記録する</h2>
+        <p class="hint">工場から牡蠣をキロ単位で出庫した場合に記録します。1ケース=${KG_PER_CASE}kgとして換算し、全体の在庫残高・仕入れ先ごとの残りの両方から差し引かれます。</p>
+        <p id="stockOutEditBanner" class="form-edit-banner" style="display:none;"></p>
+        <div class="field">
+          <label for="factoryOutDate">出庫日</label>
+          <input type="date" id="factoryOutDate" value="${todayStr()}">
+        </div>
+        <div class="field">
+          <label for="factoryOutSize">サイズ</label>
+          <select id="factoryOutSize">
+            <option value="mixed">混合</option>
+            <option value="s">S</option>
+            <option value="m">M</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="factoryOutKg">数量(kg)</label>
+          <input type="number" id="factoryOutKg" min="0" step="0.1" value="0">
+          <p class="hint" id="factoryOutCaseHint" style="margin-top:4px;"></p>
+        </div>
+        <div class="field">
+          <label for="factoryOutSupplier">仕入れ先</label>
+          <select id="factoryOutSupplier">${[...STOCK_SUPPLIERS]
+            .sort((a, b) => (a === STOCK_OUT_DEFAULT_SUPPLIER ? -1 : b === STOCK_OUT_DEFAULT_SUPPLIER ? 1 : 0))
+            .map((s) => `<option value="${escapeHtml(s)}">${escapeHtml(s)}</option>`)
+            .join('')}</select>
+        </div>
+        <div class="field">
+          <label for="factoryOutNote">メモ(任意)</label>
+          <input type="text" id="factoryOutNote" placeholder="例: 〇〇向け出荷など">
+        </div>
+        <button id="factoryOutSubmitBtn" class="primary">工場出庫を登録する</button>
+        <button id="factoryOutCancelBtn" type="button" class="btn-plain" style="display:none;">キャンセル(新規登録に戻す)</button>
+        <p id="factoryOutMsg" class="msg"></p>
+      </div>
+      <p class="hint"><a href="?stock=1&view=balance${stockRefSuffix()}">→ 在庫確認ページで在庫を確認する</a></p>
+    </div>`;
+
+  let editingId = null;
+
+  const kgEl = document.getElementById('factoryOutKg');
+  const hintEl = document.getElementById('factoryOutCaseHint');
+  function updateCaseHint() {
+    const kg = Number(kgEl.value) || 0;
+    const cases = Math.round((kg / KG_PER_CASE) * 100) / 100;
+    hintEl.textContent = `${cases}ケース相当`;
+  }
+  kgEl.addEventListener('input', updateCaseHint);
+  updateCaseHint();
+
+  function exitEditMode() {
+    editingId = null;
+    document.getElementById('factoryOutSubmitBtn').textContent = '工場出庫を登録する';
+    document.getElementById('stockOutEditBanner').style.display = 'none';
+    document.getElementById('factoryOutCancelBtn').style.display = 'none';
+  }
+
+  function fillForm({ outDate, sizeKey, kg, supplier, note }) {
+    document.getElementById('factoryOutDate').value = outDate;
+    document.getElementById('factoryOutSize').value = sizeKey;
+    kgEl.value = kg;
+    document.getElementById('factoryOutSupplier').value = supplier || STOCK_OUT_DEFAULT_SUPPLIER;
+    document.getElementById('factoryOutNote').value = note || '';
+    updateCaseHint();
+  }
+
+  document.getElementById('factoryOutSubmitBtn').addEventListener('click', async () => {
+    const outDate = document.getElementById('factoryOutDate').value;
+    const sizeKey = document.getElementById('factoryOutSize').value; // 'mixed' | 's' | 'm'
+    const kg = Number(kgEl.value) || 0;
+    const supplier = document.getElementById('factoryOutSupplier').value;
+    const note = document.getElementById('factoryOutNote').value.trim();
+    const msgEl = document.getElementById('factoryOutMsg');
+    const isEdit = !!editingId;
+    if (!outDate) {
+      msgEl.textContent = '出庫日を選択してください。';
+      msgEl.className = 'msg msg-error';
+      return;
+    }
+    if (kg <= 0) {
+      msgEl.textContent = 'キロ数を入力してください。';
+      msgEl.className = 'msg msg-error';
+      return;
+    }
+    const cases = Math.round((kg / KG_PER_CASE) * 100) / 100;
+    const sizeLabel = { mixed: '混合', s: 'S', m: 'M' }[sizeKey];
+    if (
+      !confirm(
+        `${formatDateJp(outDate)}の工場出庫(${sizeLabel} ${kg}kg ≒ ${cases}ケース・${supplier})を${
+          isEdit ? '更新' : '登録'
+        }します。よろしいですか？`
+      )
+    )
+      return;
+    const btn = document.getElementById('factoryOutSubmitBtn');
+    btn.disabled = true;
+    msgEl.textContent = isEdit ? '更新中…' : '登録中…';
+    msgEl.className = 'msg';
+    const payload = {
+      outDate,
+      mixedBoxes: sizeKey === 'mixed' ? cases : 0,
+      sBoxes: sizeKey === 's' ? cases : 0,
+      mBoxes: sizeKey === 'm' ? cases : 0,
+      supplier,
+      purpose: 'factory',
+      note: `工場出庫${kg}kg${note ? `・${note}` : ''}`,
+    };
+    try {
+      if (isEdit) {
+        await updateStockOutInternal(editingId, payload);
+        msgEl.textContent = `✓ ${formatDateJp(outDate)}の工場出庫を更新しました。`;
+      } else {
+        await saveStockOutInternal(payload);
+        msgEl.textContent = `✓ ${formatDateJp(outDate)}の工場出庫を登録しました。`;
+      }
+      msgEl.className = 'msg msg-success';
+      exitEditMode();
+      fillForm({ outDate, sizeKey: 'mixed', kg: 0, supplier, note: '' });
+    } catch (e) {
+      console.error(e);
+      msgEl.textContent = `${isEdit ? '更新' : '登録'}に失敗しました。通信状況を確認してもう一度お試しください。`;
+      msgEl.className = 'msg msg-error';
+    } finally {
+      btn.disabled = false;
+    }
+  });
+
+  document.getElementById('factoryOutCancelBtn').addEventListener('click', () => {
+    exitEditMode();
+    fillForm({ outDate: todayStr(), sizeKey: 'mixed', kg: 0, supplier: STOCK_OUT_DEFAULT_SUPPLIER, note: '' });
+    document.getElementById('factoryOutMsg').textContent = '';
+    document.getElementById('factoryOutMsg').className = 'msg';
+  });
+
+  // 在庫確認ページ/日別詳細ページからの編集リンク(URLパラメータ)に対応する。
+  // mixed/s/mのうち非ゼロの1つをサイズ・キロに逆算する(工場出庫は常に1サイズのみで記録するため)。
+  const params = new URLSearchParams(location.search);
+  if (params.get('mode')) {
+    const mixed = Number(params.get('mixed')) || 0;
+    const s = Number(params.get('s')) || 0;
+    const m = Number(params.get('m')) || 0;
+    const sizeKey = s > 0 ? 's' : m > 0 ? 'm' : 'mixed';
+    const cases = { mixed, s, m }[sizeKey];
+    editingId = params.get('edit') || null;
+    fillForm({
+      outDate: params.get('date') || todayStr(),
+      sizeKey,
+      kg: Math.round(cases * KG_PER_CASE * 100) / 100,
+      supplier: params.get('supplier') || STOCK_OUT_DEFAULT_SUPPLIER,
+      note: '',
+    });
+    if (editingId) {
+      document.getElementById('factoryOutSubmitBtn').textContent = 'この工場出庫を更新する';
+      const banner = document.getElementById('stockOutEditBanner');
+      banner.textContent = `${formatDateJp(params.get('date'))}の工場出庫を編集中です。内容を直して「更新する」を押してください。`;
+      banner.style.display = '';
+      document.getElementById('factoryOutCancelBtn').style.display = '';
+    }
+  }
+}
+
 // その日の入庫・出庫(配達先=理由別/出荷元=仕入れ先別)をまとめて確認・修正するページ。
 // 在庫確認ページのカレンダー/一覧表示の日付をタップすると、ここに移動してくる。
 async function renderStockDayPage() {
@@ -2649,7 +2849,7 @@ async function renderStockDayPage() {
       // 出庫(手動記録): 配達先(用途)と出荷元(仕入れ先)を1件ずつ確認・修正できる一覧。
       const outRowsHtml = outRows
         .map((r) => {
-          const purposeLabel = r.purpose === 'store' ? '店舗配達分' : '自社使用';
+          const purposeLabel = stockPurposeLabel(r.purpose);
           return `<tr>
             <td>${escapeHtml(purposeLabel)}</td>
             <td>${escapeHtml(r.supplier || '未記録')}</td>
@@ -2672,7 +2872,8 @@ async function renderStockDayPage() {
           </table>
         </div>
         <button id="dayAddSelfOutBtn" type="button" class="btn-plain">+ 自社使用を追加する</button>
-        <button id="dayAddStoreOutBtn" type="button" class="btn-plain">+ 配達の仕入れ先を追加する</button>`;
+        <button id="dayAddStoreOutBtn" type="button" class="btn-plain">+ 配達の仕入れ先を追加する</button>
+        <button id="dayAddFactoryOutBtn" type="button" class="btn-plain">+ 工場出庫を追加する</button>`;
 
       outCardEl.querySelectorAll('.day-edit-btn').forEach((btn) => {
         btn.addEventListener('click', () => {
@@ -2727,6 +2928,19 @@ async function renderStockDayPage() {
           mBoxes: 0,
           supplier: STOCK_OUT_DEFAULT_SUPPLIER,
           purpose: 'store',
+          note: '',
+          mode: 'prefill',
+        });
+      });
+      document.getElementById('dayAddFactoryOutBtn').addEventListener('click', () => {
+        navigateToStockOutForm({
+          id: null,
+          outDate: dateStr,
+          mixedBoxes: 0,
+          sBoxes: 0,
+          mBoxes: 0,
+          supplier: STOCK_OUT_DEFAULT_SUPPLIER,
+          purpose: 'factory',
           note: '',
           mode: 'prefill',
         });
@@ -2830,7 +3044,7 @@ function describeStockAuditRow(tableName, data) {
     return `${data.in_date} 混${data.mixed_boxes}/S${data.s_boxes}/M${data.m_boxes} 仕入れ元:${escapeHtml(data.note || '(空欄)')}`;
   }
   if (tableName === 'kaki_stock_out_internal') {
-    const purposeLabel = data.purpose === 'store' ? '店舗配達分' : '自社使用';
+    const purposeLabel = stockPurposeLabel(data.purpose);
     return `${data.out_date} 混${data.mixed_boxes}/S${data.s_boxes}/M${data.m_boxes} ${escapeHtml(
       data.supplier || '(仕入れ先未記入)'
     )}・${purposeLabel}${data.note ? '・' + escapeHtml(data.note) : ''}`;
