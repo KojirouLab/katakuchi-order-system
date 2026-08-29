@@ -288,9 +288,11 @@ function route() {
   const isStock = params.get('stock') === '1';
   const isStockAudit = params.get('stock_audit') === '1';
   const isAdminMenu = params.get('admin') === '1';
+  const isFactoryOut = params.get('factory_out') === '1';
   if (isAdminMenu) return renderAdminMenuPage();
   if (isParent) return renderParentOrderPage();
   if (isStockAudit) return renderStockAuditPage();
+  if (isFactoryOut) return renderFactoryOutPage();
   if (isStock) return renderStockPage();
   if (storeSlug) return renderOrderPage(storeSlug);
   if (shopSlug === 'custom') return renderCustomAggregatePage();
@@ -333,6 +335,7 @@ function renderHome() {
         <p class="hint">仙台のカタクチ商店冷凍庫にある牡蠣の在庫を管理します。</p>
         <ul class="home-links">
           <li><a href="?stock=1">在庫管理ページを開く</a></li>
+          <li><a href="?factory_out=1">工場出庫(キロ単位)を記録する</a></li>
         </ul>
       </div>
     </div>`;
@@ -1330,15 +1333,15 @@ function stockSumQty(rows) {
 // ?stock=1&view=in      → 入庫を記録する
 // ?stock=1&view=out     → 出庫(自社使用)を記録する
 // ?stock=1&view=storeout → 配達の仕入れ先を記録する(在庫確認ページのカレンダーからも編集用にリンクされる)
-// ?stock=1&view=factoryout → 工場出庫(キロ単位)を記録する
 // ?stock=1&view=day&date=YYYY-MM-DD → その日の入庫・出庫(配達先/出荷元)をまとめて確認・修正する
+// (工場出庫(キロ単位)は?factory_out=1という独立したページ。店舗の発注ページと同様、
+// この在庫管理メニューの外にある単独ページとして扱う)
 async function renderStockPage() {
   const view = new URLSearchParams(location.search).get('view');
   if (view === 'balance') return renderStockBalancePage();
   if (view === 'in') return renderStockInPage();
   if (view === 'out') return renderStockOutPage();
   if (view === 'storeout') return renderStoreOutPage();
-  if (view === 'factoryout') return renderFactoryOutPage();
   if (view === 'day') return renderStockDayPage();
   return renderStockMenuPage();
 }
@@ -1354,7 +1357,6 @@ function stockSubNavHtml(current) {
     { key: 'in', label: '📥 入庫を記録' },
     { key: 'out', label: '📤 自社使用を記録' },
     { key: 'storeout', label: '🚚 配達の仕入れ先' },
-    { key: 'factoryout', label: '🏭 工場出庫' },
   ];
   return `<div class="view-toggle stock-subnav">${items
     .map(
@@ -1368,10 +1370,25 @@ function stockSubNavHtml(current) {
 
 // カレンダーの「配達/宅配/⚠」表示をタップした時に、出庫を記録するページへ内容を渡して移動する。
 // purposeによって行き先(自社使用ページ/配達の仕入れ先ページ/工場出庫ページ)が変わる。
+// 工場出庫だけは独立ページ(?factory_out=1)なので別scheme。
 function navigateToStockOutForm({ id, outDate, mixedBoxes, sBoxes, mBoxes, supplier, purpose, note, mode }) {
+  if (purpose === 'factory') {
+    const fParams = new URLSearchParams();
+    fParams.set('factory_out', '1');
+    if (id) fParams.set('edit', id);
+    fParams.set('date', outDate);
+    fParams.set('mixed', String(mixedBoxes || 0));
+    fParams.set('s', String(sBoxes || 0));
+    fParams.set('m', String(mBoxes || 0));
+    fParams.set('supplier', supplier || '');
+    if (note) fParams.set('note', note);
+    fParams.set('mode', mode || 'prefill');
+    location.href = `?${fParams.toString()}`;
+    return;
+  }
   const params = new URLSearchParams();
   params.set('stock', '1');
-  params.set('view', purpose === 'store' ? 'storeout' : purpose === 'factory' ? 'factoryout' : 'out');
+  params.set('view', purpose === 'store' ? 'storeout' : 'out');
   if (id) params.set('edit', id);
   params.set('date', outDate);
   params.set('mixed', String(mixedBoxes || 0));
@@ -1408,9 +1425,9 @@ function renderStockMenuPage() {
           <li><a href="?stock=1&view=in${ref}">📥 入庫を記録する</a></li>
           <li><a href="?stock=1&view=out${ref}">📤 出庫(自社使用)を記録する</a></li>
           <li><a href="?stock=1&view=storeout${ref}">🚚 配達の仕入れ先を記録する</a></li>
-          <li><a href="?stock=1&view=factoryout${ref}">🏭 工場出庫(キロ単位)を記録する</a></li>
         </ul>
       </div>
+      <p class="hint"><a href="?factory_out=1">🏭 工場出庫(キロ単位)を記録する →</a></p>
     </div>`;
 }
 
@@ -2579,13 +2596,10 @@ function renderFactoryOutPage() {
   const KG_PER_CASE = 15;
   app.innerHTML = `
     <div class="page">
-      <h1>牡蠣在庫管理</h1>
-      ${adminBackLinkHtml()}
-      ${stockSubNavHtml('factoryout')}
+      <h1>工場出庫</h1>
+      <p class="hint">工場から牡蠣をキロ単位(1kg単位)で出庫した場合に記録します。1ケース=${KG_PER_CASE}kgとして換算し、全体の在庫残高・仕入れ先ごとの残りの両方から差し引かれます。</p>
+      <p id="stockOutEditBanner" class="form-edit-banner" style="display:none;"></p>
       <div class="card" id="stockOutCard">
-        <h2>工場出庫を記録する</h2>
-        <p class="hint">工場から牡蠣をキロ単位で出庫した場合に記録します。1ケース=${KG_PER_CASE}kgとして換算し、全体の在庫残高・仕入れ先ごとの残りの両方から差し引かれます。</p>
-        <p id="stockOutEditBanner" class="form-edit-banner" style="display:none;"></p>
         <div class="field">
           <label for="factoryOutDate">出庫日</label>
           <input type="date" id="factoryOutDate" value="${todayStr()}">
@@ -2600,7 +2614,7 @@ function renderFactoryOutPage() {
         </div>
         <div class="field">
           <label for="factoryOutKg">数量(kg)</label>
-          <input type="number" id="factoryOutKg" min="0" step="0.1" value="0">
+          <input type="number" id="factoryOutKg" min="0" step="1" value="0">
           <p class="hint" id="factoryOutCaseHint" style="margin-top:4px;"></p>
         </div>
         <div class="field">
@@ -2618,7 +2632,6 @@ function renderFactoryOutPage() {
         <button id="factoryOutCancelBtn" type="button" class="btn-plain" style="display:none;">キャンセル(新規登録に戻す)</button>
         <p id="factoryOutMsg" class="msg"></p>
       </div>
-      <p class="hint"><a href="?stock=1&view=balance${stockRefSuffix()}">→ 在庫確認ページで在庫を確認する</a></p>
     </div>`;
 
   let editingId = null;
@@ -2626,7 +2639,7 @@ function renderFactoryOutPage() {
   const kgEl = document.getElementById('factoryOutKg');
   const hintEl = document.getElementById('factoryOutCaseHint');
   function updateCaseHint() {
-    const kg = Number(kgEl.value) || 0;
+    const kg = Math.round(Number(kgEl.value)) || 0;
     const cases = Math.round((kg / KG_PER_CASE) * 100) / 100;
     hintEl.textContent = `${cases}ケース相当`;
   }
@@ -2652,7 +2665,7 @@ function renderFactoryOutPage() {
   document.getElementById('factoryOutSubmitBtn').addEventListener('click', async () => {
     const outDate = document.getElementById('factoryOutDate').value;
     const sizeKey = document.getElementById('factoryOutSize').value; // 'mixed' | 's' | 'm'
-    const kg = Number(kgEl.value) || 0;
+    const kg = Math.round(Number(kgEl.value)) || 0;
     const supplier = document.getElementById('factoryOutSupplier').value;
     const note = document.getElementById('factoryOutNote').value.trim();
     const msgEl = document.getElementById('factoryOutMsg');
