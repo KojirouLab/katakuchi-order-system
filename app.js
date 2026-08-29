@@ -1302,6 +1302,16 @@ function formatCaseQty(cases) {
   return sign < 0 ? `-${label}` : label;
 }
 
+// ケース数を「ケース(整数)」と「端数のkg」に分ける(在庫サマリーの2段表示用)。
+function splitCaseKg(cases) {
+  const n = Number(cases) || 0;
+  const sign = n < 0 ? -1 : 1;
+  const abs = Math.abs(n);
+  const whole = Math.floor(abs + 1e-9);
+  const kg = Math.round((abs - whole) * 15);
+  return { whole: sign * whole, kg: sign * kg };
+}
+
 // 牡蠣在庫の数量表示用フォーマッタ(在庫確認ページ・日別詳細ページで共通利用)。
 function stockCompactQty(mixed, s, m) {
   const parts = [];
@@ -2114,9 +2124,12 @@ async function renderStockBalancePage() {
 
       const supplierRows = STOCK_SUPPLIERS.map((s) => {
         const b = supplierBalance[s];
-        return `<li><span class="recent-store">${escapeHtml(s)}</span><span class="oyster-qty">混 ${formatCaseQty(
-          b.mixed
-        )} / S ${formatCaseQty(b.s)} / M ${formatCaseQty(b.m)}</span></li>`;
+        const wMixed = splitCaseKg(b.mixed);
+        const wS = splitCaseKg(b.s);
+        const wM = splitCaseKg(b.m);
+        return `<li><span class="recent-store">${escapeHtml(s)}</span><span class="oyster-qty">混 ${wMixed.whole} / S ${
+          wS.whole
+        } / M ${wM.whole}</span><span class="oyster-qty-kg">混 ${wMixed.kg}kg / S ${wS.kg}kg / M ${wM.kg}kg</span></li>`;
       }).join('');
 
       // 仕入れ先別・用途別(店舗配送/自社使用/工場出庫)の出庫内訳(混合/S/Mのサイズ別)。
@@ -2183,12 +2196,14 @@ async function renderStockBalancePage() {
       const grandFactoryAll = sumQty(grandFactory, unknownSupplierBreakdown.factory);
       const grandAll = sumQty(grandStoreAll, grandSelfAll, grandFactoryAll);
 
+      const balMixed = splitCaseKg(balance.mixed);
+      const balS = splitCaseKg(balance.s);
+      const balM = splitCaseKg(balance.m);
       balanceEl.innerHTML = `
         <div class="card">
           <h2>${balanceHeading}</h2>
-          <span class="oyster-qty">混 ${formatCaseQty(balance.mixed)} / S ${formatCaseQty(balance.s)} / M ${formatCaseQty(
-            balance.m
-          )}</span>
+          <span class="oyster-qty">混 ${balMixed.whole} / S ${balS.whole} / M ${balM.whole}</span>
+          <span class="oyster-qty-kg">混 ${balMixed.kg}kg / S ${balS.kg}kg / M ${balM.kg}kg</span>
           <span class="recent-submitted">合計${(() => {
             const w = Math.floor(totalCases + 1e-9);
             const remKg = Math.round((totalCases - w) * 15);
