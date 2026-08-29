@@ -1288,12 +1288,26 @@ async function buildAndDownloadStockExcel(from, to) {
   return downloadWorkbook(wb, `牡蠣入出庫記録_${filenameLabel}.xlsx`);
 }
 
+// ケース数の端数(工場出庫のキロ→ケース換算などで生じる、15kg未満の端数)を
+// 「Nケースとmkg」の形式で読みやすく表示する。整数の場合はこれまで通り数字だけ。
+function formatCaseQty(cases) {
+  const n = Number(cases) || 0;
+  const sign = n < 0 ? -1 : 1;
+  const abs = Math.abs(n);
+  const whole = Math.floor(abs + 1e-9);
+  const remainder = abs - whole;
+  if (Math.abs(remainder) < 1e-9) return `${n < 0 ? '-' : ''}${whole}`;
+  const kg = Math.round(remainder * 15);
+  const label = kg > 0 ? `${whole}ケースと${kg}kg` : `${whole}`;
+  return sign < 0 ? `-${label}` : label;
+}
+
 // 牡蠣在庫の数量表示用フォーマッタ(在庫確認ページ・日別詳細ページで共通利用)。
 function stockCompactQty(mixed, s, m) {
   const parts = [];
-  if (mixed) parts.push(`混${mixed}`);
-  if (s) parts.push(`S${s}`);
-  if (m) parts.push(`M${m}`);
+  if (mixed) parts.push(`混${formatCaseQty(mixed)}`);
+  if (s) parts.push(`S${formatCaseQty(s)}`);
+  if (m) parts.push(`M${formatCaseQty(m)}`);
   return parts.length ? parts.join('/') : '0';
 }
 
@@ -1535,18 +1549,18 @@ async function renderStockBalancePage() {
 
   function compactQty(mixed, s, m) {
     const parts = [];
-    if (mixed) parts.push(`混${mixed}`);
-    if (s) parts.push(`S${s}`);
-    if (m) parts.push(`M${m}`);
+    if (mixed) parts.push(`混${formatCaseQty(mixed)}`);
+    if (s) parts.push(`S${formatCaseQty(s)}`);
+    if (m) parts.push(`M${formatCaseQty(m)}`);
     return parts.length ? parts.join('/') : '0';
   }
 
   // 仕入れ先別出庫の内訳表示用: Sが0でも省略せず必ず表示する(混合は0なら省略)。
   function breakdownQty(mixed, s, m) {
     const parts = [];
-    if (mixed) parts.push(`混${mixed}`);
-    parts.push(`S${s}`);
-    parts.push(`M${m}`);
+    if (mixed) parts.push(`混${formatCaseQty(mixed)}`);
+    parts.push(`S${formatCaseQty(s)}`);
+    parts.push(`M${formatCaseQty(m)}`);
     return parts.join('/');
   }
 
@@ -2100,7 +2114,9 @@ async function renderStockBalancePage() {
 
       const supplierRows = STOCK_SUPPLIERS.map((s) => {
         const b = supplierBalance[s];
-        return `<li><span class="recent-store">${escapeHtml(s)}</span><span class="oyster-qty">混 ${b.mixed} / S ${b.s} / M ${b.m}</span></li>`;
+        return `<li><span class="recent-store">${escapeHtml(s)}</span><span class="oyster-qty">混 ${formatCaseQty(
+          b.mixed
+        )} / S ${formatCaseQty(b.s)} / M ${formatCaseQty(b.m)}</span></li>`;
       }).join('');
 
       // 仕入れ先別・用途別(店舗配送/自社使用/工場出庫)の出庫内訳(混合/S/Mのサイズ別)。
@@ -2170,8 +2186,14 @@ async function renderStockBalancePage() {
       balanceEl.innerHTML = `
         <div class="card">
           <h2>${balanceHeading}</h2>
-          <span class="oyster-qty">混 ${balance.mixed} / S ${balance.s} / M ${balance.m}</span>
-          <span class="recent-submitted">合計${totalCases}ケース(${totalCases * 15}kg)</span>
+          <span class="oyster-qty">混 ${formatCaseQty(balance.mixed)} / S ${formatCaseQty(balance.s)} / M ${formatCaseQty(
+            balance.m
+          )}</span>
+          <span class="recent-submitted">合計${(() => {
+            const w = Math.floor(totalCases + 1e-9);
+            const remKg = Math.round((totalCases - w) * 15);
+            return remKg > 0 ? `${w}ケースと${remKg}kg` : `${w}ケース`;
+          })()}(${Math.round(totalCases * 15)}kg)</span>
           <p class="stock-forecast">${escapeHtml(forecastMsg)}</p>
         </div>
         <div class="card">
