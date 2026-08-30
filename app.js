@@ -2080,17 +2080,24 @@ async function renderStockBalancePage() {
           supplierBalance[r.note].m += Number(r.m_boxes) || 0;
         }
       });
-      internalOutRowsUpToDate.forEach((r) => {
-        if (supplierBalance[r.supplier]) {
-          supplierBalance[r.supplier].mixed -= Number(r.mixed_boxes) || 0;
-          supplierBalance[r.supplier].s -= Number(r.s_boxes) || 0;
-          supplierBalance[r.supplier].m -= Number(r.m_boxes) || 0;
-        }
-      });
 
-      // 店舗配達分のうち、仕入れ先が未記録の日は「標準で拓人」として拓人の残りから
-      // 自動的に差し引く(牡蠣の仕入れはほぼ拓人のため)。他の仕入れ先(勝又商店・カタクチ)から
-      // 出た分は、これまで通り出庫記録で明示的に記録すれば正しくそちらから引かれる。
+      // 自社使用・工場出庫の出庫は、記録された仕入れ先からそのまま全額差し引く
+      // (発注データのような突き合わせ先がなく、この記録自体が正解のため)。
+      internalOutRowsUpToDate
+        .filter((r) => r.purpose !== 'store')
+        .forEach((r) => {
+          if (supplierBalance[r.supplier]) {
+            supplierBalance[r.supplier].mixed -= Number(r.mixed_boxes) || 0;
+            supplierBalance[r.supplier].s -= Number(r.s_boxes) || 0;
+            supplierBalance[r.supplier].m -= Number(r.m_boxes) || 0;
+          }
+        });
+
+      // 店舗配達分(purpose='store')は発注データ(shippedByDateRaw)を「正」として扱う。
+      // 発注が後から編集・キャンセルされて、先に登録した「配達の仕入れ先」の内訳の方が
+      // 多いまま残ってしまった日(過大記録)は、その日の内訳をその日の実発注合計に収まる
+      // よう按分して差し引く。これにより、内訳の消し忘れが残っていても、仕入れ先ごとの
+      // 残りの合計が現在庫の合計から永久にズレることがなくなる。
       const shippedByDateRaw = {};
       shippedRows.forEach((r) => {
         const key = r.order_date;
@@ -2099,16 +2106,42 @@ async function renderStockBalancePage() {
         shippedByDateRaw[key].s += Number(r.s_boxes) || 0;
         shippedByDateRaw[key].m += Number(r.m_boxes) || 0;
       });
-      const attributedStoreByDate = {};
+      const storeOutRowsByDate = {};
       internalOutRowsUpToDate
         .filter((r) => r.purpose === 'store')
         .forEach((r) => {
           const key = r.out_date;
-          if (!attributedStoreByDate[key]) attributedStoreByDate[key] = { mixed: 0, s: 0, m: 0 };
-          attributedStoreByDate[key].mixed += Number(r.mixed_boxes) || 0;
-          attributedStoreByDate[key].s += Number(r.s_boxes) || 0;
-          attributedStoreByDate[key].m += Number(r.m_boxes) || 0;
+          if (!storeOutRowsByDate[key]) storeOutRowsByDate[key] = [];
+          storeOutRowsByDate[key].push(r);
         });
+      const attributedStoreByDate = {};
+      const capRatio = (attributed, shipped) => (attributed > 0 ? Math.min(1, shipped / attributed) : 1);
+      Object.keys(storeOutRowsByDate).forEach((d) => {
+        const recs = storeOutRowsByDate[d];
+        const attributed = { mixed: 0, s: 0, m: 0 };
+        recs.forEach((r) => {
+          attributed.mixed += Number(r.mixed_boxes) || 0;
+          attributed.s += Number(r.s_boxes) || 0;
+          attributed.m += Number(r.m_boxes) || 0;
+        });
+        attributedStoreByDate[d] = attributed;
+        const shipped = shippedByDateRaw[d] || { mixed: 0, s: 0, m: 0 };
+        const ratio = {
+          mixed: capRatio(attributed.mixed, shipped.mixed),
+          s: capRatio(attributed.s, shipped.s),
+          m: capRatio(attributed.m, shipped.m),
+        };
+        recs.forEach((r) => {
+          if (!supplierBalance[r.supplier]) return;
+          supplierBalance[r.supplier].mixed -= (Number(r.mixed_boxes) || 0) * ratio.mixed;
+          supplierBalance[r.supplier].s -= (Number(r.s_boxes) || 0) * ratio.s;
+          supplierBalance[r.supplier].m -= (Number(r.m_boxes) || 0) * ratio.m;
+        });
+      });
+
+      // 店舗配達分のうち、仕入れ先が未記録の日は「標準で拓人」として拓人の残りから
+      // 自動的に差し引く(牡蠣の仕入れはほぼ拓人のため)。他の仕入れ先(勝又商店・カタクチ)から
+      // 出た分は、これまで通り出庫記録で明示的に記録すれば正しくそちらから引かれる。
       Object.keys(shippedByDateRaw).forEach((d) => {
         const shipped = shippedByDateRaw[d];
         const attributed = attributedStoreByDate[d] || { mixed: 0, s: 0, m: 0 };
