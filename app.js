@@ -2360,6 +2360,7 @@ function renderStockOutFormPageImpl({ purpose, navKey, heading, hint }) {
           <label for="stockOutDate">出庫日</label>
           <input type="date" id="stockOutDate" value="${todayStr()}">
         </div>
+        ${purpose === 'store' ? '<div id="stockOutOrdersRef"></div>' : ''}
         <div class="field">
           <label for="stockOutNote">メモ(任意)</label>
           <input type="text" id="stockOutNote" placeholder="例: 〇〇イベント、8/20配達分など">
@@ -2585,6 +2586,53 @@ function renderStockOutFormPageImpl({ purpose, navKey, heading, hint }) {
 
   resetBreakdownRows();
 
+  // 「配達の仕入れ先を記録する」ページでは、その日どの店舗が発注していたかを参考表示する
+  // (カレンダーから飛んできた時に、この数量がどこの店舗の分か分からない、という声への対応)。
+  if (purpose === 'store') {
+    const ordersRefEl = document.getElementById('stockOutOrdersRef');
+    let ordersRefToken = 0;
+    async function loadOrdersRef() {
+      const date = document.getElementById('stockOutDate').value;
+      const myToken = ++ordersRefToken;
+      if (!date) {
+        ordersRefEl.innerHTML = '';
+        return;
+      }
+      ordersRefEl.innerHTML = '<p class="hint">この日の店舗発注を読み込み中…</p>';
+      try {
+        const rows = (await fetchOysterOrdersRange(date, date)).filter((r) => !r.no_order);
+        // 日付を続けて切り替えた場合、後から発火した取得が先に返って来ることがあるため、
+        // 自分より後のリクエストが発生していたら(=もう画面上の日付が変わっていたら)結果を反映しない。
+        if (myToken !== ordersRefToken) return;
+        if (!rows.length) {
+          ordersRefEl.innerHTML = '<p class="hint">この日、牡蠣の発注をした店舗はありません。</p>';
+          return;
+        }
+        const items = rows
+          .map((r) => {
+            const store = findStore(r.store_slug);
+            const name = store ? store.name : r.store_slug;
+            const courierTag = store && store.shipping === 'courier' ? '<span class="courier-tag">宅配発送</span>' : '';
+            return `<li><span class="recent-store">${escapeHtml(name)}${courierTag}</span><span class="oyster-qty">${stockCompactQty(
+              Number(r.mixed_boxes),
+              Number(r.s_boxes),
+              Number(r.m_boxes)
+            )}</span></li>`;
+          })
+          .join('');
+        ordersRefEl.innerHTML = `
+          <p class="hint">この日、牡蠣を発注した店舗(参考・ここでは編集できません):</p>
+          <ul class="recent-list">${items}</ul>`;
+      } catch (e) {
+        if (myToken !== ordersRefToken) return;
+        console.error(e);
+        ordersRefEl.innerHTML = '<p class="msg-error">店舗発注の読み込みに失敗しました。</p>';
+      }
+    }
+    document.getElementById('stockOutDate').addEventListener('change', loadOrdersRef);
+    loadOrdersRef();
+  }
+
   // 在庫確認ページのカレンダーからのリンク(URLパラメータ)で事前入力する。
   const params = new URLSearchParams(location.search);
   if (params.get('mode')) {
@@ -2600,6 +2648,10 @@ function renderStockOutFormPageImpl({ purpose, navKey, heading, hint }) {
       },
       params.get('mode')
     );
+    if (purpose === 'store') {
+      const ordersRefEl = document.getElementById('stockOutOrdersRef');
+      if (ordersRefEl) document.getElementById('stockOutDate').dispatchEvent(new Event('change'));
+    }
   }
 }
 
