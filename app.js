@@ -2948,7 +2948,8 @@ async function renderStockDayPage() {
 
       // 受注システムの自動出荷実績(配送/宅配)。ここは直接編集できない参考情報。
       const truckTotal = stockSumQty(shippedRows.filter((r) => !r.no_order && !COURIER_STORE_SLUGS.has(r.store_slug)));
-      const courierTotal = stockSumQty(shippedRows.filter((r) => !r.no_order && COURIER_STORE_SLUGS.has(r.store_slug)));
+      const courierRows = shippedRows.filter((r) => !r.no_order && COURIER_STORE_SLUGS.has(r.store_slug));
+      const courierTotal = stockSumQty(courierRows);
       // 差分チェックは配送(トラック)+宅配発送の合計と比較する(出庫記録側は配送方法を区別せず
       // 「店舗配達分」としてまとめて記録されるため。配送分だけと比べると、宅配発送分を記録した日に
       // 「記録しすぎ」と誤検知してしまう)。
@@ -2981,7 +2982,19 @@ async function renderStockDayPage() {
                   courierTotal.mixed,
                   courierTotal.s,
                   courierTotal.m
-                )}</span></li>`
+                )}</span>
+                <ul class="recent-sublist">${courierRows
+                  .map((r) => {
+                    const store = findStore(r.store_slug);
+                    const name = store ? store.name : r.store_slug;
+                    return `<li><span>${escapeHtml(name)}</span><span>${stockCompactQty(
+                      Number(r.mixed_boxes) || 0,
+                      Number(r.s_boxes) || 0,
+                      Number(r.m_boxes) || 0
+                    )}</span></li>`;
+                  })
+                  .join('')}</ul>
+                </li>`
               : ''
           }
         </ul>
