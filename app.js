@@ -2155,6 +2155,36 @@ async function renderStockBalancePage() {
         supplierBalance[STOCK_OUT_DEFAULT_SUPPLIER].m -= unrecorded.m;
       });
 
+      // 発注が後から編集・キャンセルされて、先に登録した「配達の仕入れ先」の記録の方が
+      // 多く残ってしまっている(消し忘れの可能性がある)日を検出し、一覧で気づけるようにする。
+      // 合計自体は自動で按分吸収されるが、日別の内訳を正確に保つには古い記録の修正が必要なため。
+      const overRecordedDates = Object.keys(attributedStoreByDate)
+        .filter((d) => {
+          const at = attributedStoreByDate[d];
+          const sh = shippedByDateRaw[d] || { mixed: 0, s: 0, m: 0 };
+          return at.mixed > sh.mixed || at.s > sh.s || at.m > sh.m;
+        })
+        .sort((a, b) => a.localeCompare(b));
+      const overRecordedHtml = overRecordedDates.length
+        ? `<div class="card card-warn">
+            <h2>⚠ 消し忘れの可能性がある日</h2>
+            <p class="hint">発注が後から編集・キャンセルされた等の理由で、「配達の仕入れ先」の記録が実際の発注合計より多く残っています。仕入れ先ごとの残りの合計は自動で調整されますが、日別の内訳を正確にするには古い記録を確認・修正してください。</p>
+            <ul class="recent-list">${overRecordedDates
+              .map((d) => {
+                const at = attributedStoreByDate[d];
+                const sh = shippedByDateRaw[d] || { mixed: 0, s: 0, m: 0 };
+                return `<li><a href="?stock=1&view=day&date=${d}${stockRefSuffix()}">${formatDateJp(
+                  d
+                )}</a><span class="oyster-qty">記録 ${stockCompactQty(at.mixed, at.s, at.m)} / 発注 ${stockCompactQty(
+                  sh.mixed,
+                  sh.s,
+                  sh.m
+                )}</span></li>`;
+              })
+              .join('')}</ul>
+          </div>`
+        : '';
+
       const supplierRows = STOCK_SUPPLIERS.map((s) => {
         const b = supplierBalance[s];
         const wMixed = splitCaseKg(b.mixed);
@@ -2248,7 +2278,8 @@ async function renderStockBalancePage() {
           <h2>仕入れ先ごとの残り(${formatDateJp(asOfDate)}時点)</h2>
           <p class="hint">出庫記録で仕入れ先を指定した分に加えて、店舗配達分のうち仕入れ先が未記録の日は標準で拓人として計算しています(牡蠣の仕入れはほぼ拓人のため)。実際に他の仕入れ先(勝又商店・カタクチ)から出した場合は、出庫記録で明示的に記録してください。</p>
           <ul class="recent-list">${supplierRows}</ul>
-        </div>`;
+        </div>
+        ${overRecordedHtml}`;
 
       // 「仕入れ先別の出庫内訳」はページ最後(カレンダー/一覧表示カードの下)に表示する。
       supplierBreakdownEl.innerHTML = `
