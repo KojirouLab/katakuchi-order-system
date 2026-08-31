@@ -917,7 +917,7 @@ async function renderCustomAggregatePage() {
 
 // 出荷(在庫減)は、この日付以降のoyster_ordersの合計を自動で差し引く。
 // この日より前の発注はこの冷凍庫在庫とは無関係(在庫管理開始前の出荷)として扱う。
-const KAKI_STOCK_TRACKING_START_DATE = '2026-08-04';
+const KAKI_STOCK_TRACKING_START_DATE = '2026-08-01';
 
 // 入庫の仕入れ元。増える場合はここに追記する(kaki_stock_in.noteカラムに文字列で保存)。
 // ここに載っている仕入れ先だけが、入庫記録・仕入れ先ごとの残り(在庫管理)の対象になる。
@@ -2029,13 +2029,39 @@ async function renderStockBalancePage() {
         inTotal.s += Number(r.s_boxes) || 0;
         inTotal.m += Number(r.m_boxes) || 0;
       });
-      const shippedByDate = {};
+      // 発注データそのまま(仕入れ先の記録とは無関係な生の出荷合計)。仕入れ先ごとの残りの
+      // 按分計算(実発注を上限にする処理)には、この生の合計を使う。
+      const shippedByDateRaw = {};
       shippedRows.forEach((r) => {
         const key = r.order_date;
-        if (!shippedByDate[key]) shippedByDate[key] = { mixed: 0, s: 0, m: 0 };
-        shippedByDate[key].mixed += Number(r.mixed_boxes) || 0;
-        shippedByDate[key].s += Number(r.s_boxes) || 0;
-        shippedByDate[key].m += Number(r.m_boxes) || 0;
+        if (!shippedByDateRaw[key]) shippedByDateRaw[key] = { mixed: 0, s: 0, m: 0 };
+        shippedByDateRaw[key].mixed += Number(r.mixed_boxes) || 0;
+        shippedByDateRaw[key].s += Number(r.s_boxes) || 0;
+        shippedByDateRaw[key].m += Number(r.m_boxes) || 0;
+      });
+      // 出庫元が「在庫管理対象外の仕入れ先」(拓人指ヶ浜など、別拠点で自前に在庫を持つところ)と
+      // 明示的に記録されている店舗配達分は、この冷凍庫の在庫からは出ていないため、全体在庫の
+      // 計算からは除外する(その日の実発注を上限にクランプし、記録ミスで過大に引かれないようにする)。
+      const outOnlyStoreByDate = {};
+      internalOutRowsUpToDate
+        .filter((r) => r.purpose === 'store' && STOCK_OUT_ONLY_SUPPLIERS.includes(r.supplier))
+        .forEach((r) => {
+          const key = r.out_date;
+          if (!outOnlyStoreByDate[key]) outOnlyStoreByDate[key] = { mixed: 0, s: 0, m: 0 };
+          outOnlyStoreByDate[key].mixed += Number(r.mixed_boxes) || 0;
+          outOnlyStoreByDate[key].s += Number(r.s_boxes) || 0;
+          outOnlyStoreByDate[key].m += Number(r.m_boxes) || 0;
+        });
+      // shippedByDate: 全体在庫の計算に使う「この冷凍庫から実際に出た分」。
+      const shippedByDate = {};
+      Object.keys(shippedByDateRaw).forEach((key) => {
+        const raw = shippedByDateRaw[key];
+        const outOnly = outOnlyStoreByDate[key] || { mixed: 0, s: 0, m: 0 };
+        shippedByDate[key] = {
+          mixed: raw.mixed - Math.min(outOnly.mixed, raw.mixed),
+          s: raw.s - Math.min(outOnly.s, raw.s),
+          m: raw.m - Math.min(outOnly.m, raw.m),
+        };
       });
       // 用途が「自社使用など」の分だけ全体在庫からも差し引く。「店舗配達分の記録」は
       // 発注データ側(shippedRows)ですでに全体在庫から引かれているため、ここでは
@@ -2090,19 +2116,11 @@ async function renderStockBalancePage() {
           }
         });
 
-      // 店舗配達分(purpose='store')は発注データ(shippedByDateRaw)を「正」として扱う。
-      // 発注が後から編集・キャンセルされて、先に登録した「配達の仕入れ先」の内訳の方が
-      // 多いまま残ってしまった日(過大記録)は、その日の内訳をその日の実発注合計に収まる
-      // よう按分して差し引く。これにより、内訳の消し忘れが残っていても、仕入れ先ごとの
+      // 店舗配達分(purpose='store')は発注データ(shippedByDateRaw、上ですでに計算済み)を
+      // 「正」として扱う。発注が後から編集・キャンセルされて、先に登録した「配達の仕入れ先」の
+      // 内訳の方が多いまま残ってしまった日(過大記録)は、その日の内訳をその日の実発注合計に
+      // 収まるよう按分して差し引く。これにより、内訳の消し忘れが残っていても、仕入れ先ごとの
       // 残りの合計が現在庫の合計から永久にズレることがなくなる。
-      const shippedByDateRaw = {};
-      shippedRows.forEach((r) => {
-        const key = r.order_date;
-        if (!shippedByDateRaw[key]) shippedByDateRaw[key] = { mixed: 0, s: 0, m: 0 };
-        shippedByDateRaw[key].mixed += Number(r.mixed_boxes) || 0;
-        shippedByDateRaw[key].s += Number(r.s_boxes) || 0;
-        shippedByDateRaw[key].m += Number(r.m_boxes) || 0;
-      });
       const storeOutRowsByDate = {};
       internalOutRowsUpToDate
         .filter((r) => r.purpose === 'store')
