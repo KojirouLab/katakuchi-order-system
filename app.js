@@ -992,8 +992,9 @@ function buildStockoutForecast(balance, shippedByDate, asOfDate) {
 }
 
 // 牡蠣在庫の帳票(Excel)の列構成を作る共通処理。
-// A日付/B入庫合計/C出庫合計/ 入庫(仕入れ先×混合・S・M)/ 配達出庫・イベント出庫
-// (それぞれ仕入れ先×S・M + 未記録)。ユーザーに個別配布していたxlsxと同じ様式。
+// A日付/B入庫合計/C出庫合計/Dうち宅配発送(参考)/ 入庫(仕入れ先×混合・S・M)/
+// 配達出庫・イベント出庫(それぞれ仕入れ先×混合・S・M + 未記録)。
+// ユーザーに個別配布していたxlsxと同じ様式(D列のみ後から追加)。
 // 日別・月別のどちらの帳票もこのヘッダー構成を共有する。
 function setupStockExcelSheet(wb, sheetName, firstColLabel) {
   const ws = wb.addWorksheet(sheetName);
@@ -1030,9 +1031,13 @@ function setupStockExcelSheet(wb, sheetName, firstColLabel) {
   ws.mergeCells(1, 2, 2, 2);
   setCell(1, 3, '出庫合計', { font: headerFont, fill: headerFill });
   ws.mergeCells(1, 3, 2, 3);
+  // 出庫合計のうち宅配発送(美人罠・ちょい飲みたかはしなど)分の参考合計。仕入れ先の内訳とは別軸の
+  // 数字で、出庫合計から引き算する類のものではない(宅配分も出庫合計・各仕入れ先の列に含まれている)。
+  setCell(1, 4, 'うち宅配発送', { font: headerFont, fill: headerFill });
+  ws.mergeCells(1, 4, 2, 4);
 
-  // 入庫: E-M(仕入れ先ごとに混合/S/M)
-  const inColStart = 5; // E
+  // 入庫: F-(仕入れ先ごとに混合/S/M)
+  const inColStart = 6; // F
   EXPORT_SUPPLIERS.forEach((supplier, i) => {
     const c0 = inColStart + i * 3;
     setCell(1, c0, `${supplier}入庫`, { font: headerFont, fill: headerFill });
@@ -1073,8 +1078,8 @@ function setupStockExcelSheet(wb, sheetName, firstColLabel) {
   const outStartCol = outGroups[0].start;
   const outEndCol = outGroups[1].start + EXPORT_OUT_SUPPLIERS.length * 3 + 2;
   const inEndCol = inColStart + EXPORT_SUPPLIERS.length * 3 - 1;
-  // 空列(D/入庫と配達出庫の間、配達出庫とイベント出庫の間)。合計行の数式もここは飛ばす。
-  const spacerCols = [4, storeColStart - 1, outGroups[1].start - 1];
+  // 空列(宅配発送と入庫の間、入庫と配達出庫の間、配達出庫とイベント出庫の間)。合計行の数式もここは飛ばす。
+  const spacerCols = [5, storeColStart - 1, outGroups[1].start - 1];
 
   return {
     ws,
@@ -1113,9 +1118,11 @@ function writeStockExcelTotalRow(sheet, row, label, firstDataRow, lastDataRow, {
 }
 
 // 集計済みの1行分(その日/その月の合計)をシートに書き込む。B/C列はSUM数式。
-function writeStockExcelRow(sheet, row, rowLabel, { inBySupplier, storeAttrBySupplier, storeTotal, storeAttrTotal, selfAttrBySupplier, selfUnrecorded }) {
+function writeStockExcelRow(sheet, row, rowLabel, { inBySupplier, storeAttrBySupplier, storeTotal, storeAttrTotal, courierTotal, selfAttrBySupplier, selfUnrecorded }) {
   const { setCell, EXPORT_SUPPLIERS, EXPORT_OUT_SUPPLIERS, inColStart, inEndCol, storeCols, selfCols, outStartCol, outEndCol, unrecordedFill, ws } = sheet;
   setCell(row, 1, rowLabel);
+
+  if (courierTotal) setCell(row, 4, courierTotal);
 
   let hasIn = false;
   EXPORT_SUPPLIERS.forEach((supplier, i) => {
@@ -1213,11 +1220,19 @@ function aggregateStockRecords(stockIn, stockOutInternal, oysterOrders, keyFn) {
     inByKey[key][supplier][2] += Number(r.m_boxes) || 0;
   });
 
+  // storeTotalByKey: トラック配送分(未記録の判定に使う)。courierTotalByKey: 宅配発送分
+  // (「うち宅配発送」列の参考表示用。仕入れ先の内訳・出庫合計にはすでに含まれているので、
+  // ここでの二重計上はしない)。
   const storeTotalByKey = {};
+  const courierTotalByKey = {};
   oysterOrders.forEach((r) => {
     if (r.no_order) return;
     const key = keyFn(r.order_date);
-    storeTotalByKey[key] = (storeTotalByKey[key] || 0) + boxesOfRow(r);
+    if (COURIER_STORE_SLUGS.has(r.store_slug)) {
+      courierTotalByKey[key] = (courierTotalByKey[key] || 0) + boxesOfRow(r);
+    } else {
+      storeTotalByKey[key] = (storeTotalByKey[key] || 0) + boxesOfRow(r);
+    }
   });
 
   const storeAttrByKey = {};
@@ -1258,7 +1273,7 @@ function aggregateStockRecords(stockIn, stockOutInternal, oysterOrders, keyFn) {
     }
   });
 
-  return { inByKey, storeTotalByKey, storeAttrByKey, storeAttrTotalByKey, selfAttrByKey, selfUnrecordedByKey };
+  return { inByKey, storeTotalByKey, courierTotalByKey, storeAttrByKey, storeAttrTotalByKey, selfAttrByKey, selfUnrecordedByKey };
 }
 
 function addDaysStr(dateStr, delta) {
@@ -1276,9 +1291,7 @@ async function buildAndDownloadStockExcel(from, to) {
   ]);
   const stockIn = allStockIn.filter((r) => r.in_date >= from && r.in_date <= to);
   const stockOutInternal = allStockOutInternal.filter((r) => r.out_date >= from && r.out_date <= to);
-  // 美人罠など宅配便発送分は配送トラックの「配達出庫(店舗配送)」には含めない。
-  const truckOysterOrders = oysterOrdersInRange.filter((r) => !COURIER_STORE_SLUGS.has(r.store_slug));
-  const agg = aggregateStockRecords(stockIn, stockOutInternal, truckOysterOrders, (d) => d);
+  const agg = aggregateStockRecords(stockIn, stockOutInternal, oysterOrdersInRange, (d) => d);
 
   await loadExcelJs();
   const wb = new ExcelJS.Workbook();
@@ -1293,6 +1306,7 @@ async function buildAndDownloadStockExcel(from, to) {
       storeAttrBySupplier: agg.storeAttrByKey[cur],
       storeTotal: agg.storeTotalByKey[cur],
       storeAttrTotal: agg.storeAttrTotalByKey[cur],
+      courierTotal: agg.courierTotalByKey[cur],
       selfAttrBySupplier: agg.selfAttrByKey[cur],
       selfUnrecorded: agg.selfUnrecordedByKey[cur],
     });
