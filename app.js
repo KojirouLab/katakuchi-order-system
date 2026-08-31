@@ -1607,9 +1607,11 @@ async function renderStockBalancePage() {
           if (!stockInByDate[r.in_date]) stockInByDate[r.in_date] = [];
           stockInByDate[r.in_date].push(r);
         });
+      // 在庫管理開始日より前の出庫元記録は、計算(仕入れ先ごとの残り)からも除外されて一切
+      // 反映されないため、カレンダー/一覧表示にも出さない(出しても合計と噛み合わず紛らわしいため)。
       const internalOutByDate = {};
       internalOutRows
-        .filter((r) => r.out_date >= monthStart && r.out_date <= monthEnd)
+        .filter((r) => r.out_date >= monthStart && r.out_date <= monthEnd && r.out_date >= KAKI_STOCK_TRACKING_START_DATE)
         .forEach((r) => {
           if (!internalOutByDate[r.out_date]) internalOutByDate[r.out_date] = [];
           internalOutByDate[r.out_date].push(r);
