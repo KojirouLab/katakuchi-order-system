@@ -1380,7 +1380,7 @@ function stockSubNavHtml(current) {
     { key: 'balance', label: '📊 在庫確認' },
     { key: 'in', label: '📥 入庫を記録' },
     { key: 'out', label: '📤 自社使用を記録' },
-    { key: 'storeout', label: '🚚 配達の仕入れ先' },
+    { key: 'storeout', label: '🚚 出庫元を修正' },
   ];
   return `<div class="view-toggle stock-subnav">${items
     .map(
@@ -1448,7 +1448,7 @@ function renderStockMenuPage() {
           <li><a href="?stock=1&view=balance${ref}">📊 在庫を確認する</a></li>
           <li><a href="?stock=1&view=in${ref}">📥 入庫を記録する</a></li>
           <li><a href="?stock=1&view=out${ref}">📤 出庫(自社使用)を記録する</a></li>
-          <li><a href="?stock=1&view=storeout${ref}">🚚 配達の仕入れ先を記録する</a></li>
+          <li><a href="?stock=1&view=storeout${ref}">🚚 出庫元を修正する(拓人以外から出した場合)</a></li>
         </ul>
       </div>
       <p class="hint"><a href="?factory_out=1">🏭 工場出庫(キロ単位)を記録する →</a></p>
@@ -1688,7 +1688,10 @@ async function renderStockBalancePage() {
           .join('');
 
         // 受注システムの出荷数(オレンジ)と、店舗配達分として記録した仕入れ先内訳(紫・purpose==='store')の
-        // 合計が一致しているかチェックする。在庫管理開始日より前は出荷データ自体を取得していないので対象外。
+        // 合計を比べる。記録がない(プラス)のは「標準ですべて拓人として自動計算」という仕様通りの状態
+        // なので警告しない。記録の方が多い(マイナス)場合だけ、発注が後から編集・キャンセルされて
+        // 古い記録が残ってしまった可能性がある実際の問題として警告する。
+        // 在庫管理開始日より前は出荷データ自体を取得していないので対象外。
         let warnHtml = '';
         if (dateStr >= KAKI_STOCK_TRACKING_START_DATE) {
           const storeManualTotal = useEntries
@@ -1706,15 +1709,12 @@ async function renderStockBalancePage() {
           const diffMixed = shippedForCompare.mixed - storeManualTotal.mixed;
           const diffS = shippedForCompare.s - storeManualTotal.s;
           const diffM = shippedForCompare.m - storeManualTotal.m;
-          if (diffMixed !== 0 || diffS !== 0 || diffM !== 0) {
-            warnHtml = `<div class="cal-warn cal-warn-clickable" data-date="${dateStr}" data-mixed="${Math.max(
-              diffMixed,
-              0
-            )}" data-s="${Math.max(diffS, 0)}" data-m="${Math.max(diffM, 0)}">⚠差${compactDiff(
+          if (diffMixed < 0 || diffS < 0 || diffM < 0) {
+            warnHtml = `<a class="cal-warn" href="?stock=1&view=day&date=${dateStr}${stockRefSuffix()}">⚠差${compactDiff(
               diffMixed,
               diffS,
               diffM
-            )} 出庫元を登録してください</div>`;
+            )} 出庫元の記録が多すぎます</a>`;
           }
         }
 
@@ -1973,21 +1973,6 @@ async function renderStockBalancePage() {
             purpose: el.dataset.purpose || 'self',
             note: el.dataset.note || '',
             mode: 'edit',
-          });
-        });
-      });
-      calendarEl.querySelectorAll('.cal-warn-clickable').forEach((el) => {
-        el.addEventListener('click', () => {
-          navigateToStockOutForm({
-            id: null,
-            outDate: el.dataset.date,
-            mixedBoxes: Number(el.dataset.mixed) || 0,
-            sBoxes: Number(el.dataset.s) || 0,
-            mBoxes: Number(el.dataset.m) || 0,
-            supplier: STOCK_OUT_DEFAULT_SUPPLIER,
-            purpose: 'store',
-            note: '',
-            mode: 'warn',
           });
         });
       });
@@ -2736,8 +2721,8 @@ function renderStoreOutPage() {
   renderStockOutFormPageImpl({
     purpose: 'store',
     navKey: 'storeout',
-    heading: '配達の仕入れ先を記録する',
-    hint: `店舗への出荷分(通常のトラック配送、美人罠・ちょい飲みたかはしなどの宅配発送どちらも含む)が、どの仕入れ先の牡蠣かを記録します。仕入れ先ごとの残りにのみ反映され、全体の在庫残高には影響しません(店舗への出荷は発注データから別途自動計算されているため)。<a href="?stock=1&view=balance${stockRefSuffix()}">在庫確認ページ</a>のカレンダーの出庫表示から、この日の内容を読み込んで編集することもできます。`,
+    heading: '出庫元を修正する',
+    hint: `店舗への出荷分(通常のトラック配送、美人罠・ちょい飲みたかはしなどの宅配発送どちらも含む)は、記録がなければ標準ですべて拓人の牡蠣として自動計算されます。牡蠣の仕入れはほぼ拓人のため、通常はここで何かを記録する必要はありません。実際に他の仕入れ先(勝又商店・カタクチ)から出荷した場合だけ、ここでその分を記録して出庫元を修正してください。仕入れ先ごとの残りにのみ反映され、全体の在庫残高には影響しません(店舗への出荷は発注データから別途自動計算されているため)。<a href="?stock=1&view=balance${stockRefSuffix()}">在庫確認ページ</a>のカレンダーの出庫表示から、この日の内容を読み込んで編集することもできます。`,
   });
 }
 
@@ -2964,12 +2949,15 @@ async function renderStockDayPage() {
         s: shippedTotalAll.s - storeManualTotal.s,
         m: shippedTotalAll.m - storeManualTotal.m,
       };
-      const hasDiff = diff.mixed !== 0 || diff.s !== 0 || diff.m !== 0;
+      // 未記録(diffがプラス)は「標準ですべて拓人として自動計算」という仕様通りの状態であり、
+      // 問題ではないので警告しない。記録しすぎ(diffがマイナス)だけ、発注が後から編集・
+      // キャンセルされて古い記録が残ってしまった可能性がある実際の問題として警告する。
+      const hasOverRecord = diff.mixed < 0 || diff.s < 0 || diff.m < 0;
       const hasCourier = courierTotal.mixed || courierTotal.s || courierTotal.m;
 
       shippedCardEl.innerHTML = `
         <h2>受注システムの出荷実績(自動計算)</h2>
-        <p class="hint">各店舗の発注データから自動計算した実際の出荷数です。ここは直接編集できません。過不足があれば下の「配達の仕入れ先」で記録してください。</p>
+        <p class="hint">各店舗の発注データから自動計算した実際の出荷数です。ここは直接編集できません。記録がなければ標準ですべて拓人の牡蠣として計算されるので、通常は下の「出庫元を修正」で何か記録する必要はありません。他の仕入れ先から出した場合だけ記録してください。</p>
         <ul class="recent-list">
           <li><span class="recent-date">店舗配送</span><span class="oyster-qty">${stockCompactQty(
             truckTotal.mixed,
@@ -2999,31 +2987,14 @@ async function renderStockDayPage() {
           }
         </ul>
         ${
-          hasDiff
-            ? `<p class="cal-warn">⚠ 出庫(配達先・出荷元)の登録合計との差: ${stockCompactDiff(
+          hasOverRecord
+            ? `<p class="cal-warn">⚠ 出庫元の記録が発注実績より多くなっています(差: ${stockCompactDiff(
                 diff.mixed,
                 diff.s,
                 diff.m
-              )}(プラスは未記録、マイナスは記録しすぎの可能性)</p>
-               <button id="dayAddMissingBtn" type="button" class="btn-plain">不足分を出荷元として登録する</button>`
+              )})。発注が後から編集・キャンセルされた可能性があります。下の「出庫(配達先・出荷元)」欄で記録を確認・修正してください。</p>`
             : ''
         }`;
-
-      if (hasDiff) {
-        document.getElementById('dayAddMissingBtn').addEventListener('click', () => {
-          navigateToStockOutForm({
-            id: null,
-            outDate: dateStr,
-            mixedBoxes: Math.max(diff.mixed, 0),
-            sBoxes: Math.max(diff.s, 0),
-            mBoxes: Math.max(diff.m, 0),
-            supplier: STOCK_OUT_DEFAULT_SUPPLIER,
-            purpose: 'store',
-            note: '',
-            mode: 'warn',
-          });
-        });
-      }
 
       // 出庫(手動記録): 配達先(用途)と出荷元(仕入れ先)を1件ずつ確認・修正できる一覧。
       const outRowsHtml = outRows
@@ -3051,7 +3022,7 @@ async function renderStockDayPage() {
           </table>
         </div>
         <button id="dayAddSelfOutBtn" type="button" class="btn-plain">+ 自社使用を追加する</button>
-        <button id="dayAddStoreOutBtn" type="button" class="btn-plain">+ 配達の仕入れ先を追加する</button>
+        <button id="dayAddStoreOutBtn" type="button" class="btn-plain">+ 出庫元を修正する(拓人以外の場合)</button>
         <button id="dayAddFactoryOutBtn" type="button" class="btn-plain">+ 工場出庫を追加する</button>`;
 
       outCardEl.querySelectorAll('.day-edit-btn').forEach((btn) => {
