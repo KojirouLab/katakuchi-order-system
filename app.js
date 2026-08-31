@@ -1020,6 +1020,9 @@ function setupStockExcelSheet(wb, sheetName, firstColLabel) {
   }
 
   const EXPORT_SUPPLIERS = ['拓人', '勝又商店', 'カタクチ'];
+  // 出庫(配達出庫・イベント出庫)の列は、在庫管理しない仕入れ先(拓人指ヶ浜など)も含める。
+  // 入庫はSTOCK_SUPPLIERSのみ(この冷凍庫の在庫として管理する仕入れ先)なのでEXPORT_SUPPLIERSのまま。
+  const EXPORT_OUT_SUPPLIERS = [...EXPORT_SUPPLIERS, ...STOCK_OUT_ONLY_SUPPLIERS];
 
   setCell(1, 1, firstColLabel, { font: headerFont, fill: headerFill });
   ws.mergeCells(1, 1, 2, 1);
@@ -1037,17 +1040,17 @@ function setupStockExcelSheet(wb, sheetName, firstColLabel) {
     ['混合', 'S', 'M'].forEach((label, j) => setCell(2, c0 + j, label, { font: headerFont, fill: headerFill }));
   });
 
-  // 配達出庫(店舗配送): O- (仕入れ先+未記録、それぞれS/M)
+  // 配達出庫(店舗配送): O- (在庫管理する仕入れ先+拓人指ヶ浜など出庫のみの仕入れ先+未記録、それぞれS/M)
   const storeColStart = inColStart + EXPORT_SUPPLIERS.length * 3 + 1; // 空列1つ空けて開始
   const outGroups = [
     { label: '配達出庫(店舗配送)', start: storeColStart },
-    { label: 'イベント出庫(自社使用)', start: storeColStart + (EXPORT_SUPPLIERS.length + 1) * 2 + 1 },
+    { label: 'イベント出庫(自社使用)', start: storeColStart + (EXPORT_OUT_SUPPLIERS.length + 1) * 2 + 1 },
   ];
   // 配達出庫/イベント出庫の見出し1行目には、印刷時に見分けやすいよう仕入れ先名(略称)も付ける
   // (未記録は特定の仕入れ先ではないので付けない)。ユーザー提供の様式(kaki_stock_log_by_supplier.xlsx)に合わせた表記。
-  const SUPPLIER_HEADER_ABBR = { 拓人: '拓人', 勝又商店: '勝又', カタクチ: 'カタクチ' };
+  const SUPPLIER_HEADER_ABBR = { 拓人: '拓人', 勝又商店: '勝又', カタクチ: 'カタクチ', 拓人指ヶ浜: '指ヶ浜' };
   outGroups.forEach((group) => {
-    [...EXPORT_SUPPLIERS, '未記録'].forEach((supplier, i) => {
+    [...EXPORT_OUT_SUPPLIERS, '未記録'].forEach((supplier, i) => {
       const c0 = group.start + i * 2;
       const abbr = SUPPLIER_HEADER_ABBR[supplier] || '';
       setCell(1, c0, `${group.label}${abbr}\n${supplier}`, {
@@ -1062,13 +1065,13 @@ function setupStockExcelSheet(wb, sheetName, firstColLabel) {
   });
 
   const storeCols = {};
-  EXPORT_SUPPLIERS.forEach((s, i) => (storeCols[s] = outGroups[0].start + i * 2));
-  storeCols['未記録'] = outGroups[0].start + EXPORT_SUPPLIERS.length * 2;
+  EXPORT_OUT_SUPPLIERS.forEach((s, i) => (storeCols[s] = outGroups[0].start + i * 2));
+  storeCols['未記録'] = outGroups[0].start + EXPORT_OUT_SUPPLIERS.length * 2;
   const selfCols = {};
-  EXPORT_SUPPLIERS.forEach((s, i) => (selfCols[s] = outGroups[1].start + i * 2));
-  selfCols['未記録'] = outGroups[1].start + EXPORT_SUPPLIERS.length * 2;
+  EXPORT_OUT_SUPPLIERS.forEach((s, i) => (selfCols[s] = outGroups[1].start + i * 2));
+  selfCols['未記録'] = outGroups[1].start + EXPORT_OUT_SUPPLIERS.length * 2;
   const outStartCol = outGroups[0].start;
-  const outEndCol = outGroups[1].start + EXPORT_SUPPLIERS.length * 2 + 1;
+  const outEndCol = outGroups[1].start + EXPORT_OUT_SUPPLIERS.length * 2 + 1;
   const inEndCol = inColStart + EXPORT_SUPPLIERS.length * 3 - 1;
   // 空列(D/入庫と配達出庫の間、配達出庫とイベント出庫の間)。合計行の数式もここは飛ばす。
   const spacerCols = [4, storeColStart - 1, outGroups[1].start - 1];
@@ -1077,6 +1080,7 @@ function setupStockExcelSheet(wb, sheetName, firstColLabel) {
     ws,
     setCell,
     EXPORT_SUPPLIERS,
+    EXPORT_OUT_SUPPLIERS,
     inColStart,
     inEndCol,
     storeCols,
@@ -1110,7 +1114,7 @@ function writeStockExcelTotalRow(sheet, row, label, firstDataRow, lastDataRow, {
 
 // 集計済みの1行分(その日/その月の合計)をシートに書き込む。B/C列はSUM数式。
 function writeStockExcelRow(sheet, row, rowLabel, { inBySupplier, storeAttrBySupplier, storeTotal, storeAttrTotal, selfAttrBySupplier, selfUnrecorded }) {
-  const { setCell, EXPORT_SUPPLIERS, inColStart, inEndCol, storeCols, selfCols, outStartCol, outEndCol, unrecordedFill, ws } = sheet;
+  const { setCell, EXPORT_SUPPLIERS, EXPORT_OUT_SUPPLIERS, inColStart, inEndCol, storeCols, selfCols, outStartCol, outEndCol, unrecordedFill, ws } = sheet;
   setCell(row, 1, rowLabel);
 
   let hasIn = false;
@@ -1127,7 +1131,7 @@ function writeStockExcelRow(sheet, row, rowLabel, { inBySupplier, storeAttrBySup
 
   let hasOut = false;
   const storeAttr = storeAttrBySupplier || {};
-  EXPORT_SUPPLIERS.forEach((supplier) => {
+  EXPORT_OUT_SUPPLIERS.forEach((supplier) => {
     const [s, m] = storeAttr[supplier] || [0, 0];
     if (s) { setCell(row, storeCols[supplier], s); hasOut = true; }
     if (m) { setCell(row, storeCols[supplier] + 1, m); hasOut = true; }
@@ -1138,7 +1142,7 @@ function writeStockExcelRow(sheet, row, rowLabel, { inBySupplier, storeAttrBySup
     hasOut = true;
   }
   const selfAttr = selfAttrBySupplier || {};
-  EXPORT_SUPPLIERS.forEach((supplier) => {
+  EXPORT_OUT_SUPPLIERS.forEach((supplier) => {
     const [s, m] = selfAttr[supplier] || [0, 0];
     if (s) { setCell(row, selfCols[supplier], s); hasOut = true; }
     if (m) { setCell(row, selfCols[supplier] + 1, m); hasOut = true; }
@@ -1220,8 +1224,11 @@ function aggregateStockRecords(stockIn, stockOutInternal, oysterOrders, keyFn) {
     const supplier = r.supplier || '';
     const s = Number(r.s_boxes) || 0;
     const m = Number(r.m_boxes) || 0;
+    // 出庫元は「在庫管理する仕入れ先(STOCK_SUPPLIERS)」+「出庫のみ管理する仕入れ先(STOCK_OUT_ONLY_SUPPLIERS、
+    // 拓人指ヶ浜など)」のどちらでも、それぞれの列にきちんと振り分ける(帳票から消えたり「未記録」に
+    // 紛れ込んだりしないように)。
     if (r.purpose === 'store') {
-      if (STOCK_SUPPLIERS.includes(supplier)) {
+      if (STOCK_OUT_SUPPLIER_OPTIONS.includes(supplier)) {
         if (!storeAttrByKey[key]) storeAttrByKey[key] = {};
         if (!storeAttrByKey[key][supplier]) storeAttrByKey[key][supplier] = [0, 0];
         storeAttrByKey[key][supplier][0] += s;
@@ -1229,7 +1236,7 @@ function aggregateStockRecords(stockIn, stockOutInternal, oysterOrders, keyFn) {
       }
       storeAttrTotalByKey[key] = (storeAttrTotalByKey[key] || 0) + boxesOfRow(r);
     } else {
-      if (STOCK_SUPPLIERS.includes(supplier)) {
+      if (STOCK_OUT_SUPPLIER_OPTIONS.includes(supplier)) {
         if (!selfAttrByKey[key]) selfAttrByKey[key] = {};
         if (!selfAttrByKey[key][supplier]) selfAttrByKey[key][supplier] = [0, 0];
         selfAttrByKey[key][supplier][0] += s;
