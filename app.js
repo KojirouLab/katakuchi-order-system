@@ -1040,38 +1040,38 @@ function setupStockExcelSheet(wb, sheetName, firstColLabel) {
     ['混合', 'S', 'M'].forEach((label, j) => setCell(2, c0 + j, label, { font: headerFont, fill: headerFill }));
   });
 
-  // 配達出庫(店舗配送): O- (在庫管理する仕入れ先+拓人指ヶ浜など出庫のみの仕入れ先+未記録、それぞれS/M)
+  // 配達出庫(店舗配送): O- (在庫管理する仕入れ先+拓人指ヶ浜など出庫のみの仕入れ先+未記録、それぞれ混合/S/M)
   const storeColStart = inColStart + EXPORT_SUPPLIERS.length * 3 + 1; // 空列1つ空けて開始
   const outGroups = [
     { label: '配達出庫(店舗配送)', start: storeColStart },
-    { label: 'イベント出庫(自社使用)', start: storeColStart + (EXPORT_OUT_SUPPLIERS.length + 1) * 2 + 1 },
+    { label: 'イベント出庫(自社使用)', start: storeColStart + (EXPORT_OUT_SUPPLIERS.length + 1) * 3 + 1 },
   ];
   // 配達出庫/イベント出庫の見出し1行目には、印刷時に見分けやすいよう仕入れ先名(略称)も付ける
   // (未記録は特定の仕入れ先ではないので付けない)。ユーザー提供の様式(kaki_stock_log_by_supplier.xlsx)に合わせた表記。
   const SUPPLIER_HEADER_ABBR = { 拓人: '拓人', 勝又商店: '勝又', カタクチ: 'カタクチ', 拓人指ヶ浜: '指ヶ浜' };
   outGroups.forEach((group) => {
     [...EXPORT_OUT_SUPPLIERS, '未記録'].forEach((supplier, i) => {
-      const c0 = group.start + i * 2;
+      const c0 = group.start + i * 3;
       const abbr = SUPPLIER_HEADER_ABBR[supplier] || '';
       setCell(1, c0, `${group.label}${abbr}\n${supplier}`, {
         font: headerFont,
         fill: supplier === '未記録' ? unrecordedFill : headerFill,
       });
-      ws.mergeCells(1, c0, 1, c0 + 1);
-      ['S', 'M'].forEach((label, j) =>
+      ws.mergeCells(1, c0, 1, c0 + 2);
+      ['混合', 'S', 'M'].forEach((label, j) =>
         setCell(2, c0 + j, label, { font: headerFont, fill: supplier === '未記録' ? unrecordedFill : headerFill })
       );
     });
   });
 
   const storeCols = {};
-  EXPORT_OUT_SUPPLIERS.forEach((s, i) => (storeCols[s] = outGroups[0].start + i * 2));
-  storeCols['未記録'] = outGroups[0].start + EXPORT_OUT_SUPPLIERS.length * 2;
+  EXPORT_OUT_SUPPLIERS.forEach((s, i) => (storeCols[s] = outGroups[0].start + i * 3));
+  storeCols['未記録'] = outGroups[0].start + EXPORT_OUT_SUPPLIERS.length * 3;
   const selfCols = {};
-  EXPORT_OUT_SUPPLIERS.forEach((s, i) => (selfCols[s] = outGroups[1].start + i * 2));
-  selfCols['未記録'] = outGroups[1].start + EXPORT_OUT_SUPPLIERS.length * 2;
+  EXPORT_OUT_SUPPLIERS.forEach((s, i) => (selfCols[s] = outGroups[1].start + i * 3));
+  selfCols['未記録'] = outGroups[1].start + EXPORT_OUT_SUPPLIERS.length * 3;
   const outStartCol = outGroups[0].start;
-  const outEndCol = outGroups[1].start + EXPORT_OUT_SUPPLIERS.length * 2 + 1;
+  const outEndCol = outGroups[1].start + EXPORT_OUT_SUPPLIERS.length * 3 + 2;
   const inEndCol = inColStart + EXPORT_SUPPLIERS.length * 3 - 1;
   // 空列(D/入庫と配達出庫の間、配達出庫とイベント出庫の間)。合計行の数式もここは飛ばす。
   const spacerCols = [4, storeColStart - 1, outGroups[1].start - 1];
@@ -1132,24 +1132,29 @@ function writeStockExcelRow(sheet, row, rowLabel, { inBySupplier, storeAttrBySup
   let hasOut = false;
   const storeAttr = storeAttrBySupplier || {};
   EXPORT_OUT_SUPPLIERS.forEach((supplier) => {
-    const [s, m] = storeAttr[supplier] || [0, 0];
-    if (s) { setCell(row, storeCols[supplier], s); hasOut = true; }
-    if (m) { setCell(row, storeCols[supplier] + 1, m); hasOut = true; }
+    const [mixed, s, m] = storeAttr[supplier] || [0, 0, 0];
+    if (mixed) { setCell(row, storeCols[supplier], mixed); hasOut = true; }
+    if (s) { setCell(row, storeCols[supplier] + 1, s); hasOut = true; }
+    if (m) { setCell(row, storeCols[supplier] + 2, m); hasOut = true; }
   });
+  // 未記録は「発注合計 − 記録済み合計」をサイズ区別なしの1個の数として出すので、
+  // 元々S/Mの2列だった頃と同じ位置(混合の隣、S列)にそのまま置く。
   const storeUnrecorded = (storeTotal || 0) - (storeAttrTotal || 0);
   if (storeUnrecorded > 0) {
-    setCell(row, storeCols['未記録'], storeUnrecorded, { fill: unrecordedFill });
+    setCell(row, storeCols['未記録'] + 1, storeUnrecorded, { fill: unrecordedFill });
     hasOut = true;
   }
   const selfAttr = selfAttrBySupplier || {};
   EXPORT_OUT_SUPPLIERS.forEach((supplier) => {
-    const [s, m] = selfAttr[supplier] || [0, 0];
-    if (s) { setCell(row, selfCols[supplier], s); hasOut = true; }
-    if (m) { setCell(row, selfCols[supplier] + 1, m); hasOut = true; }
+    const [mixed, s, m] = selfAttr[supplier] || [0, 0, 0];
+    if (mixed) { setCell(row, selfCols[supplier], mixed); hasOut = true; }
+    if (s) { setCell(row, selfCols[supplier] + 1, s); hasOut = true; }
+    if (m) { setCell(row, selfCols[supplier] + 2, m); hasOut = true; }
   });
-  const [selfUnS, selfUnM] = selfUnrecorded || [0, 0];
-  if (selfUnS) { setCell(row, selfCols['未記録'], selfUnS, { fill: unrecordedFill }); hasOut = true; }
-  if (selfUnM) { setCell(row, selfCols['未記録'] + 1, selfUnM, { fill: unrecordedFill }); hasOut = true; }
+  const [selfUnMixed, selfUnS, selfUnM] = selfUnrecorded || [0, 0, 0];
+  if (selfUnMixed) { setCell(row, selfCols['未記録'], selfUnMixed, { fill: unrecordedFill }); hasOut = true; }
+  if (selfUnS) { setCell(row, selfCols['未記録'] + 1, selfUnS, { fill: unrecordedFill }); hasOut = true; }
+  if (selfUnM) { setCell(row, selfCols['未記録'] + 2, selfUnM, { fill: unrecordedFill }); hasOut = true; }
 
   if (hasIn) setCell(row, 2, { formula: `SUM(${ws.getColumn(inColStart).letter}${row}:${ws.getColumn(inEndCol).letter}${row})` });
   if (hasOut) setCell(row, 3, { formula: `SUM(${ws.getColumn(outStartCol).letter}${row}:${ws.getColumn(outEndCol).letter}${row})` });
@@ -1222,29 +1227,33 @@ function aggregateStockRecords(stockIn, stockOutInternal, oysterOrders, keyFn) {
   stockOutInternal.forEach((r) => {
     const key = keyFn(r.out_date);
     const supplier = r.supplier || '';
+    const mixed = Number(r.mixed_boxes) || 0;
     const s = Number(r.s_boxes) || 0;
     const m = Number(r.m_boxes) || 0;
     // 出庫元は「在庫管理する仕入れ先(STOCK_SUPPLIERS)」+「出庫のみ管理する仕入れ先(STOCK_OUT_ONLY_SUPPLIERS、
     // 拓人指ヶ浜など)」のどちらでも、それぞれの列にきちんと振り分ける(帳票から消えたり「未記録」に
-    // 紛れ込んだりしないように)。
+    // 紛れ込んだりしないように)。各列は[混合, S, M]の3要素。
     if (r.purpose === 'store') {
       if (STOCK_OUT_SUPPLIER_OPTIONS.includes(supplier)) {
         if (!storeAttrByKey[key]) storeAttrByKey[key] = {};
-        if (!storeAttrByKey[key][supplier]) storeAttrByKey[key][supplier] = [0, 0];
-        storeAttrByKey[key][supplier][0] += s;
-        storeAttrByKey[key][supplier][1] += m;
+        if (!storeAttrByKey[key][supplier]) storeAttrByKey[key][supplier] = [0, 0, 0];
+        storeAttrByKey[key][supplier][0] += mixed;
+        storeAttrByKey[key][supplier][1] += s;
+        storeAttrByKey[key][supplier][2] += m;
       }
       storeAttrTotalByKey[key] = (storeAttrTotalByKey[key] || 0) + boxesOfRow(r);
     } else {
       if (STOCK_OUT_SUPPLIER_OPTIONS.includes(supplier)) {
         if (!selfAttrByKey[key]) selfAttrByKey[key] = {};
-        if (!selfAttrByKey[key][supplier]) selfAttrByKey[key][supplier] = [0, 0];
-        selfAttrByKey[key][supplier][0] += s;
-        selfAttrByKey[key][supplier][1] += m;
+        if (!selfAttrByKey[key][supplier]) selfAttrByKey[key][supplier] = [0, 0, 0];
+        selfAttrByKey[key][supplier][0] += mixed;
+        selfAttrByKey[key][supplier][1] += s;
+        selfAttrByKey[key][supplier][2] += m;
       } else {
-        if (!selfUnrecordedByKey[key]) selfUnrecordedByKey[key] = [0, 0];
-        selfUnrecordedByKey[key][0] += s;
-        selfUnrecordedByKey[key][1] += m;
+        if (!selfUnrecordedByKey[key]) selfUnrecordedByKey[key] = [0, 0, 0];
+        selfUnrecordedByKey[key][0] += mixed;
+        selfUnrecordedByKey[key][1] += s;
+        selfUnrecordedByKey[key][2] += m;
       }
     }
   });
