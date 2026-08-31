@@ -920,7 +920,16 @@ async function renderCustomAggregatePage() {
 const KAKI_STOCK_TRACKING_START_DATE = '2026-08-04';
 
 // 入庫の仕入れ元。増える場合はここに追記する(kaki_stock_in.noteカラムに文字列で保存)。
+// ここに載っている仕入れ先だけが、入庫記録・仕入れ先ごとの残り(在庫管理)の対象になる。
 const STOCK_SUPPLIERS = ['カタクチ', '拓人', '勝又商店'];
+
+// 出庫元としては選べるが、在庫の入庫記録・仕入れ先ごとの残りは管理しない仕入れ先。
+// 拓人指ヶ浜は別拠点で自前に在庫を持っているため、「どこの牡蠣を配達したか」の記録用に
+// 選べるだけで、この冷凍庫の在庫管理(入庫・残高)には含めない。
+const STOCK_OUT_ONLY_SUPPLIERS = ['拓人指ヶ浜'];
+
+// 出庫記録フォームの「どこの牡蠣か」プルダウンに出す選択肢(在庫管理する仕入れ先+管理しない仕入れ先)。
+const STOCK_OUT_SUPPLIER_OPTIONS = [...STOCK_SUPPLIERS, ...STOCK_OUT_ONLY_SUPPLIERS];
 
 // 出庫記録フォームで最初から選ばれている仕入れ先。通常の出庫は拓人の牡蠣がほとんどのため。
 const STOCK_OUT_DEFAULT_SUPPLIER = '拓人';
@@ -1720,10 +1729,11 @@ async function renderStockBalancePage() {
           }
         }
 
-        // 自社使用(purpose!=='store')の出庫のうち、仕入れ先(STOCK_SUPPLIERS)が記録されていないものを
-        // チェックする。1件でもあれば、最初の1件をタップで開いて仕入れ先を直せるようにする。
+        // 自社使用(purpose!=='store')の出庫のうち、仕入れ先(STOCK_OUT_SUPPLIER_OPTIONS)が
+        // 記録されていないものをチェックする。1件でもあれば、最初の1件をタップで開いて
+        // 仕入れ先を直せるようにする。
         const selfUnknownEntries = useEntries.filter(
-          (r) => r.purpose !== 'store' && !STOCK_SUPPLIERS.includes(r.supplier)
+          (r) => r.purpose !== 'store' && !STOCK_OUT_SUPPLIER_OPTIONS.includes(r.supplier)
         );
         let selfWarnHtml = '';
         if (selfUnknownEntries.length) {
@@ -2190,8 +2200,11 @@ async function renderStockBalancePage() {
         acc.m += Number(r.m_boxes) || 0;
       };
       const purposeBucketOf = (p) => (p === 'store' ? 'store' : p === 'factory' ? 'factory' : 'self');
+      // 「仕入れ先別の出庫内訳」は在庫管理対象外の仕入れ先(STOCK_OUT_ONLY_SUPPLIERS)も
+      // 自分の行として表示する(在庫管理はしないが、記録自体はきちんとあるため「仕入れ先未記録」
+      // 扱いにはしない)。
       const supplierPurposeBreakdown = {};
-      STOCK_SUPPLIERS.forEach((s) => {
+      STOCK_OUT_SUPPLIER_OPTIONS.forEach((s) => {
         supplierPurposeBreakdown[s] = { store: zeroQty(), self: zeroQty(), factory: zeroQty() };
       });
       const unknownSupplierBreakdown = { store: zeroQty(), self: zeroQty(), factory: zeroQty() };
@@ -2206,10 +2219,11 @@ async function renderStockBalancePage() {
       const sumQty = (...qs) =>
         qs.reduce((acc, q) => ({ mixed: acc.mixed + q.mixed, s: acc.s + q.s, m: acc.m + q.m }), zeroQty());
       const qtyHasAny = (q) => q.mixed || q.s || q.m;
-      const breakdownRows = STOCK_SUPPLIERS.map((s) => {
+      const breakdownRows = STOCK_OUT_SUPPLIER_OPTIONS.map((s) => {
         const b = supplierPurposeBreakdown[s];
         const total = sumQty(b.store, b.self, b.factory);
-        return `<tr><td>${escapeHtml(s)}</td><td>${breakdownQty(b.store.mixed, b.store.s, b.store.m)}</td><td>${breakdownQty(
+        const label = STOCK_OUT_ONLY_SUPPLIERS.includes(s) ? `${s}(在庫管理対象外)` : s;
+        return `<tr><td>${escapeHtml(label)}</td><td>${breakdownQty(b.store.mixed, b.store.s, b.store.m)}</td><td>${breakdownQty(
           b.self.mixed,
           b.self.s,
           b.self.m
@@ -2235,14 +2249,14 @@ async function renderStockBalancePage() {
             unknownSupplierBreakdown.factory.m
           )}</td><td>${breakdownQty(unknownTotal.mixed, unknownTotal.s, unknownTotal.m)}</td></tr>`
         : '';
-      const grandStore = STOCK_SUPPLIERS.reduce(
+      const grandStore = STOCK_OUT_SUPPLIER_OPTIONS.reduce(
         (sum, s) => sumQty(sum, supplierPurposeBreakdown[s].store),
         zeroQty()
       );
       const grandStoreAll = sumQty(grandStore, unknownSupplierBreakdown.store);
-      const grandSelf = STOCK_SUPPLIERS.reduce((sum, s) => sumQty(sum, supplierPurposeBreakdown[s].self), zeroQty());
+      const grandSelf = STOCK_OUT_SUPPLIER_OPTIONS.reduce((sum, s) => sumQty(sum, supplierPurposeBreakdown[s].self), zeroQty());
       const grandSelfAll = sumQty(grandSelf, unknownSupplierBreakdown.self);
-      const grandFactory = STOCK_SUPPLIERS.reduce((sum, s) => sumQty(sum, supplierPurposeBreakdown[s].factory), zeroQty());
+      const grandFactory = STOCK_OUT_SUPPLIER_OPTIONS.reduce((sum, s) => sumQty(sum, supplierPurposeBreakdown[s].factory), zeroQty());
       const grandFactoryAll = sumQty(grandFactory, unknownSupplierBreakdown.factory);
       const grandAll = sumQty(grandStoreAll, grandSelfAll, grandFactoryAll);
 
@@ -2442,7 +2456,7 @@ function renderStockOutFormPageImpl({ purpose, navKey, heading, hint }) {
     wrapper.innerHTML = `
       <div class="field">
         <label>どこの牡蠣か(仕入れ先)</label>
-        <select class="bo-supplier">${[...STOCK_SUPPLIERS]
+        <select class="bo-supplier">${[...STOCK_OUT_SUPPLIER_OPTIONS]
           .sort((a, b) => (a === STOCK_OUT_DEFAULT_SUPPLIER ? -1 : b === STOCK_OUT_DEFAULT_SUPPLIER ? 1 : 0))
           .map((s2) => `<option value="${escapeHtml(s2)}">${escapeHtml(s2)}</option>`)
           .join('')}</select>
@@ -2759,7 +2773,7 @@ function renderFactoryOutPage() {
         </div>
         <div class="field">
           <label for="factoryOutSupplier">仕入れ先</label>
-          <select id="factoryOutSupplier">${[...STOCK_SUPPLIERS]
+          <select id="factoryOutSupplier">${[...STOCK_OUT_SUPPLIER_OPTIONS]
             .sort((a, b) => (a === STOCK_OUT_DEFAULT_SUPPLIER ? -1 : b === STOCK_OUT_DEFAULT_SUPPLIER ? 1 : 0))
             .map((s) => `<option value="${escapeHtml(s)}">${escapeHtml(s)}</option>`)
             .join('')}</select>
