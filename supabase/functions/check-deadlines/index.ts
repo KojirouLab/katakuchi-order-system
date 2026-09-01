@@ -125,14 +125,17 @@ Deno.serve(async (req) => {
 
   const { data: discordTargets, error: discordTargetsError } = await supabase
     .from("discord_notification_targets")
-    .select("store_slug, category, webhook_url");
+    .select("store_slug, category, webhook_url, mention_role_id");
   if (discordTargetsError) {
     console.error(discordTargetsError);
     return new Response("error", { status: 500 });
   }
-  const discordTargetMap = new Map<string, string>();
+  const discordTargetMap = new Map<string, { webhookUrl: string; mentionRoleId: string | null }>();
   for (const t of discordTargets ?? []) {
-    discordTargetMap.set(`${t.store_slug}:${t.category}`, t.webhook_url);
+    discordTargetMap.set(`${t.store_slug}:${t.category}`, {
+      webhookUrl: t.webhook_url,
+      mentionRoleId: t.mention_role_id ?? null,
+    });
   }
 
   // { groupId: [ "◯◯店(ピザ)", ... ] }
@@ -143,8 +146,8 @@ Deno.serve(async (req) => {
   for (const store of STORES) {
     for (const category of store.categories) {
       const groupId = targetMap.get(`${store.slug}:${category}`);
-      const webhookUrl = discordTargetMap.get(`${store.slug}:${category}`);
-      if (!groupId && !webhookUrl) continue; // 通知先未登録の店舗+カテゴリはスキップ
+      const discordTarget = discordTargetMap.get(`${store.slug}:${category}`);
+      if (!groupId && !discordTarget) continue; // 通知先未登録の店舗+カテゴリはスキップ
 
       for (let offset = 0; offset <= LOOKAHEAD_DAYS; offset++) {
         const orderDate = addDaysStr(today, offset);
@@ -182,10 +185,15 @@ Deno.serve(async (req) => {
           list.push(itemText);
           toNotify.set(groupId, list);
         }
-        if (webhookUrl) {
-          const list = toNotifyDiscord.get(webhookUrl) ?? [];
-          list.push(itemText);
-          toNotifyDiscord.set(webhookUrl, list);
+        if (discordTarget) {
+          // 店舗ごとの担当ロールが設定されていれば、その行にだけメンションを付ける
+          // (メッセージ全体ではなく、該当店舗の行だけをピンポイントで通知するため)。
+          const discordItemText = discordTarget.mentionRoleId
+            ? `<@&${discordTarget.mentionRoleId}> ${itemText}`
+            : itemText;
+          const list = toNotifyDiscord.get(discordTarget.webhookUrl) ?? [];
+          list.push(discordItemText);
+          toNotifyDiscord.set(discordTarget.webhookUrl, list);
         }
         sentKeys.push({ store_slug: store.slug, category, order_date: orderDate });
       }
