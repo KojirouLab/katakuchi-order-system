@@ -934,6 +934,37 @@ const STOCK_OUT_SUPPLIER_OPTIONS = [...STOCK_SUPPLIERS, ...STOCK_OUT_ONLY_SUPPLI
 // 出庫記録フォームで最初から選ばれている仕入れ先。通常の出庫は拓人の牡蠣がほとんどのため。
 const STOCK_OUT_DEFAULT_SUPPLIER = '拓人';
 
+// 牡蠣の入庫・出庫を記録した人。プルダウンで選ばせることで、表記ゆれ・入力の手間を減らす。
+const STAFF_NAMES = ['庄子達広', '沼倉まゆ子', '遠藤克'];
+const REGISTERED_BY_STORAGE_KEY = 'katakuchiRegisteredBy';
+
+// 直前に選んだ登録者名をこの端末に覚えておき、次回フォームを開いた時の初期値にする。
+function rememberedRegisteredBy() {
+  try {
+    return localStorage.getItem(REGISTERED_BY_STORAGE_KEY) || '';
+  } catch (e) {
+    return '';
+  }
+}
+function rememberRegisteredBy(name) {
+  try {
+    if (name) localStorage.setItem(REGISTERED_BY_STORAGE_KEY, name);
+  } catch (e) {
+    /* localStorageが使えない環境では覚えないだけで、機能自体には影響しない */
+  }
+}
+// 登録者プルダウンの選択肢。selectedが未指定ならこの端末で最後に選んだ名前を初期値にする。
+function registeredByOptionsHtml(selected) {
+  const sel = selected || rememberedRegisteredBy();
+  return ['<option value="">選択してください</option>']
+    .concat(
+      STAFF_NAMES.map(
+        (n) => `<option value="${escapeHtml(n)}"${n === sel ? ' selected' : ''}>${escapeHtml(n)}</option>`
+      )
+    )
+    .join('');
+}
+
 // 直近の出荷実績(shippedByDate)から曜日別の平均出荷ペースを求め、現在庫が
 // いつ頃尽きそうかを予測して一言メッセージにする。祝日は出荷が減る傾向を
 // 見込んで日曜相当のペースとして計算する(実績が乏しい祝日固有の平均は
@@ -1434,7 +1465,7 @@ function stockSubNavHtml(current) {
 // カレンダーの「配達/宅配/⚠」表示をタップした時に、出庫を記録するページへ内容を渡して移動する。
 // purposeによって行き先(自社使用ページ/配達の仕入れ先ページ/工場出庫ページ)が変わる。
 // 工場出庫だけは独立ページ(?factory_out=1)なので別scheme。
-function navigateToStockOutForm({ id, outDate, mixedBoxes, sBoxes, mBoxes, supplier, purpose, note, mode }) {
+function navigateToStockOutForm({ id, outDate, mixedBoxes, sBoxes, mBoxes, supplier, purpose, note, registeredBy, mode }) {
   if (purpose === 'factory') {
     const fParams = new URLSearchParams();
     fParams.set('factory_out', '1');
@@ -1445,6 +1476,7 @@ function navigateToStockOutForm({ id, outDate, mixedBoxes, sBoxes, mBoxes, suppl
     fParams.set('m', String(mBoxes || 0));
     fParams.set('supplier', supplier || '');
     if (note) fParams.set('note', note);
+    if (registeredBy) fParams.set('registeredBy', registeredBy);
     fParams.set('mode', mode || 'prefill');
     location.href = `?${fParams.toString()}`;
     return;
@@ -1460,6 +1492,7 @@ function navigateToStockOutForm({ id, outDate, mixedBoxes, sBoxes, mBoxes, suppl
   params.set('supplier', supplier || '');
   params.set('purpose', purpose || 'self');
   if (note) params.set('note', note);
+  if (registeredBy) params.set('registeredBy', registeredBy);
   params.set('mode', mode || 'prefill');
   if (new URLSearchParams(location.search).get('ref') === 'admin') params.set('ref', 'admin');
   location.href = `?${params.toString()}`;
@@ -1720,7 +1753,9 @@ async function renderStockBalancePage() {
               r.mixed_boxes
             )}" data-s="${Number(r.s_boxes)}" data-m="${Number(r.m_boxes)}" data-supplier="${escapeHtml(
               r.supplier || ''
-            )}" data-purpose="${escapeHtml(r.purpose || 'self')}" data-note="${escapeHtml(r.note || '')}">出 ${compactQty(
+            )}" data-purpose="${escapeHtml(r.purpose || 'self')}" data-note="${escapeHtml(
+              r.note || ''
+            )}" data-registered-by="${escapeHtml(r.registered_by || '')}">出 ${compactQty(
               Number(r.mixed_boxes),
               Number(r.s_boxes),
               Number(r.m_boxes)
@@ -1783,7 +1818,7 @@ async function renderStockBalancePage() {
             first.supplier || ''
           )}" data-purpose="${escapeHtml(first.purpose || 'self')}" data-note="${escapeHtml(
             first.note || ''
-          )}">⚠自社使用の仕入れ先未記録 ${compactQty(
+          )}" data-registered-by="${escapeHtml(first.registered_by || '')}">⚠自社使用の仕入れ先未記録 ${compactQty(
             selfUnknownTotal.mixed,
             selfUnknownTotal.s,
             selfUnknownTotal.m
@@ -2014,6 +2049,7 @@ async function renderStockBalancePage() {
             supplier: el.dataset.supplier || STOCK_OUT_DEFAULT_SUPPLIER,
             purpose: el.dataset.purpose || 'self',
             note: el.dataset.note || '',
+            registeredBy: el.dataset.registeredBy || '',
             mode: 'edit',
           });
         });
@@ -2029,6 +2065,7 @@ async function renderStockBalancePage() {
             supplier: el.dataset.supplier || STOCK_OUT_DEFAULT_SUPPLIER,
             purpose: el.dataset.purpose || 'self',
             note: el.dataset.note || '',
+            registeredBy: el.dataset.registeredBy || '',
             mode: 'selfwarn',
           });
         });
@@ -2406,6 +2443,10 @@ function renderStockInPage() {
             <select id="stockInM">${qtyOptionsHtml(100)}</select>
           </div>
         </div>
+        <div class="field">
+          <label for="stockInRegisteredBy">登録者</label>
+          <select id="stockInRegisteredBy">${registeredByOptionsHtml()}</select>
+        </div>
         <button id="stockInSubmitBtn" class="primary">入庫を登録する</button>
         <p id="stockInMsg" class="msg"></p>
       </div>
@@ -2418,6 +2459,7 @@ function renderStockInPage() {
     const sBoxes = Number(document.getElementById('stockInS').value) || 0;
     const mBoxes = Number(document.getElementById('stockInM').value) || 0;
     const supplier = document.getElementById('stockInSupplier').value;
+    const registeredBy = document.getElementById('stockInRegisteredBy').value;
     const msgEl = document.getElementById('stockInMsg');
     if (!inDate) {
       msgEl.textContent = '入庫日を選択してください。';
@@ -2429,9 +2471,14 @@ function renderStockInPage() {
       msgEl.className = 'msg msg-error';
       return;
     }
+    if (!registeredBy) {
+      msgEl.textContent = '登録者を選択してください。';
+      msgEl.className = 'msg msg-error';
+      return;
+    }
     if (
       !confirm(
-        `${formatDateJp(inDate)}の入庫(混${mixedBoxes}/S${sBoxes}/M${mBoxes}・仕入れ元:${supplier})を登録します。よろしいですか？`
+        `${formatDateJp(inDate)}の入庫(混${mixedBoxes}/S${sBoxes}/M${mBoxes}・仕入れ元:${supplier}・登録者:${registeredBy})を登録します。よろしいですか？`
       )
     )
       return;
@@ -2440,7 +2487,8 @@ function renderStockInPage() {
     msgEl.textContent = '登録中…';
     msgEl.className = 'msg';
     try {
-      await saveStockIn({ inDate, mixedBoxes, sBoxes, mBoxes, note: supplier });
+      await saveStockIn({ inDate, mixedBoxes, sBoxes, mBoxes, note: supplier, registeredBy });
+      rememberRegisteredBy(registeredBy);
       msgEl.textContent = `✓ ${formatDateJp(inDate)}の入庫を登録しました。`;
       msgEl.className = 'msg msg-success';
       document.getElementById('stockInMixed').value = 0;
@@ -2477,6 +2525,10 @@ function renderStockOutFormPageImpl({ purpose, navKey, heading, hint }) {
         <div class="field">
           <label for="stockOutNote">メモ(任意)</label>
           <input type="text" id="stockOutNote" placeholder="例: 〇〇イベント、8/20配達分など">
+        </div>
+        <div class="field">
+          <label for="stockOutRegisteredBy">登録者</label>
+          <select id="stockOutRegisteredBy">${registeredByOptionsHtml()}</select>
         </div>
         <p class="hint">同じ日の出庫を複数の仕入れ先に分けて記録したい場合は「+ 別の仕入れ先を追加」で内訳を増やせます(例: Mを勝又商店から3箱、拓人から2箱など)。</p>
         <div id="stockOutBreakdownRows"></div>
@@ -2558,9 +2610,10 @@ function renderStockOutFormPageImpl({ purpose, navKey, heading, hint }) {
     updateBreakdownRemoveButtons();
   });
 
-  function fillStockOutForm({ outDate, mixedBoxes, sBoxes, mBoxes, supplier, note }) {
+  function fillStockOutForm({ outDate, mixedBoxes, sBoxes, mBoxes, supplier, note, registeredBy }) {
     document.getElementById('stockOutDate').value = outDate;
     document.getElementById('stockOutNote').value = note;
+    document.getElementById('stockOutRegisteredBy').value = registeredBy || rememberedRegisteredBy();
     resetBreakdownRows([{ supplier, mixed: mixedBoxes, s: sBoxes, m: mBoxes }]);
   }
 
@@ -2619,11 +2672,17 @@ function renderStockOutFormPageImpl({ purpose, navKey, heading, hint }) {
   document.getElementById('stockOutSubmitBtn').addEventListener('click', async () => {
     const outDate = document.getElementById('stockOutDate').value;
     const note = document.getElementById('stockOutNote').value.trim();
+    const registeredBy = document.getElementById('stockOutRegisteredBy').value;
     const msgEl = document.getElementById('stockOutMsg');
     const isEdit = !!editingStockOutId;
     const purposeLabel = purpose === 'store' ? '店舗配達分の記録' : '自社使用';
     if (!outDate) {
       msgEl.textContent = '出庫日を選択してください。';
+      msgEl.className = 'msg msg-error';
+      return;
+    }
+    if (!registeredBy) {
+      msgEl.textContent = '登録者を選択してください。';
       msgEl.className = 'msg msg-error';
       return;
     }
@@ -2662,6 +2721,7 @@ function renderStockOutFormPageImpl({ purpose, navKey, heading, hint }) {
           supplier: r.supplier,
           purpose,
           note,
+          registeredBy,
         });
         msgEl.textContent = `✓ ${formatDateJp(outDate)}の出庫記録を更新しました。`;
       } else {
@@ -2674,10 +2734,12 @@ function renderStockOutFormPageImpl({ purpose, navKey, heading, hint }) {
             supplier: r.supplier,
             purpose,
             note,
+            registeredBy,
           });
         }
         msgEl.textContent = `✓ ${formatDateJp(outDate)}の出庫を${rows.length > 1 ? `${rows.length}件` : ''}登録しました。`;
       }
+      rememberRegisteredBy(registeredBy);
       msgEl.className = 'msg msg-success';
       exitStockOutEditMode();
       resetBreakdownRows();
@@ -2758,6 +2820,7 @@ function renderStockOutFormPageImpl({ purpose, navKey, heading, hint }) {
         mBoxes: Number(params.get('m')) || 0,
         supplier: params.get('supplier') || STOCK_OUT_DEFAULT_SUPPLIER,
         note: params.get('note') || '',
+        registeredBy: params.get('registeredBy') || '',
       },
       params.get('mode')
     );
@@ -2830,6 +2893,10 @@ function renderFactoryOutPage() {
           <label for="factoryOutNote">メモ(任意)</label>
           <input type="text" id="factoryOutNote" placeholder="例: 〇〇向け出荷など">
         </div>
+        <div class="field">
+          <label for="factoryOutRegisteredBy">登録者</label>
+          <select id="factoryOutRegisteredBy">${registeredByOptionsHtml()}</select>
+        </div>
         <button id="factoryOutSubmitBtn" class="primary">工場出庫を登録する</button>
         <button id="factoryOutCancelBtn" type="button" class="btn-plain" style="display:none;">キャンセル(新規登録に戻す)</button>
         <p id="factoryOutMsg" class="msg"></p>
@@ -2855,12 +2922,13 @@ function renderFactoryOutPage() {
     document.getElementById('factoryOutCancelBtn').style.display = 'none';
   }
 
-  function fillForm({ outDate, sizeKey, kg, supplier, note }) {
+  function fillForm({ outDate, sizeKey, kg, supplier, note, registeredBy }) {
     document.getElementById('factoryOutDate').value = outDate;
     document.getElementById('factoryOutSize').value = sizeKey;
     kgEl.value = kg;
     document.getElementById('factoryOutSupplier').value = supplier || STOCK_OUT_DEFAULT_SUPPLIER;
     document.getElementById('factoryOutNote').value = note || '';
+    document.getElementById('factoryOutRegisteredBy').value = registeredBy || rememberedRegisteredBy();
     updateCaseHint();
   }
 
@@ -2870,6 +2938,7 @@ function renderFactoryOutPage() {
     const kg = Math.round(Number(kgEl.value)) || 0;
     const supplier = document.getElementById('factoryOutSupplier').value;
     const note = document.getElementById('factoryOutNote').value.trim();
+    const registeredBy = document.getElementById('factoryOutRegisteredBy').value;
     const msgEl = document.getElementById('factoryOutMsg');
     const isEdit = !!editingId;
     if (!outDate) {
@@ -2879,6 +2948,11 @@ function renderFactoryOutPage() {
     }
     if (kg <= 0) {
       msgEl.textContent = 'キロ数を入力してください。';
+      msgEl.className = 'msg msg-error';
+      return;
+    }
+    if (!registeredBy) {
+      msgEl.textContent = '登録者を選択してください。';
       msgEl.className = 'msg msg-error';
       return;
     }
@@ -2904,6 +2978,7 @@ function renderFactoryOutPage() {
       supplier,
       purpose: 'factory',
       note: `工場出庫${kg}kg${note ? `・${note}` : ''}`,
+      registeredBy,
     };
     try {
       if (isEdit) {
@@ -2913,6 +2988,7 @@ function renderFactoryOutPage() {
         await saveStockOutInternal(payload);
         msgEl.textContent = `✓ ${formatDateJp(outDate)}の工場出庫を登録しました。`;
       }
+      rememberRegisteredBy(registeredBy);
       msgEl.className = 'msg msg-success';
       exitEditMode();
       fillForm({ outDate, sizeKey: 'mixed', kg: 0, supplier, note: '' });
@@ -2948,6 +3024,7 @@ function renderFactoryOutPage() {
       kg: Math.round(cases * KG_PER_CASE * 100) / 100,
       supplier: params.get('supplier') || STOCK_OUT_DEFAULT_SUPPLIER,
       note: '',
+      registeredBy: params.get('registeredBy') || '',
     });
     if (editingId) {
       document.getElementById('factoryOutSubmitBtn').textContent = 'この工場出庫を更新する';
@@ -3069,6 +3146,7 @@ async function renderStockDayPage() {
             <td>${escapeHtml(r.supplier || '未記録')}</td>
             <td>${stockCompactQty(Number(r.mixed_boxes), Number(r.s_boxes), Number(r.m_boxes))}</td>
             <td>${escapeHtml(r.note || '')}</td>
+            <td>${escapeHtml(r.registered_by || '')}</td>
             <td class="day-row-actions">
               <button type="button" class="btn-plain day-edit-btn" data-id="${r.id}">編集</button>
               <button type="button" class="btn-plain day-del-out-btn" data-id="${r.id}">削除</button>
@@ -3081,8 +3159,8 @@ async function renderStockDayPage() {
         <p class="hint">その日に手動で記録した出庫です。「配達先」は用途(店舗配達分/自社使用)、「出荷元」は仕入れ先を表します。「編集」で数量・仕入れ先などをまとめて修正できます。</p>
         <div class="cal-list-wrap">
           <table class="cal-list-table">
-            <thead><tr><th>配達先(用途)</th><th>出荷元(仕入れ先)</th><th>数量</th><th>メモ</th><th></th></tr></thead>
-            <tbody>${outRowsHtml || '<tr><td colspan="5" class="hint">この日の出庫記録はありません。</td></tr>'}</tbody>
+            <thead><tr><th>配達先(用途)</th><th>出荷元(仕入れ先)</th><th>数量</th><th>メモ</th><th>登録者</th><th></th></tr></thead>
+            <tbody>${outRowsHtml || '<tr><td colspan="6" class="hint">この日の出庫記録はありません。</td></tr>'}</tbody>
           </table>
         </div>
         <button id="dayAddSelfOutBtn" type="button" class="btn-plain">+ 自社使用を追加する</button>
@@ -3102,6 +3180,7 @@ async function renderStockDayPage() {
             supplier: r.supplier || STOCK_OUT_DEFAULT_SUPPLIER,
             purpose: r.purpose || 'self',
             note: r.note || '',
+            registeredBy: r.registered_by || '',
             mode: 'edit',
           });
         });
@@ -3166,6 +3245,7 @@ async function renderStockDayPage() {
           (r) => `<tr>
             <td>${escapeHtml(r.note || '')}</td>
             <td>${stockCompactQty(Number(r.mixed_boxes), Number(r.s_boxes), Number(r.m_boxes))}</td>
+            <td>${escapeHtml(r.registered_by || '')}</td>
             <td class="day-row-actions"><button type="button" class="btn-plain day-del-in-btn" data-id="${r.id}">削除</button></td>
           </tr>`
         )
@@ -3174,8 +3254,8 @@ async function renderStockDayPage() {
         <h2>入庫</h2>
         <div class="cal-list-wrap">
           <table class="cal-list-table">
-            <thead><tr><th>仕入れ先</th><th>数量</th><th></th></tr></thead>
-            <tbody>${inRowsHtml || '<tr><td colspan="3" class="hint">この日の入庫記録はありません。</td></tr>'}</tbody>
+            <thead><tr><th>仕入れ先</th><th>数量</th><th>登録者</th><th></th></tr></thead>
+            <tbody>${inRowsHtml || '<tr><td colspan="4" class="hint">この日の入庫記録はありません。</td></tr>'}</tbody>
           </table>
         </div>
         <div class="field-row" style="margin-top:12px;">
@@ -3189,6 +3269,10 @@ async function renderStockDayPage() {
           <div class="field"><label for="dayInMixed">混合</label><select id="dayInMixed">${qtyOptionsHtml(100)}</select></div>
           <div class="field"><label for="dayInS">S</label><select id="dayInS">${qtyOptionsHtml(100)}</select></div>
           <div class="field"><label for="dayInM">M</label><select id="dayInM">${qtyOptionsHtml(100)}</select></div>
+        </div>
+        <div class="field">
+          <label for="dayInRegisteredBy">登録者</label>
+          <select id="dayInRegisteredBy">${registeredByOptionsHtml()}</select>
         </div>
         <button id="dayInAddBtn" class="primary">この日の入庫を追加する</button>
         <p id="dayInMsg" class="msg"></p>`;
@@ -3212,9 +3296,15 @@ async function renderStockDayPage() {
         const sBoxes = Number(document.getElementById('dayInS').value) || 0;
         const mBoxes = Number(document.getElementById('dayInM').value) || 0;
         const supplier = document.getElementById('dayInSupplier').value;
+        const registeredBy = document.getElementById('dayInRegisteredBy').value;
         const msgEl = document.getElementById('dayInMsg');
         if (mixedBoxes === 0 && sBoxes === 0 && mBoxes === 0) {
           msgEl.textContent = 'ケース数を入力してください。';
+          msgEl.className = 'msg msg-error';
+          return;
+        }
+        if (!registeredBy) {
+          msgEl.textContent = '登録者を選択してください。';
           msgEl.className = 'msg msg-error';
           return;
         }
@@ -3223,7 +3313,8 @@ async function renderStockDayPage() {
         msgEl.textContent = '登録中…';
         msgEl.className = 'msg';
         try {
-          await saveStockIn({ inDate: dateStr, mixedBoxes, sBoxes, mBoxes, note: supplier });
+          await saveStockIn({ inDate: dateStr, mixedBoxes, sBoxes, mBoxes, note: supplier, registeredBy });
+          rememberRegisteredBy(registeredBy);
           load();
         } catch (e) {
           console.error(e);

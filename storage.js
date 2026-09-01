@@ -197,7 +197,7 @@ async function fetchStockInAll() {
   return data || [];
 }
 
-async function saveStockIn({ inDate, mixedBoxes, sBoxes, mBoxes, note }) {
+async function saveStockIn({ inDate, mixedBoxes, sBoxes, mBoxes, note, registeredBy }) {
   assertClient();
   const { error } = await sb.from('kaki_stock_in').insert({
     in_date: inDate,
@@ -205,6 +205,7 @@ async function saveStockIn({ inDate, mixedBoxes, sBoxes, mBoxes, note }) {
     s_boxes: sBoxes,
     m_boxes: mBoxes,
     note: note || '',
+    registered_by: registeredBy || null,
   });
   if (error) throw error;
 }
@@ -225,7 +226,7 @@ async function fetchStockOutInternalAll() {
   return data || [];
 }
 
-async function saveStockOutInternal({ outDate, mixedBoxes, sBoxes, mBoxes, supplier, purpose, note }) {
+async function saveStockOutInternal({ outDate, mixedBoxes, sBoxes, mBoxes, supplier, purpose, note, registeredBy }) {
   assertClient();
   const { error } = await sb.from('kaki_stock_out_internal').insert({
     out_date: outDate,
@@ -235,11 +236,12 @@ async function saveStockOutInternal({ outDate, mixedBoxes, sBoxes, mBoxes, suppl
     supplier: supplier || '',
     purpose: purpose || 'self',
     note: note || '',
+    registered_by: registeredBy || null,
   });
   if (error) throw error;
 }
 
-async function updateStockOutInternal(id, { outDate, mixedBoxes, sBoxes, mBoxes, supplier, purpose, note }) {
+async function updateStockOutInternal(id, { outDate, mixedBoxes, sBoxes, mBoxes, supplier, purpose, note, registeredBy }) {
   assertClient();
   const { data, error } = await sb
     .from('kaki_stock_out_internal')
@@ -251,6 +253,7 @@ async function updateStockOutInternal(id, { outDate, mixedBoxes, sBoxes, mBoxes,
       supplier: supplier || '',
       purpose: purpose || 'self',
       note: note || '',
+      registered_by: registeredBy || null,
     })
     .eq('id', id)
     .select();
