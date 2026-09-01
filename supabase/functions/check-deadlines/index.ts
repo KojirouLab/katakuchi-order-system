@@ -1,5 +1,7 @@
-// 締切1時間前になっても未発注の店舗を検知し、対応するLINEグループへ
+// 締切1時間前になっても未発注の店舗を検知し、対応するLINEグループ・Discordチャンネルへ
 // まとめてpush通知する。pg_cronから15分おきに叩かれる想定。
+// LINE(notification_targets)・Discord(discord_notification_targets)はそれぞれ独立した
+// 宛先テーブルで、両方に登録されていれば両方に送る。
 //
 // 締切計算ロジック(JP_HOLIDAYS・PRODUCT_DEFS・営業日計算)はapp.jsのものを
 // そのまま複製している。app.js側を変更した場合はこちらも合わせて直すこと。
@@ -89,6 +91,17 @@ async function pushMessage(groupId: string, text: string) {
   }
 }
 
+async function pushDiscordMessage(webhookUrl: string, text: string) {
+  const res = await fetch(webhookUrl, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ content: text }),
+  });
+  if (!res.ok) {
+    console.error("Discord push failed", webhookUrl, res.status, await res.text());
+  }
+}
+
 Deno.serve(async (req) => {
   if (req.headers.get("x-cron-secret") !== CRON_SECRET) {
     return new Response("forbidden", { status: 403 });
@@ -110,14 +123,28 @@ Deno.serve(async (req) => {
     targetMap.set(`${t.store_slug}:${t.category}`, t.group_id);
   }
 
+  const { data: discordTargets, error: discordTargetsError } = await supabase
+    .from("discord_notification_targets")
+    .select("store_slug, category, webhook_url");
+  if (discordTargetsError) {
+    console.error(discordTargetsError);
+    return new Response("error", { status: 500 });
+  }
+  const discordTargetMap = new Map<string, string>();
+  for (const t of discordTargets ?? []) {
+    discordTargetMap.set(`${t.store_slug}:${t.category}`, t.webhook_url);
+  }
+
   // { groupId: [ "◯◯店(ピザ)", ... ] }
   const toNotify = new Map<string, string[]>();
+  const toNotifyDiscord = new Map<string, string[]>();
   const sentKeys: { store_slug: string; category: Category; order_date: string }[] = [];
 
   for (const store of STORES) {
     for (const category of store.categories) {
       const groupId = targetMap.get(`${store.slug}:${category}`);
-      if (!groupId) continue; // 通知先未登録の店舗+カテゴリはスキップ
+      const webhookUrl = discordTargetMap.get(`${store.slug}:${category}`);
+      if (!groupId && !webhookUrl) continue; // 通知先未登録の店舗+カテゴリはスキップ
 
       for (let offset = 0; offset <= LOOKAHEAD_DAYS; offset++) {
         const orderDate = addDaysStr(today, offset);
@@ -149,9 +176,17 @@ Deno.serve(async (req) => {
         if (hasOrdered) continue;
 
         const label = PRODUCT_DEFS[category].label;
-        const list = toNotify.get(groupId) ?? [];
-        list.push(`${store.name}(${label} ${orderDate.slice(5).replace("-", "/")}配送分)`);
-        toNotify.set(groupId, list);
+        const itemText = `${store.name}(${label} ${orderDate.slice(5).replace("-", "/")}配送分)`;
+        if (groupId) {
+          const list = toNotify.get(groupId) ?? [];
+          list.push(itemText);
+          toNotify.set(groupId, list);
+        }
+        if (webhookUrl) {
+          const list = toNotifyDiscord.get(webhookUrl) ?? [];
+          list.push(itemText);
+          toNotifyDiscord.set(webhookUrl, list);
+        }
         sentKeys.push({ store_slug: store.slug, category, order_date: orderDate });
       }
     }
@@ -160,6 +195,10 @@ Deno.serve(async (req) => {
   for (const [groupId, items] of toNotify) {
     const text = `【発注リマインド】まもなく締切です。まだ発注が確認できていません。\n${items.join("\n")}`;
     await pushMessage(groupId, text);
+  }
+  for (const [webhookUrl, items] of toNotifyDiscord) {
+    const text = `**【発注リマインド】**まもなく締切です。まだ発注が確認できていません。\n${items.join("\n")}`;
+    await pushDiscordMessage(webhookUrl, text);
   }
 
   if (sentKeys.length > 0) {
