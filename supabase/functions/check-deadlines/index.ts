@@ -201,11 +201,11 @@ Deno.serve(async (req) => {
   }
 
   for (const [groupId, items] of toNotify) {
-    const text = `【発注リマインド】まもなく締切です。まだ発注が確認できていません。\n${items.join("\n")}`;
+    const text = `【発注リマインド】まもなく締切です。まだ発注が確認できていません。発注しない場合は必ず「発注なし」を押してください。\n${items.join("\n")}`;
     await pushMessage(groupId, text);
   }
   for (const [webhookUrl, items] of toNotifyDiscord) {
-    const text = `**【発注リマインド】**まもなく締切です。まだ発注が確認できていません。\n${items.join("\n")}`;
+    const text = `**【発注リマインド】**まもなく締切です。まだ発注が確認できていません。発注しない場合は必ず「発注なし」を押してください。\n${items.join("\n")}`;
     await pushDiscordMessage(webhookUrl, text);
   }
 
