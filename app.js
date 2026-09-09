@@ -19,6 +19,11 @@ const STORES_BY_CATEGORY = { pizza: PIZZA_STORES, oyster: OYSTER_STORES };
 // 「配送」扱いの集計から除いて「宅配発送」として別枠にするために使う。
 const COURIER_STORE_SLUGS = new Set(STORES.filter((s) => s.shipping === 'courier').map((s) => s.slug));
 
+// ちょい飲みたかはしは宅配受付のため、発注日ではなく「着希望日+希望時間帯」で受け付ける。
+// 対象店舗のslug一覧(今後、他の宅配店舗にも広げる場合はここに追記する)。
+const DESIRED_ARRIVAL_STORE_SLUGS = new Set(['choinomi-takahashi']);
+const TIME_SLOT_OPTIONS = ['指定なし', '午前中', '14時-16時', '16時-18時', '18時-20時', '19時-21時'];
+
 const ADMIN_SHOPS = {
   katakuchi: { name: 'カタクチ商店', categories: ['pizza'] },
   'kaki-juchu': { name: '牡蠣受注店', categories: ['oyster'] },
@@ -269,7 +274,9 @@ const PRODUCT_DEFS = {
         ? '発注なし'
         : `混${row.mixed_boxes}ケース / S${row.s_boxes}ケース / M${row.m_boxes}ケース<span class="recent-kg">混${
             row.mixed_boxes * 15
-          }kg / S${row.s_boxes * 15}kg / M${row.m_boxes * 15}kg</span>`,
+          }kg / S${row.s_boxes * 15}kg / M${row.m_boxes * 15}kg</span>${
+            row.desired_time_slot ? `<br><span class="hint">希望時間帯: ${escapeHtml(row.desired_time_slot)}</span>` : ''
+          }`,
     fetchOne: fetchOysterOrder,
     save: (base, values) => saveOysterOrder({ ...base, ...values }),
     fetchRecent: fetchOysterOrdersByStore,
@@ -432,6 +439,8 @@ function mountProductSection(container, store, category, options = {}) {
   const bypassLock = !!options.bypassLock;
   const def = PRODUCT_DEFS[category];
   const id = category;
+  // 宅配受付の店舗(ちょい飲みたかはしなど)は、発注日ではなく「着希望日+希望時間帯」で受け付ける。
+  const isDesiredArrival = category === 'oyster' && DESIRED_ARRIVAL_STORE_SLUGS.has(store.slug);
 
   container.insertAdjacentHTML(
     'beforeend',
@@ -440,11 +449,21 @@ function mountProductSection(container, store, category, options = {}) {
       <h2>${def.label}の発注</h2>
       <p class="hint">締切: ${def.deadlineLabel}</p>
       <div class="field">
-        <label for="${id}-date">発注日</label>
+        <label for="${id}-date">${isDesiredArrival ? '着希望日' : '発注日'}</label>
         <input type="date" id="${id}-date" value="${bypassLock ? todayStr() : earliestOrderableDate(category)}">
       </div>
       <p id="${id}-deadline-msg" class="deadline-msg" style="display:none"></p>
       <div id="${id}-fields">
+        ${
+          isDesiredArrival
+            ? `<div class="field">
+                <label for="${id}-timeslot">希望時間帯</label>
+                <select id="${id}-timeslot">${TIME_SLOT_OPTIONS.map(
+                  (t) => `<option value="${escapeHtml(t)}">${escapeHtml(t)}</option>`
+                ).join('')}</select>
+              </div>`
+            : ''
+        }
         ${def.fieldsHtml(id)}
         <button id="${id}-submitBtn" class="primary">この内容で発注する</button>
         <button id="${id}-cancelBtn" class="secondary" style="display:none">この日の発注をキャンセルする</button>
@@ -504,6 +523,9 @@ function mountProductSection(container, store, category, options = {}) {
     try {
       const row = await def.fetchOne(store.slug, date);
       def.fillValue(id, row);
+      if (isDesiredArrival) {
+        document.getElementById(`${id}-timeslot`).value = (row && row.desired_time_slot) || TIME_SLOT_OPTIONS[0];
+      }
       hasExisting = def.hasValue(row);
       const isConfirmed = !!(row && row.confirmed_at);
       const deadlinePassed = isPastDeadline(date, category);
@@ -570,11 +592,17 @@ function mountProductSection(container, store, category, options = {}) {
     msgEl.className = 'msg';
     try {
       const values = def.readValue(id);
+      if (isDesiredArrival) {
+        values.desiredTimeSlot = document.getElementById(`${id}-timeslot`).value;
+      }
       await def.save({ storeSlug: store.slug, storeName: store.name, date }, values);
       msgEl.textContent = `✓ ${formatDateJp(date)}の発注を保存しました。`;
       msgEl.className = 'msg msg-success';
       hasExisting = true;
-      if (def.clearAfterSubmit) def.clearValue(id);
+      if (def.clearAfterSubmit) {
+        def.clearValue(id);
+        if (isDesiredArrival) document.getElementById(`${id}-timeslot`).value = TIME_SLOT_OPTIONS[0];
+      }
       applyLockState();
       loadRecent();
     } catch (e) {
