@@ -23,14 +23,21 @@ const COURIER_STORE_SLUGS = new Set(STORES.filter((s) => s.shipping === 'courier
 // 対象店舗のslug一覧(今後、他の宅配店舗にも広げる場合はここに追記する)。
 const DESIRED_ARRIVAL_STORE_SLUGS = new Set(['choinomi-takahashi']);
 const TIME_SLOT_OPTIONS = ['指定なし', '午前中', '14時-16時', '16時-18時', '18時-20時', '19時-21時'];
+// この日付以降のorder_dateだけを「着希望日」として扱う(=前日を発送日とみなす)。
+// これより前の日付は、着希望日という概念が導入される前に「発注日=発送日」として登録された
+// 既存データなので、遡って解釈を変えない(すでに記録済みの配達の仕入れ先と食い違い、
+// 仕入れ先ごとの残りの計算がズレてしまうため)。
+const DESIRED_ARRIVAL_EFFECTIVE_FROM = '2026-09-11';
 
 // oyster_ordersの1行から、実際にこの冷凍庫から牡蠣が出た日(発送日)を求める。
-// DESIRED_ARRIVAL_STORE_SLUGS対象店舗は order_date が「着希望日」であり、実際の発送は
-// その前日に行うため、牡蠣在庫管理(出庫の日付)ではこちらを使う。受注集計(発注一覧の
-// 表示)側は着希望日をそのまま見せたいので、order_dateを直接使い続ける(このヘルパーは
-// 在庫管理関連の集計だけで使うこと)。
+// DESIRED_ARRIVAL_EFFECTIVE_FROM以降のDESIRED_ARRIVAL_STORE_SLUGS対象店舗は、order_date
+// が「着希望日」であり実際の発送はその前日のため、牡蠣在庫管理(出庫の日付)ではこちらを使う。
+// 受注集計(発注一覧の表示)側は着希望日をそのまま見せたいので、order_dateを直接使い続ける
+// (このヘルパーは在庫管理関連の集計だけで使うこと)。
 function oysterShipDate(row) {
-  return DESIRED_ARRIVAL_STORE_SLUGS.has(row.store_slug) ? addDaysStr(row.order_date, -1) : row.order_date;
+  const isDesiredArrival =
+    DESIRED_ARRIVAL_STORE_SLUGS.has(row.store_slug) && row.order_date >= DESIRED_ARRIVAL_EFFECTIVE_FROM;
+  return isDesiredArrival ? addDaysStr(row.order_date, -1) : row.order_date;
 }
 
 const ADMIN_SHOPS = {
