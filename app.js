@@ -24,6 +24,15 @@ const COURIER_STORE_SLUGS = new Set(STORES.filter((s) => s.shipping === 'courier
 const DESIRED_ARRIVAL_STORE_SLUGS = new Set(['choinomi-takahashi']);
 const TIME_SLOT_OPTIONS = ['指定なし', '午前中', '14時-16時', '16時-18時', '18時-20時', '19時-21時'];
 
+// oyster_ordersの1行から、実際にこの冷凍庫から牡蠣が出た日(発送日)を求める。
+// DESIRED_ARRIVAL_STORE_SLUGS対象店舗は order_date が「着希望日」であり、実際の発送は
+// その前日に行うため、牡蠣在庫管理(出庫の日付)ではこちらを使う。受注集計(発注一覧の
+// 表示)側は着希望日をそのまま見せたいので、order_dateを直接使い続ける(このヘルパーは
+// 在庫管理関連の集計だけで使うこと)。
+function oysterShipDate(row) {
+  return DESIRED_ARRIVAL_STORE_SLUGS.has(row.store_slug) ? addDaysStr(row.order_date, -1) : row.order_date;
+}
+
 const ADMIN_SHOPS = {
   katakuchi: { name: 'カタクチ商店', categories: ['pizza'] },
   'kaki-juchu': { name: '牡蠣受注店', categories: ['oyster'] },
@@ -1286,7 +1295,7 @@ function aggregateStockRecords(stockIn, stockOutInternal, oysterOrders, keyFn) {
   const courierTotalByKey = {};
   oysterOrders.forEach((r) => {
     if (r.no_order) return;
-    const key = keyFn(r.order_date);
+    const key = keyFn(oysterShipDate(r));
     if (COURIER_STORE_SLUGS.has(r.store_slug)) {
       courierTotalByKey[key] = (courierTotalByKey[key] || 0) + boxesOfRow(r);
     } else {
@@ -1343,10 +1352,12 @@ function addDaysStr(dateStr, delta) {
 
 // 日別の帳票(from〜to指定)。
 async function buildAndDownloadStockExcel(from, to) {
+  // 宅配受付店舗(着希望日で受け付ける店舗)は着希望日の前日に発送するため、toの翌日の
+  // 発注も1日分多く取得しておく(toの行の出庫として計上するため)。
   const [allStockIn, allStockOutInternal, oysterOrdersInRange] = await Promise.all([
     fetchStockInAll(),
     fetchStockOutInternalAll(),
-    fetchOysterOrdersRange(from, to),
+    fetchOysterOrdersRange(from, addDaysStr(to, 1)),
   ]);
   const stockIn = allStockIn.filter((r) => r.in_date >= from && r.in_date <= to);
   const stockOutInternal = allStockOutInternal.filter((r) => r.out_date >= from && r.out_date <= to);
@@ -1695,9 +1706,13 @@ async function renderStockBalancePage() {
     const monthEnd = `${year}-${String(month + 1).padStart(2, '0')}-${String(daysInMonth).padStart(2, '0')}`;
     const shippedRangeStart = monthStart < KAKI_STOCK_TRACKING_START_DATE ? KAKI_STOCK_TRACKING_START_DATE : monthStart;
     try {
+      // 宅配受付店舗(着希望日で受け付ける店舗)は着希望日の前日に発送するため、月末の翌日分の
+      // 発注も1日多く取得しておく(月末の出庫として計上するため)。
       const [allStockInRows, shippedRows, internalOutRows] = await Promise.all([
         fetchStockInAll(),
-        shippedRangeStart <= monthEnd ? fetchOysterOrdersRange(shippedRangeStart, monthEnd) : Promise.resolve([]),
+        shippedRangeStart <= monthEnd
+          ? fetchOysterOrdersRange(shippedRangeStart, addDaysStr(monthEnd, 1))
+          : Promise.resolve([]),
         fetchStockOutInternalAll(),
       ]);
       const stockInByDate = {};
@@ -1723,7 +1738,7 @@ async function renderStockBalancePage() {
       const truckShippedByDate = {};
       const courierShippedByDate = {};
       shippedRows.forEach((r) => {
-        const key = r.order_date;
+        const key = oysterShipDate(r);
         const isCourier = COURIER_STORE_SLUGS.has(r.store_slug);
         [shippedByDate, isCourier ? courierShippedByDate : truckShippedByDate].forEach((bucket) => {
           if (!bucket[key]) bucket[key] = { mixed: 0, s: 0, m: 0 };
@@ -2108,9 +2123,11 @@ async function renderStockBalancePage() {
     const asOfDate = document.getElementById('asOfDate').value || todayStr();
     balanceEl.innerHTML = '<p class="hint">読み込み中…</p>';
     try {
+      // 宅配受付店舗(着希望日で受け付ける店舗)は着希望日の前日に発送するため、asOfDateの
+      // 翌日分の発注も1日多く取得しておく(asOfDate時点ですでに発送済みとして計上するため)。
       const [allStockInRows, shippedRows, internalOutRows] = await Promise.all([
         fetchStockInAll(),
-        fetchOysterOrdersRange(KAKI_STOCK_TRACKING_START_DATE, asOfDate),
+        fetchOysterOrdersRange(KAKI_STOCK_TRACKING_START_DATE, addDaysStr(asOfDate, 1)),
         fetchStockOutInternalAll(),
       ]);
       const stockInRowsUpToDate = allStockInRows.filter((r) => r.in_date <= asOfDate);
@@ -2128,7 +2145,8 @@ async function renderStockBalancePage() {
       // 按分計算(実発注を上限にする処理)には、この生の合計を使う。
       const shippedByDateRaw = {};
       shippedRows.forEach((r) => {
-        const key = r.order_date;
+        const key = oysterShipDate(r);
+        if (key > asOfDate) return; // 翌日分取得で混入した、まだ発送していない分は対象外
         if (!shippedByDateRaw[key]) shippedByDateRaw[key] = { mixed: 0, s: 0, m: 0 };
         shippedByDateRaw[key].mixed += Number(r.mixed_boxes) || 0;
         shippedByDateRaw[key].s += Number(r.s_boxes) || 0;
@@ -3092,11 +3110,14 @@ async function renderStockDayPage() {
     outCardEl.innerHTML = '<p class="hint">読み込み中…</p>';
     inCardEl.innerHTML = '<p class="hint">読み込み中…</p>';
     try {
-      const [allStockIn, allStockOut, shippedRows] = await Promise.all([
+      // 宅配受付店舗(着希望日で受け付ける店舗)は着希望日の前日に発送するため、翌日分の発注も
+      // 取得して、実際にこの日発送した分(oysterShipDateがdateStrのもの)だけに絞り込む。
+      const [allStockIn, allStockOut, shippedRowsRaw] = await Promise.all([
         fetchStockInAll(),
         fetchStockOutInternalAll(),
-        fetchOysterOrdersRange(dateStr, dateStr),
+        fetchOysterOrdersRange(dateStr, addDaysStr(dateStr, 1)),
       ]);
+      const shippedRows = shippedRowsRaw.filter((r) => oysterShipDate(r) === dateStr);
       const inRows = allStockIn.filter((r) => r.in_date === dateStr);
       const outRows = allStockOut.filter((r) => r.out_date === dateStr);
 
