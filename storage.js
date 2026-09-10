@@ -273,6 +273,25 @@ async function deleteStockOutInternal(id) {
 // kaki_stock_in / kaki_stock_out_internal / oyster_orders への変更をDBトリガーが自動記録したもの。
 // 指定した日付範囲(changed_atの日付)で絞り込んで取得する。
 
+// ---- 発注確定時のDiscord通知(現状ちょい飲みたかはしの牡蠣発注のみ) ----
+// Edge Function側で通知先未登録なら何もしないので、対象外の店舗から呼んでも安全。
+// 発注自体は成功させたいので、通知の失敗は握りつぶす(呼び出し元でawaitしなくてもよい)。
+async function notifyOrderPlaced({ storeSlug, date }) {
+  try {
+    await fetch(`${SUPABASE_URL}/functions/v1/notify-order-placed`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+        apikey: SUPABASE_ANON_KEY,
+      },
+      body: JSON.stringify({ storeSlug, date }),
+    });
+  } catch (e) {
+    console.error('notifyOrderPlaced failed', e);
+  }
+}
+
 async function fetchStockAuditLog({ from, to }) {
   assertClient();
   const { data, error } = await sb
