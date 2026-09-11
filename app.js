@@ -1035,7 +1035,12 @@ function registeredByOptionsHtml(selected) {
 // 見込んで日曜相当のペースとして計算する(実績が乏しい祝日固有の平均は
 // 使わず、既知の日曜実績で代用する簡易的な扱い)。
 function buildStockoutForecast(balance, shippedByDate, asOfDate) {
-  const dateKeys = Object.keys(shippedByDate);
+  // 「直近」の実績に絞る。在庫管理開始日からの全期間を平均すると、新しく発注を始めた店舗が
+  // 増えていく立ち上がり期間(出荷量がまだ少ない)に平均が引っ張られ、予測が甘く(長く持つ側に)
+  // 出てしまうため、直近4週間分だけを使う。
+  const RECENT_WINDOW_DAYS = 28;
+  const windowStart = addDaysStr(asOfDate, -(RECENT_WINDOW_DAYS - 1));
+  const dateKeys = Object.keys(shippedByDate).filter((d) => d >= windowStart && d <= asOfDate);
   if (!dateKeys.length) return '出荷実績がまだないため、在庫が持つ期間を予測できません。';
 
   const weekdaySum = Array.from({ length: 7 }, () => ({ s: 0, m: 0, count: 0 }));
@@ -1084,7 +1089,7 @@ function buildStockoutForecast(balance, shippedByDate, asOfDate) {
   const mPart =
     balance.m <= 0 ? 'Mサイズは在庫切れ' : depleteDateM ? `Mサイズは${formatDateJp(depleteDateM)}頃` : `Mサイズは${MAX_DAYS}日以上`;
 
-  return `直近の曜日別出荷ペース(祝日は日曜相当で計算)だと、${sPart}、${mPart}まで在庫が持つ見込みです。余裕をもって入庫の手配をおすすめします。`;
+  return `直近4週間の曜日別出荷ペース(祝日は日曜相当で計算)だと、${sPart}、${mPart}まで在庫が持つ見込みです。余裕をもって入庫の手配をおすすめします。`;
 }
 
 // 牡蠣在庫の帳票(Excel)の列構成を作る共通処理。
