@@ -23,6 +23,9 @@ const COURIER_STORE_SLUGS = new Set(STORES.filter((s) => s.shipping === 'courier
 // 対象店舗のslug一覧(今後、他の宅配店舗にも広げる場合はここに追記する)。
 const DESIRED_ARRIVAL_STORE_SLUGS = new Set(['choinomi-takahashi']);
 const TIME_SLOT_OPTIONS = ['指定なし', '午前中', '14時-16時', '16時-18時', '18時-20時', '19時-21時'];
+// ちょい飲みたかはしの発注は送付先を選べる(先頭がデフォルト。未選択=先頭とみなす)。
+const SHIP_TO_OPTIONS = ['ちょい飲みたかはし', 'ほうりょう'];
+const DEFAULT_SHIP_TO = SHIP_TO_OPTIONS[0];
 // この日付以降のorder_dateだけを「着希望日」として扱う(=前日を発送日とみなす)。
 // これより前の日付は、着希望日という概念が導入される前に「発注日=発送日」として登録された
 // 既存データなので、遡って解釈を変えない(すでに記録済みの配達の仕入れ先と食い違い、
@@ -291,6 +294,8 @@ const PRODUCT_DEFS = {
         : `混${row.mixed_boxes}ケース / S${row.s_boxes}ケース / M${row.m_boxes}ケース<span class="recent-kg">混${
             row.mixed_boxes * 15
           }kg / S${row.s_boxes * 15}kg / M${row.m_boxes * 15}kg</span>${
+            row.ship_to ? `<br><span class="hint">送付先: ${escapeHtml(row.ship_to)}</span>` : ''
+          }${
             row.desired_time_slot ? `<br><span class="hint">希望時間帯: ${escapeHtml(row.desired_time_slot)}</span>` : ''
           }`,
     fetchOne: fetchOysterOrder,
@@ -473,6 +478,12 @@ function mountProductSection(container, store, category, options = {}) {
         ${
           isDesiredArrival
             ? `<div class="field">
+                <label for="${id}-shipto">送付先</label>
+                <select id="${id}-shipto">${SHIP_TO_OPTIONS.map(
+                  (t) => `<option value="${escapeHtml(t)}">${escapeHtml(t)}</option>`
+                ).join('')}</select>
+              </div>
+              <div class="field">
                 <label for="${id}-timeslot">希望時間帯</label>
                 <select id="${id}-timeslot">${TIME_SLOT_OPTIONS.map(
                   (t) => `<option value="${escapeHtml(t)}">${escapeHtml(t)}</option>`
@@ -541,6 +552,7 @@ function mountProductSection(container, store, category, options = {}) {
       def.fillValue(id, row);
       if (isDesiredArrival) {
         document.getElementById(`${id}-timeslot`).value = (row && row.desired_time_slot) || TIME_SLOT_OPTIONS[0];
+        document.getElementById(`${id}-shipto`).value = (row && row.ship_to) || DEFAULT_SHIP_TO;
       }
       hasExisting = def.hasValue(row);
       const isConfirmed = !!(row && row.confirmed_at);
@@ -610,6 +622,7 @@ function mountProductSection(container, store, category, options = {}) {
       const values = def.readValue(id);
       if (isDesiredArrival) {
         values.desiredTimeSlot = document.getElementById(`${id}-timeslot`).value;
+        values.shipTo = document.getElementById(`${id}-shipto`).value;
       }
       await def.save({ storeSlug: store.slug, storeName: store.name, date }, values);
       if (category === 'oyster' && !values.noOrder) {
@@ -622,7 +635,10 @@ function mountProductSection(container, store, category, options = {}) {
       hasExisting = true;
       if (def.clearAfterSubmit) {
         def.clearValue(id);
-        if (isDesiredArrival) document.getElementById(`${id}-timeslot`).value = TIME_SLOT_OPTIONS[0];
+        if (isDesiredArrival) {
+          document.getElementById(`${id}-timeslot`).value = TIME_SLOT_OPTIONS[0];
+          document.getElementById(`${id}-shipto`).value = DEFAULT_SHIP_TO;
+        }
       }
       applyLockState();
       loadRecent();
@@ -3642,6 +3658,10 @@ function renderOysterSummary(rows, stores, options = {}) {
           const bodyClass = r.no_order ? 'recent-body' : 'oyster-qty';
           const body = r.no_order ? '発注なし' : `混 ${r.mixed_boxes} / S ${r.s_boxes} / M ${r.m_boxes}`;
           const courierTag = splitMode && st.shipping === 'courier' ? '<span class="courier-tag">宅配発送</span>' : '';
+          const extraInfo = [];
+          if (r.ship_to) extraInfo.push(`送付先: ${escapeHtml(r.ship_to)}`);
+          if (r.desired_time_slot) extraInfo.push(`希望時間帯: ${escapeHtml(r.desired_time_slot)}`);
+          const extraHtml = extraInfo.length ? `<span class="recent-submitted">${extraInfo.join(' / ')}</span>` : '';
           const status = showPrint
             ? r.confirmed_at
               ? `<span class="confirm-badge confirmed">✓ 確認済み(${formatDateTimeJp(
@@ -3658,7 +3678,7 @@ function renderOysterSummary(rows, stores, options = {}) {
             st.name
           )}${courierTag}</span><span class="recent-submitted">発注日時: ${formatDateTimeJp(
             r.updated_at
-          )}</span><span class="${bodyClass}">${body}</span>${status} ${printBtn}</li>`;
+          )}</span><span class="${bodyClass}">${body}</span>${extraHtml}${status} ${printBtn}</li>`;
         })
         .filter(Boolean)
         .join('');
@@ -3721,6 +3741,21 @@ function renderOysterTable(rows, stores, options = {}) {
   const rowTotals = matrix.map((row) => row.reduce((sum, cell) => sum + (cell ? cell.subtotal : 0), 0));
   const grandTotal = rowTotals.reduce((a, b) => a + b, 0);
 
+  // 送付先が通常(自店＝DEFAULT_SHIP_TO)と異なる発注(ちょい飲みたかはし→ほうりょう など)を別枠でメモする。
+  // 数量マトリクスには送付先の軸がないため、下に一覧で出す。
+  const shipToNotes = rows
+    .filter((r) => !r.no_order && r.ship_to && r.ship_to !== DEFAULT_SHIP_TO)
+    .map((r) => {
+      const st = stores.find((s) => s.slug === r.store_slug);
+      return {
+        date: r.order_date,
+        storeName: st ? st.name : r.store_slug,
+        shipTo: r.ship_to,
+        slot: r.desired_time_slot || '',
+      };
+    })
+    .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+
   const bodyRows = dates
     .map((date, di) => {
       const cells = stores
@@ -3746,7 +3781,7 @@ function renderOysterTable(rows, stores, options = {}) {
 
   let toolButtons = '';
   if (showTools) {
-    const xlsxBinary = buildOysterXlsx(dates, stores, matrix, storeTotals, rowTotals, grandTotal);
+    const xlsxBinary = buildOysterXlsx(dates, stores, matrix, storeTotals, rowTotals, grandTotal, shipToNotes);
     const xlsxDataAttr = encodeURIComponent(xlsxBinary);
     const filename = `牡蠣受注集計_${dates[0]}_${dates[dates.length - 1]}.xlsx`;
     toolButtons = `
@@ -3773,7 +3808,24 @@ function renderOysterTable(rows, stores, options = {}) {
         </table>
       </div>
       <p class="hint">数値は箱数(ケース)。1ケース=15kg。「小計」は店舗ごとのサイズ合計、右端は全店舗合計。「-」は未発注/発注なし。</p>
-    </div>`;
+    </div>
+    ${
+      shipToNotes.length
+        ? `<div class="card">
+            <h2>送付先の指定(通常と異なるもの)</h2>
+            <ul class="recent-list">${shipToNotes
+              .map(
+                (n) =>
+                  `<li><span class="recent-date">${formatDateJp(n.date)}</span><span class="recent-store">${escapeHtml(
+                    n.storeName
+                  )}</span><span class="recent-submitted">送付先: ${escapeHtml(n.shipTo)}${
+                    n.slot ? ` / 希望時間帯: ${escapeHtml(n.slot)}` : ''
+                  }</span></li>`
+              )
+              .join('')}</ul>
+          </div>`
+        : ''
+    }`;
 }
 
 function xmlEscape(str) {
@@ -3805,7 +3857,7 @@ function xlsxCellNum(col, row, value, styleId) {
   return `<c r="${col}${row}" s="${styleId}"><v>${value}</v></c>`;
 }
 
-function buildOysterWorksheetXml(dates, stores, matrix, storeTotals, rowTotals, grandTotal) {
+function buildOysterWorksheetXml(dates, stores, matrix, storeTotals, rowTotals, grandTotal, shipToNotes = []) {
   const merges = [];
   const rowsXml = [];
 
@@ -3886,6 +3938,32 @@ function buildOysterWorksheetXml(dates, stores, matrix, storeTotals, rowTotals, 
   });
   fcells.push(xlsxCellNum(colLetter(fc), footerRowNum, grandTotal, 1));
   rowsXml.push(`<row r="${footerRowNum}">${fcells.join('')}</row>`);
+
+  // 送付先メモ(通常と異なる指定分)を合計行の下に1行あけて出す。
+  if (shipToNotes.length) {
+    let noteRow = footerRowNum + 2;
+    rowsXml.push(`<row r="${noteRow}">${xlsxCellStr(colLetter(0), noteRow, '送付先の指定(通常と異なるもの)', 1)}</row>`);
+    noteRow++;
+    rowsXml.push(
+      `<row r="${noteRow}">${xlsxCellStr(colLetter(0), noteRow, '日付', 1)}${xlsxCellStr(
+        colLetter(1),
+        noteRow,
+        '店舗',
+        1
+      )}${xlsxCellStr(colLetter(2), noteRow, '送付先', 1)}${xlsxCellStr(colLetter(3), noteRow, '希望時間帯', 1)}</row>`
+    );
+    shipToNotes.forEach((n) => {
+      noteRow++;
+      rowsXml.push(
+        `<row r="${noteRow}">${xlsxCellStr(colLetter(0), noteRow, formatDateJp(n.date), 0)}${xlsxCellStr(
+          colLetter(1),
+          noteRow,
+          n.storeName,
+          0
+        )}${xlsxCellStr(colLetter(2), noteRow, n.shipTo, 0)}${xlsxCellStr(colLetter(3), noteRow, n.slot || '', 0)}</row>`
+      );
+    });
+  }
 
   const mergeCellsXml = merges.map((ref) => `<mergeCell ref="${ref}"/>`).join('');
 
@@ -4007,8 +4085,8 @@ function buildZipBinaryString(files) {
   return localSection + centralSection + bytesToBinaryString(end);
 }
 
-function buildOysterXlsx(dates, stores, matrix, storeTotals, rowTotals, grandTotal) {
-  const sheetXml = buildOysterWorksheetXml(dates, stores, matrix, storeTotals, rowTotals, grandTotal);
+function buildOysterXlsx(dates, stores, matrix, storeTotals, rowTotals, grandTotal, shipToNotes = []) {
+  const sheetXml = buildOysterWorksheetXml(dates, stores, matrix, storeTotals, rowTotals, grandTotal, shipToNotes);
   return buildZipBinaryString([
     { name: '[Content_Types].xml', content: XLSX_CONTENT_TYPES },
     { name: '_rels/.rels', content: XLSX_RELS },

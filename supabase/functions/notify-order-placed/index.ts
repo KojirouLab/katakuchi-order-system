@@ -69,7 +69,7 @@ Deno.serve(async (req) => {
 
   const { data: order, error: orderError } = await supabase
     .from("oyster_orders")
-    .select("mixed_boxes, s_boxes, m_boxes, no_order, desired_time_slot")
+    .select("mixed_boxes, s_boxes, m_boxes, no_order, desired_time_slot, ship_to")
     .eq("store_slug", storeSlug)
     .eq("order_date", date)
     .maybeSingle();
@@ -87,8 +87,9 @@ Deno.serve(async (req) => {
   const storeName = STORE_NAMES[storeSlug] ?? storeSlug;
   const dateLabel = date.slice(5).replace("-", "/");
   const mention = target.mention_role_id ? `<@&${target.mention_role_id}> ` : "";
+  const shipToLine = order.ship_to ? `\n送付先: ${order.ship_to}` : "";
   const text =
-    `${mention}**${storeName}**から発注が入りました(着希望日 ${dateLabel}${TIME_SLOT_SUFFIX(order.desired_time_slot)})\n` +
+    `${mention}**${storeName}**から発注が入りました(着希望日 ${dateLabel}${TIME_SLOT_SUFFIX(order.desired_time_slot)})${shipToLine}\n` +
     `混合:${order.mixed_boxes} / S:${order.s_boxes} / M:${order.m_boxes}`;
 
   const res = await fetch(target.webhook_url, {

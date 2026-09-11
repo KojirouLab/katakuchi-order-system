@@ -114,7 +114,7 @@ async function fetchOysterOrder(storeSlug, date) {
   return data;
 }
 
-async function saveOysterOrder({ storeSlug, storeName, date, mixedBoxes, sBoxes, mBoxes, noOrder, desiredTimeSlot }) {
+async function saveOysterOrder({ storeSlug, storeName, date, mixedBoxes, sBoxes, mBoxes, noOrder, desiredTimeSlot, shipTo }) {
   assertClient();
   const { error } = await sb.from('oyster_orders').upsert(
     {
@@ -126,6 +126,7 @@ async function saveOysterOrder({ storeSlug, storeName, date, mixedBoxes, sBoxes,
       m_boxes: mBoxes,
       no_order: !!noOrder,
       desired_time_slot: desiredTimeSlot || null,
+      ship_to: shipTo || null,
       confirmed_at: null,
       updated_at: new Date().toISOString(),
     },
