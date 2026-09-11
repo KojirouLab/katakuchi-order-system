@@ -1030,38 +1030,38 @@ function registeredByOptionsHtml(selected) {
     .join('');
 }
 
-// 直近の出荷実績(shippedByDate)から曜日別の平均出荷ペースを求め、現在庫が
+// 直近の出荷実績(shippedByDate)から曜日別の出荷ペースを求め、現在庫が
 // いつ頃尽きそうかを予測して一言メッセージにする。祝日は出荷が減る傾向を
 // 見込んで日曜相当のペースとして計算する(実績が乏しい祝日固有の平均は
 // 使わず、既知の日曜実績で代用する簡易的な扱い)。
+// 欠品が許されない商品のため、平均ではなくその曜日の「直近で最も出た日」の
+// ペースを使う安全側(厳しめ)の見積もりにしている。
 function buildStockoutForecast(balance, shippedByDate, asOfDate) {
-  // 「直近」の実績に絞る。在庫管理開始日からの全期間を平均すると、新しく発注を始めた店舗が
-  // 増えていく立ち上がり期間(出荷量がまだ少ない)に平均が引っ張られ、予測が甘く(長く持つ側に)
+  // 「直近」の実績に絞る。在庫管理開始日からの全期間を使うと、新しく発注を始めた店舗が
+  // 増えていく立ち上がり期間(出荷量がまだ少ない)に引っ張られ、予測が甘く(長く持つ側に)
   // 出てしまうため、直近4週間分だけを使う。
   const RECENT_WINDOW_DAYS = 28;
   const windowStart = addDaysStr(asOfDate, -(RECENT_WINDOW_DAYS - 1));
   const dateKeys = Object.keys(shippedByDate).filter((d) => d >= windowStart && d <= asOfDate);
   if (!dateKeys.length) return '出荷実績がまだないため、在庫が持つ期間を予測できません。';
 
-  const weekdaySum = Array.from({ length: 7 }, () => ({ s: 0, m: 0, count: 0 }));
-  const overallSum = { s: 0, m: 0, count: 0 };
+  const weekdayMax = Array.from({ length: 7 }, () => ({ s: 0, m: 0, hasData: false }));
+  const overallMax = { s: 0, m: 0 };
   dateKeys.forEach((date) => {
     const t = shippedByDate[date];
     const dow = new Date(`${date}T00:00:00Z`).getUTCDay();
-    weekdaySum[dow].s += t.s;
-    weekdaySum[dow].m += t.m;
-    weekdaySum[dow].count++;
-    overallSum.s += t.s;
-    overallSum.m += t.m;
-    overallSum.count++;
+    weekdayMax[dow].s = Math.max(weekdayMax[dow].s, t.s);
+    weekdayMax[dow].m = Math.max(weekdayMax[dow].m, t.m);
+    weekdayMax[dow].hasData = true;
+    overallMax.s = Math.max(overallMax.s, t.s);
+    overallMax.m = Math.max(overallMax.m, t.m);
   });
-  const overallAvg = { s: overallSum.s / overallSum.count, m: overallSum.m / overallSum.count };
 
   function expectedFor(dateStr) {
     const dow = new Date(`${dateStr}T00:00:00Z`).getUTCDay();
     const lookupDow = JP_HOLIDAYS.has(dateStr) ? 0 : dow; // 祝日は日曜相当の出荷ペースとして扱う
-    const w = weekdaySum[lookupDow];
-    return w.count > 0 ? { s: w.s / w.count, m: w.m / w.count } : overallAvg;
+    const w = weekdayMax[lookupDow];
+    return w.hasData ? { s: w.s, m: w.m } : overallMax;
   }
 
   const MAX_DAYS = 90;
@@ -1089,7 +1089,7 @@ function buildStockoutForecast(balance, shippedByDate, asOfDate) {
   const mPart =
     balance.m <= 0 ? 'Mサイズは在庫切れ' : depleteDateM ? `Mサイズは${formatDateJp(depleteDateM)}頃` : `Mサイズは${MAX_DAYS}日以上`;
 
-  return `直近4週間の曜日別出荷ペース(祝日は日曜相当で計算)だと、${sPart}、${mPart}まで在庫が持つ見込みです。余裕をもって入庫の手配をおすすめします。`;
+  return `直近4週間の曜日別最大出荷ペース(祝日は日曜相当で計算)で厳しめに見積もると、${sPart}、${mPart}まで在庫が持つ見込みです。余裕をもって入庫の手配をおすすめします。`;
 }
 
 // 牡蠣在庫の帳票(Excel)の列構成を作る共通処理。
