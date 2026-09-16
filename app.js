@@ -1814,7 +1814,7 @@ async function renderStockBalancePage() {
               )}</div>`
             : '') +
           (courierShippedTotal > 0
-            ? `<div class="cal-out cal-out-clickable" data-date="${dateStr}" data-mixed="${courierShipped.mixed}" data-s="${courierShipped.s}" data-m="${courierShipped.m}">宅配 ${compactQty(
+            ? `<div class="cal-out cal-courier-clickable" data-date="${dateStr}">宅配 ${compactQty(
                 courierShipped.mixed,
                 courierShipped.s,
                 courierShipped.m
@@ -1983,7 +1983,7 @@ async function renderStockBalancePage() {
               )}</div>`
             : '') +
           (courierShippedTotal > 0
-            ? `<div class="cal-out cal-out-clickable" data-date="${dateStr}" data-mixed="${courierShipped.mixed}" data-s="${courierShipped.s}" data-m="${courierShipped.m}">宅配 ${compactQty(
+            ? `<div class="cal-out cal-courier-clickable" data-date="${dateStr}">宅配 ${compactQty(
                 courierShipped.mixed,
                 courierShipped.s,
                 courierShipped.m
@@ -2001,7 +2001,11 @@ async function renderStockBalancePage() {
         );
         const gridOtherOutHtml =
           selfEntriesForGrid.length > 0
-            ? `<div class="cal-use">他出庫 ${compactQty(selfTotalForGrid.mixed, selfTotalForGrid.s, selfTotalForGrid.m)}</div>`
+            ? `<div class="cal-use cal-otherout-clickable" data-date="${dateStr}">他出庫 ${compactQty(
+                selfTotalForGrid.mixed,
+                selfTotalForGrid.s,
+                selfTotalForGrid.m
+              )}</div>`
             : '';
 
         const isToday = dateStr === todayStr();
@@ -2112,6 +2116,16 @@ async function renderStockBalancePage() {
             mode: 'prefill',
           });
         });
+      });
+      // 宅配発送分は「出庫元を修正する」フォームではなく、送付先などの内訳が見られる
+      // 日別ページ(受注システムの出荷実績)に飛ばす。
+      calendarEl.querySelectorAll('.cal-courier-clickable').forEach((el) => {
+        el.addEventListener('click', () => navigateToStockDayPage(el.dataset.date));
+      });
+      // 他出庫(自社使用など)は、カレンダー上では複数件が合算表示されるため、個別記録の
+      // 編集フォームではなく、内訳を確認できる日別ページに飛ばす。
+      calendarEl.querySelectorAll('.cal-otherout-clickable').forEach((el) => {
+        el.addEventListener('click', () => navigateToStockDayPage(el.dataset.date));
       });
       calendarEl.querySelectorAll('.cal-use-clickable').forEach((el) => {
         el.addEventListener('click', (e) => {
@@ -3198,7 +3212,12 @@ async function renderStockDayPage() {
                   .map((r) => {
                     const store = findStore(r.store_slug);
                     const name = store ? store.name : r.store_slug;
-                    return `<li><span>${escapeHtml(name)}</span><span>${stockCompactQty(
+                    const extra = [r.ship_to ? `送付先: ${r.ship_to}` : '', r.desired_time_slot || '']
+                      .filter(Boolean)
+                      .join(' / ');
+                    return `<li><span>${escapeHtml(name)}${
+                      extra ? `<span class="hint">(${escapeHtml(extra)})</span>` : ''
+                    }</span><span>${stockCompactQty(
                       Number(r.mixed_boxes) || 0,
                       Number(r.s_boxes) || 0,
                       Number(r.m_boxes) || 0
