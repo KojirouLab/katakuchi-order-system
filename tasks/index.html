@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>社内タスク管理</title>
+<link rel="icon" href="icons/icon-192.png" type="image/png">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="社内タスク管理">
+<meta name="theme-color" content="#2f5fa3">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  :root {
+    --primary: #2f5fa3;
+    --primary-dark: #24487f;
+    --bg: #f5f6fa;
+    --card-bg: #ffffff;
+    --border: #e1e4ea;
+    --text: #24272e;
+    --hint: #767c88;
+    --danger: #c0392b;
+    --success: #1e7a3d;
+    --warning: #9a6400;
+    --warning-bg: #fbf1dc;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Yu Gothic", sans-serif;
+    background: var(--bg);
+    color: var(--text);
+  }
+  .hidden { display: none !important; }
+  .hint { color: var(--hint); font-size: 13px; }
+  .hint.center { text-align: center; padding: 24px 0; }
+  .error-text { color: var(--danger); font-size: 13px; min-height: 18px; margin: 4px 0 0; }
+
+  /* ---- ログイン画面 ---- */
+  #screen-login {
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+  }
+  .login-card {
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 28px 24px;
+    width: 100%;
+    max-width: 340px;
+    box-shadow: 0 4px 18px rgba(0, 0, 0, 0.06);
+  }
+  .login-card h1 { font-size: 20px; margin: 0 0 4px; text-align: center; }
+  .login-card p.hint { text-align: center; margin: 0 0 20px; }
+  .login-card label { display: block; font-size: 13px; color: var(--hint); margin: 14px 0 6px; }
+
+  input, select, textarea {
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    font-size: 15px;
+    font-family: inherit;
+    background: #fff;
+    color: var(--text);
+  }
+  textarea { resize: vertical; }
+
+  .btn {
+    display: inline-block;
+    border: none;
+    border-radius: 8px;
+    padding: 10px 16px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    background: #eef0f4;
+    color: var(--text);
+  }
+  .btn.primary { background: var(--primary); color: #fff; }
+  .btn.primary:hover { background: var(--primary-dark); }
+  .btn.ghost { background: transparent; border: 1px solid var(--border); }
+  .btn.small { padding: 7px 12px; font-size: 13px; }
+  .btn.block { width: 100%; margin-top: 20px; }
+  .btn:disabled { opacity: 0.6; cursor: default; }
+
+  /* ---- アプリ画面 ---- */
+  #screen-app { max-width: 720px; margin: 0 auto; padding: 0 0 90px; }
+  .topbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px;
+    border-bottom: 1px solid var(--border);
+    background: var(--card-bg);
+  }
+  .topbar-title { font-size: 17px; font-weight: 700; color: var(--primary-dark); }
+  .topbar-user { display: flex; align-items: center; gap: 8px; font-size: 14px; }
+
+  .tabs {
+    display: flex;
+    background: var(--card-bg);
+    border-bottom: 1px solid var(--border);
+  }
+  .tab {
+    flex: 1;
+    background: none;
+    border: none;
+    padding: 12px 8px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--hint);
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+  }
+  .tab.active { color: var(--primary); border-bottom-color: var(--primary); }
+
+  .filters { padding: 12px 16px 0; display: flex; flex-direction: column; gap: 8px; }
+  .chip-row { display: flex; gap: 6px; overflow-x: auto; }
+  .chip {
+    white-space: nowrap;
+    background: #eef0f4;
+    border: none;
+    border-radius: 999px;
+    padding: 6px 12px;
+    font-size: 12px;
+    color: var(--hint);
+    cursor: pointer;
+  }
+  .chip.active { background: var(--primary); color: #fff; }
+  #employee-filter { max-width: 200px; }
+
+  .task-list { padding: 12px 16px; display: flex; flex-direction: column; gap: 10px; }
+  .task-card {
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px;
+    cursor: pointer;
+  }
+  .task-card:hover { border-color: var(--primary); }
+  .task-card-top { display: flex; gap: 6px; margin-bottom: 8px; flex-wrap: wrap; }
+  .task-card-title { font-size: 15px; font-weight: 700; margin-bottom: 4px; }
+  .task-card-sub { font-size: 13px; color: var(--hint); margin-bottom: 4px; }
+  .task-card-due { font-size: 12px; color: var(--hint); }
+  .task-card-due.overdue { color: var(--danger); font-weight: 700; }
+
+  .badge {
+    display: inline-block;
+    font-size: 11px;
+    font-weight: 700;
+    padding: 3px 8px;
+    border-radius: 999px;
+    background: #eef0f4;
+    color: var(--hint);
+  }
+  .badge.admin { background: var(--primary); color: #fff; }
+  .status-todo { background: #eef0f4; color: #555b66; }
+  .status-progress { background: #dcebfa; color: #1a5fa8; }
+  .status-done { background: #e0f3e4; color: var(--success); }
+  .status-overdue { background: #fbe4e1; color: var(--danger); }
+  .priority-low { background: #eef0f4; color: var(--hint); }
+  .priority-normal { background: #eef0f4; color: #555b66; }
+  .priority-high { background: var(--warning-bg); color: var(--warning); }
+
+  .fab {
+    position: fixed;
+    right: 16px;
+    bottom: 20px;
+    background: var(--primary);
+    color: #fff;
+    border: none;
+    border-radius: 999px;
+    padding: 14px 20px;
+    font-size: 14px;
+    font-weight: 700;
+    box-shadow: 0 4px 14px rgba(47, 95, 163, 0.4);
+    cursor: pointer;
+    z-index: 20;
+  }
+  .fab:hover { background: var(--primary-dark); }
+
+  /* ---- モーダル ---- */
+  .modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(20, 22, 26, 0.45);
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+    z-index: 30;
+  }
+  .modal {
+    background: var(--card-bg);
+    width: 100%;
+    max-width: 480px;
+    max-height: 90vh;
+    overflow-y: auto;
+    border-radius: 16px 16px 0 0;
+    padding: 20px;
+    position: relative;
+  }
+  @media (min-width: 560px) {
+    .modal-overlay { align-items: center; }
+    .modal { border-radius: 16px; }
+  }
+  .modal h2 { margin: 0 0 4px; font-size: 18px; }
+  .modal label { display: block; font-size: 13px; color: var(--hint); margin: 12px 0 6px; }
+  .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px; }
+  .modal-close {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    background: none;
+    border: none;
+    font-size: 22px;
+    line-height: 1;
+    color: var(--hint);
+    cursor: pointer;
+  }
+  .field-row { display: flex; gap: 12px; }
+  .field-row > div { flex: 1; }
+
+  /* ---- タスク詳細 ---- */
+  .detail-meta { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+  .detail-title { font-size: 18px; margin: 10px 0 6px; }
+  .detail-desc { white-space: pre-wrap; font-size: 14px; color: var(--text); }
+  .detail-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    background: var(--bg);
+    border-radius: 10px;
+    padding: 12px;
+    font-size: 13px;
+    margin: 12px 0;
+  }
+  .detail-grid .label { display: block; font-size: 11px; color: var(--hint); margin-bottom: 2px; }
+  .report-box { background: #e0f3e4; border-radius: 10px; padding: 12px; margin: 12px 0; }
+  .report-box p { white-space: pre-wrap; margin: 4px 0 0; font-size: 14px; }
+  .report-form { margin-bottom: 10px; }
+  .detail-actions { display: flex; flex-direction: column; gap: 8px; margin: 14px 0; }
+  .detail-comment { border-top: 1px solid var(--border); padding-top: 14px; margin-top: 8px; }
+  .detail-comment textarea { margin-bottom: 8px; }
+  .detail-timeline { margin-top: 16px; display: flex; flex-direction: column; gap: 10px; }
+  .timeline-item { font-size: 13px; border-left: 2px solid var(--border); padding-left: 10px; }
+  .timeline-head { display: flex; justify-content: space-between; gap: 8px; color: var(--text); }
+  .timeline-time { color: var(--hint); font-size: 11px; white-space: nowrap; }
+  .timeline-body { white-space: pre-wrap; color: var(--hint); margin-top: 2px; }
+
+  .toast {
+    position: fixed;
+    left: 50%;
+    bottom: 24px;
+    transform: translate(-50%, 20px);
+    background: #24272e;
+    color: #fff;
+    padding: 10px 18px;
+    border-radius: 999px;
+    font-size: 13px;
+    opacity: 0;
+    pointer-events: none;
+    transition: all 0.2s ease;
+    z-index: 50;
+  }
+  .toast.show { opacity: 1; transform: translate(-50%, 0); }
+  .toast.error { background: var(--danger); }
+</style>
+</head>
+<body>
+
+<div id="toast" class="toast"></div>
+
+<div id="screen-login" class="screen">
+  <div class="login-card">
+    <h1>社内タスク管理</h1>
+    <p class="hint">名前を選んでPINを入力してください</p>
+    <label>名前</label>
+    <select id="login-name"></select>
+    <label>PIN</label>
+    <input id="login-pin" type="password" inputmode="numeric" maxlength="8" placeholder="PIN">
+    <button id="login-submit" class="btn primary block">ログイン</button>
+    <p id="login-error" class="error-text"></p>
+  </div>
+</div>
+
+<div id="screen-app" class="screen hidden">
+  <header class="topbar">
+    <div class="topbar-title">社内タスク管理</div>
+    <div class="topbar-user">
+      <span id="user-name"></span>
+      <span id="user-badge" class="badge admin hidden">管理者</span>
+      <button id="logout-btn" class="btn small ghost">ログアウト</button>
+    </div>
+  </header>
+
+  <nav class="tabs">
+    <button class="tab active" data-tab="mine">自分のタスク</button>
+    <button class="tab" data-tab="requested">依頼したタスク</button>
+    <button class="tab hidden" id="tab-all" data-tab="all">みんなのタスク</button>
+  </nav>
+
+  <div class="filters">
+    <div class="chip-row">
+      <button class="chip active" data-status="all">すべて</button>
+      <button class="chip" data-status="todo">未着手</button>
+      <button class="chip" data-status="in_progress">進行中</button>
+      <button class="chip" data-status="done">完了</button>
+    </div>
+    <select id="employee-filter" class="hidden"></select>
+  </div>
+
+  <main class="task-list" id="task-list"></main>
+</div>
+
+<button id="fab-new-task" class="fab hidden">＋ 新しいタスクを依頼</button>
+
+<div id="modal-new-task" class="modal-overlay hidden">
+  <div class="modal">
+    <h2>新しいタスクを依頼</h2>
+    <label>依頼先</label>
+    <select id="new-task-assignee"></select>
+    <label>タイトル</label>
+    <input id="new-task-title" type="text" placeholder="例: 見積書の作成">
+    <label>詳細</label>
+    <textarea id="new-task-description" rows="3" placeholder="任意"></textarea>
+    <div class="field-row">
+      <div>
+        <label>期限</label>
+        <input id="new-task-due" type="date">
+      </div>
+      <div>
+        <label>優先度</label>
+        <select id="new-task-priority">
+          <option value="low">低</option>
+          <option value="normal" selected>中</option>
+          <option value="high">高</option>
+        </select>
+      </div>
+    </div>
+    <p id="new-task-error" class="error-text"></p>
+    <div class="modal-actions">
+      <button id="new-task-cancel" class="btn ghost">キャンセル</button>
+      <button id="new-task-submit" class="btn primary">依頼する</button>
+    </div>
+  </div>
+</div>
+
+<div id="modal-task-detail" class="modal-overlay hidden">
+  <div class="modal wide">
+    <button id="detail-close" class="modal-close">×</button>
+    <div id="detail-body"></div>
+  </div>
+</div>
+
+<script src="storage.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
