@@ -40,11 +40,13 @@ create or replace view task_employees_public as
   select id, name, is_admin from task_employees;
 
 -- 名前+PINでログインする。PINそのものはクライアントに一切返さない・テーブルからも直接は読めない。
+-- Supabaseではpgcrypto拡張機能が public ではなく extensions スキーマに入ることが多いため、
+-- 両方を search_path に含めている(でないと crypt() が見つからずログインに失敗する)。
 create or replace function task_login(p_name text, p_pin text)
 returns table (employee_id uuid, name text, is_admin boolean)
 language plpgsql
 security definer
-set search_path = public
+set search_path = public, extensions
 as $$
 begin
   return query
