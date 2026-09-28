@@ -67,6 +67,57 @@ create policy "oyster anon delete" on oyster_orders for delete using (true);
 `drop table whelk_orders;` を実行して削除できます(元に戻せない操作なので、
 削除前に必要なデータが残っていないか確認してください)。
 
+## 6. 重要そうなメールをDiscordに通知する機能(任意)
+
+会社共用の受信箱(shopify@catakuchi6.co.jp)を10分おきにチェックし、Claudeが「重要そうだ」
+と判断したメールが来たら、Discordの個人DMに知らせる機能です。使わない場合は設定不要です。
+
+### 6-1. Edge Functionをデプロイする
+
+Supabase CLIで、このリポジトリの `supabase/functions/mail-alert-check` をデプロイしてください
+(JWT検証なしで呼べるようにする `--no-verify-jwt` が必要です)。
+
+```sh
+supabase functions deploy mail-alert-check --no-verify-jwt --project-ref krdwyfemepbbyrteyoeb
+```
+
+### 6-2. Edge FunctionのSecretsを設定する
+
+Supabaseダッシュボードの **Project Settings > Edge Functions > Secrets** で、以下を設定してください。
+
+- `MAIL_IMAP_PASSWORD` … shopify@catakuchi6.co.jp のメールパスワード(IMAP用)
+- `ANTHROPIC_API_KEY` … Claude APIキー([console.anthropic.com](https://console.anthropic.com/)で発行)
+- `MAIL_ALERT_SECRET` … 下の6-3で確認する合言葉と同じ値
+- `DISCORD_BOT_TOKEN` … kojiroulab-task-manager の通知機能(task-notify)で既に設定していれば
+  追加不要です(同じSupabaseプロジェクトのSecretsは全Edge Functionで共有されます)。
+  未設定の場合は、そちらのセットアップ手順に従ってDiscord Botを用意し、トークンを設定してください。
+
+以下は必要な場合のみ上書きしてください(デフォルト値が入っています)。
+
+- `MAIL_IMAP_HOST`(デフォルト: `sv958.xbiz.ne.jp`)
+- `MAIL_IMAP_USER`(デフォルト: `shopify@catakuchi6.co.jp`)
+- `MAIL_ALERT_DISCORD_USER_ID`(デフォルト: 通知先のDiscordユーザーID)
+
+### 6-3. SQLを実行する
+
+**SQL Editor** で `supabase/mail_alert.sql` の中身を実行してください。実行後、次のSQLで
+自動生成された合言葉を確認し、6-2の `MAIL_ALERT_SECRET` に同じ値を設定してください。
+
+```sql
+select value from mail_alert_settings where key = 'secret';
+```
+
+設定が終われば、10分おきに自動でメールをチェックします。すぐに動作確認したい場合は、
+SQL Editorで次を実行すると即座に1回チェックが走ります。
+
+```sql
+select trigger_mail_alert_check();
+```
+
+初回実行時は、それまでの既存メールには通知せず「最後に確認したメール」の基準だけを記録します
+(いきなり大量の過去メールが通知されるのを防ぐためです)。2回目以降のチェックから、新着メールが
+対象になります。
+
 ## 困ったときは
 
 - 保存や読み込みに失敗する: 画面のエラーメッセージを確認し、通信状況を確認して再度お試しください。
