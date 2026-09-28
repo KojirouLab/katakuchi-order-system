@@ -1512,7 +1512,7 @@ function stockSubNavHtml(current) {
 
 // カレンダーの「配達/宅配/⚠」表示をタップした時に、出庫を記録するページへ内容を渡して移動する。
 // purposeによって行き先(自社使用ページ/配達の仕入れ先ページ)が変わる。
-function navigateToStockOutForm({ id, outDate, mixedBoxes, sBoxes, mBoxes, supplier, purpose, note, registeredBy, mode }) {
+function navigateToStockOutForm({ id, outDate, mixedBoxes, sBoxes, mBoxes, supplier, purpose, note, registeredBy, mode, courierOnly }) {
   const params = new URLSearchParams();
   params.set('stock', '1');
   params.set('view', purpose === 'store' ? 'storeout' : 'out');
@@ -1526,6 +1526,10 @@ function navigateToStockOutForm({ id, outDate, mixedBoxes, sBoxes, mBoxes, suppl
   if (note) params.set('note', note);
   if (registeredBy) params.set('registeredBy', registeredBy);
   params.set('mode', mode || 'prefill');
+  // 宅配発送分の出庫元修正だけに絞って開いた場合、フォーム側の参考表示もトラック配送の
+  // 店舗を混ぜず宅配便だけに限定する(混在すると「この画面は何を直しているのか」が
+  // 分かりにくくなるため)。
+  if (courierOnly) params.set('courierOnly', '1');
   if (new URLSearchParams(location.search).get('ref') === 'admin') params.set('ref', 'admin');
   location.href = `?${params.toString()}`;
 }
@@ -2536,7 +2540,7 @@ function renderStockInPage() {
 // 出庫の記録は「自社使用(在庫残高からも差し引く)」と「配達の仕入れ先の記録(在庫残高には
 // 影響せず、仕入れ先ごとの残りにのみ反映)」で用途が全く異なるため、別々の専用ページにしている
 // (以前は1ページで用途を選択させていたが、間違えやすいため分割した)。用途はページ固定で選ばせない。
-function renderStockOutFormPageImpl({ purpose, navKey, heading, hint }) {
+function renderStockOutFormPageImpl({ purpose, navKey, heading, hint, courierOnly }) {
   app.innerHTML = `
     <div class="page">
       <h1>牡蠣在庫管理</h1>
@@ -2806,21 +2810,27 @@ function renderStockOutFormPageImpl({ purpose, navKey, heading, hint }) {
       try {
         // 宅配受付店舗(着希望日で受け付ける店舗)は着希望日の前日に発送するため、翌日分も
         // 取得したうえで、実際にこの日発送した分(oysterShipDateがdateのもの)に絞り込む。
+        // courierOnly(日別ページの「宅配発送」から来た場合)は、トラック配送の店舗を
+        // 混ぜると紛らわしいので宅配便の店舗だけに絞る。
         const rows = (await fetchOysterOrdersRange(date, addDaysStr(date, 1)))
           .filter((r) => !r.no_order)
-          .filter((r) => oysterShipDate(r) === date);
+          .filter((r) => oysterShipDate(r) === date)
+          .filter((r) => !courierOnly || COURIER_STORE_SLUGS.has(r.store_slug));
         // 日付を続けて切り替えた場合、後から発火した取得が先に返って来ることがあるため、
         // 自分より後のリクエストが発生していたら(=もう画面上の日付が変わっていたら)結果を反映しない。
         if (myToken !== ordersRefToken) return;
         if (!rows.length) {
-          ordersRefEl.innerHTML = '<p class="hint">この日、牡蠣の発注をした店舗はありません。</p>';
+          ordersRefEl.innerHTML = `<p class="hint">${
+            courierOnly ? 'この日、宅配発送した店舗はありません。' : 'この日、牡蠣の発注をした店舗はありません。'
+          }</p>`;
           return;
         }
         const items = rows
           .map((r) => {
             const store = findStore(r.store_slug);
             const name = store ? store.name : r.store_slug;
-            const courierTag = store && store.shipping === 'courier' ? '<span class="courier-tag">宅配発送</span>' : '';
+            const courierTag =
+              !courierOnly && store && store.shipping === 'courier' ? '<span class="courier-tag">宅配発送</span>' : '';
             return `<li><span class="recent-store">${escapeHtml(name)}${courierTag}</span><span class="oyster-qty">${stockCompactQty(
               Number(r.mixed_boxes),
               Number(r.s_boxes),
@@ -2829,7 +2839,9 @@ function renderStockOutFormPageImpl({ purpose, navKey, heading, hint }) {
           })
           .join('');
         ordersRefEl.innerHTML = `
-          <p class="hint">この日、牡蠣を発注した店舗(参考・ここでは編集できません):</p>
+          <p class="hint">${
+            courierOnly ? 'この日、宅配発送した店舗(参考・ここでは編集できません):' : 'この日、牡蠣を発注した店舗(参考・ここでは編集できません):'
+          }</p>
           <ul class="recent-list">${items}</ul>`;
       } catch (e) {
         if (myToken !== ordersRefToken) return;
@@ -2878,11 +2890,18 @@ function renderStockOutPage() {
 // 全体の在庫残高には影響せず(店舗への出荷は発注データから別途自動計算されているため)、
 // 仕入れ先ごとの残りにのみ反映される。
 function renderStoreOutPage() {
+  // 日別ページの「宅配発送」から来た場合(courierOnly=1)は、トラック配送の店舗を
+  // 参考表示に混ぜず、宅配便だけに絞った見出し・説明にする(混在すると「この画面は
+  // 何を直しているのか」が分かりにくくなるため)。
+  const courierOnly = new URLSearchParams(location.search).get('courierOnly') === '1';
   renderStockOutFormPageImpl({
     purpose: 'store',
     navKey: 'storeout',
-    heading: '出庫元を修正する',
-    hint: `店舗への出荷分(通常のトラック配送、美人罠・ちょい飲みたかはしなどの宅配発送どちらも含む)は、記録がなければ標準ですべて拓人の牡蠣として自動計算されます。牡蠣の仕入れはほぼ拓人のため、通常はここで何かを記録する必要はありません。実際に他の仕入れ先(勝又商店・カタクチ)から出荷した場合だけ、ここでその分を記録して出庫元を修正してください。仕入れ先ごとの残りにのみ反映され、全体の在庫残高には影響しません(店舗への出荷は発注データから別途自動計算されているため)。<a href="?stock=1&view=balance${stockRefSuffix()}">在庫確認ページ</a>のカレンダーの出庫表示から、この日の内容を読み込んで編集することもできます。`,
+    courierOnly,
+    heading: courierOnly ? '宅配発送分の出庫元を修正する' : '出庫元を修正する',
+    hint: courierOnly
+      ? `この日の宅配発送分(美人罠・ちょい飲みたかはしなど)は、記録がなければ標準ですべて拓人の牡蠣として自動計算されます。実際に他の仕入れ先(勝又商店・カタクチ)から出荷した場合だけ、ここでその分を記録してください。「+ 別の仕入れ先を追加」で複数の仕入れ先に分けて記録できます(例: 4箱のうち拓人から2箱、勝又商店から2箱、など)。仕入れ先ごとの残りにのみ反映され、全体の在庫残高には影響しません。`
+      : `店舗への出荷分(通常のトラック配送、美人罠・ちょい飲みたかはしなどの宅配発送どちらも含む)は、記録がなければ標準ですべて拓人の牡蠣として自動計算されます。牡蠣の仕入れはほぼ拓人のため、通常はここで何かを記録する必要はありません。実際に他の仕入れ先(勝又商店・カタクチ)から出荷した場合だけ、ここでその分を記録して出庫元を修正してください。仕入れ先ごとの残りにのみ反映され、全体の在庫残高には影響しません(店舗への出荷は発注データから別途自動計算されているため)。<a href="?stock=1&view=balance${stockRefSuffix()}">在庫確認ページ</a>のカレンダーの出庫表示から、この日の内容を読み込んで編集することもできます。`,
   });
 }
 
@@ -3011,6 +3030,7 @@ async function renderStockDayPage() {
             purpose: 'store',
             note: '',
             mode: 'prefill',
+            courierOnly: true,
           });
         });
       }
