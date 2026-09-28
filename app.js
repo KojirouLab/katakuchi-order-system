@@ -2804,7 +2804,11 @@ function renderStockOutFormPageImpl({ purpose, navKey, heading, hint }) {
       }
       ordersRefEl.innerHTML = '<p class="hint">この日の店舗発注を読み込み中…</p>';
       try {
-        const rows = (await fetchOysterOrdersRange(date, date)).filter((r) => !r.no_order);
+        // 宅配受付店舗(着希望日で受け付ける店舗)は着希望日の前日に発送するため、翌日分も
+        // 取得したうえで、実際にこの日発送した分(oysterShipDateがdateのもの)に絞り込む。
+        const rows = (await fetchOysterOrdersRange(date, addDaysStr(date, 1)))
+          .filter((r) => !r.no_order)
+          .filter((r) => oysterShipDate(r) === date);
         // 日付を続けて切り替えた場合、後から発火した取得が先に返って来ることがあるため、
         // 自分より後のリクエストが発生していたら(=もう画面上の日付が変わっていたら)結果を反映しない。
         if (myToken !== ordersRefToken) return;
@@ -2961,6 +2965,7 @@ async function renderStockDayPage() {
                   courierTotal.s,
                   courierTotal.m
                 )}</span>
+                <button type="button" id="dayFixCourierBtn" class="btn-plain">出庫元を修正する(拓人以外の場合) →</button>
                 <ul class="recent-sublist">${courierRows
                   .map((r) => {
                     const store = findStore(r.store_slug);
@@ -2990,6 +2995,25 @@ async function renderStockDayPage() {
               )})。発注が後から編集・キャンセルされた可能性があります。下の「出庫(配達先・出荷元)」欄で記録を確認・修正してください。</p>`
             : ''
         }`;
+
+      // 宅配発送分だけをまとめて「出庫元を修正する」フォームに渡す(店舗配送分は
+      // カレンダー表示の「配達」タップから同様にプレフィルできるので、ここは宅配専用)。
+      const fixCourierBtn = document.getElementById('dayFixCourierBtn');
+      if (fixCourierBtn) {
+        fixCourierBtn.addEventListener('click', () => {
+          navigateToStockOutForm({
+            id: null,
+            outDate: dateStr,
+            mixedBoxes: courierTotal.mixed,
+            sBoxes: courierTotal.s,
+            mBoxes: courierTotal.m,
+            supplier: STOCK_OUT_DEFAULT_SUPPLIER,
+            purpose: 'store',
+            note: '',
+            mode: 'prefill',
+          });
+        });
+      }
 
       // 出庫(手動記録): 配達先(用途)と出荷元(仕入れ先)を1件ずつ確認・修正できる一覧。
       const outRowsHtml = outRows
