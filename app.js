@@ -374,6 +374,7 @@ const PRODUCT_DEFS = {
         <div class="wholesale-grid">
           <div class="wholesale-entry">
             <h3 class="wholesale-heading"><span class="step-badge">2</span>商品を選んで、数量を入力</h3>
+            <p class="hint wholesale-step-hint">商品を選んで数量を入力し、下の「注文に追加」を押すと「注文内容」に入ります。</p>
             <div class="field">
               <label for="${id}-product">商品</label>
               <select id="${id}-product"></select>
@@ -391,11 +392,12 @@ const PRODUCT_DEFS = {
           </div>
           <div class="wholesale-cart">
             <h3 class="wholesale-heading"><span class="step-badge">3</span>注文内容</h3>
+            <p class="hint wholesale-step-hint">注文内容を確認して、下の「この内容で発注する」を押すと発注されます。</p>
             <table class="wholesale-cart-table">
               <thead><tr><th>商品</th><th>数量</th><th></th></tr></thead>
               <tbody id="${id}-cart"></tbody>
             </table>
-            <p class="hint" id="${id}-cart-empty">まだ商品がありません。左で商品を選んで「注文に追加」を押してください。</p>
+            <p class="hint" id="${id}-cart-empty">まだ商品がありません。②で商品を選んで「注文に追加」を押してください。</p>
           </div>
         </div>
         <div class="field">
@@ -852,7 +854,7 @@ function mountProductSection(container, store, category, options = {}) {
       <div class="field${def.prominentDate ? ' date-callout' : ''}">
         <label for="${id}-date">${
           def.prominentDate
-            ? '<span class="step-badge">1</span>まず、発注日を選んでください'
+            ? '<span class="step-badge">1</span>配送希望日を選んでください'
             : isDesiredArrival
             ? '着希望日'
             : '発注日'
