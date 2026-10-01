@@ -365,76 +365,62 @@ const PRODUCT_DEFS = {
     skipNonBusinessDays: true,
     deadlineLabel: '2営業日前(土日祝を除く) 12:00',
     prominentDate: true,
-    // 左: 商品をプルダウンで選んで数量を入れ「注文に追加」を押す入力欄。右: 追加した商品の表(注文内容)。
-    // プルダウンは「いつもの商品」を先頭に、その他の商品を後ろに並べる。いつもの商品は下の
-    // 折りたたみ欄のチェックで変えられ、wholesale_usual_itemsに保存して次回以降も使う。
-    fieldsHtml: (id) => {
-      const groups = [...new Set(WHOLESALE_PRODUCTS.map((p) => p.group))];
-      return `
-        <div class="wholesale-grid">
-          <div class="wholesale-entry">
-            <h3 class="wholesale-heading"><span class="step-badge">2</span>商品を選んで、数量を入力</h3>
-            <p class="hint wholesale-step-hint">商品を選んで数量を入力し、下の「注文に追加」を押すと「注文内容」に入ります。</p>
-            <div class="field">
-              <label for="${id}-product">商品を選ぶ</label>
-              <select id="${id}-product"></select>
-            </div>
-            <div class="field">
-              <label for="${id}-qty">数量を入力</label>
-              <div class="wholesale-qty-row">
-                <input type="number" id="${id}-qty" min="0" inputmode="decimal" placeholder="数量">
-                <span class="wholesale-unit" id="${id}-unit"></span>
-              </div>
-              <p class="wholesale-kg" id="${id}-kg"></p>
-            </div>
-            <button type="button" id="${id}-addItem" class="wholesale-add-btn">注文に追加 →</button>
-            <p id="${id}-entry-msg" class="msg"></p>
+    // 左: 配送希望日と、商品をプルダウンで選んで数量を入れ「注文に追加」を押す入力欄。
+    // 右: 追加した商品の表(注文内容)と発注ボタン。左右の組み立てはbindFieldsで行う。
+    // プルダウンは、その取引先が前回までに注文した商品(新しい順)を先頭に出す。
+    fieldsHtml: (id) => `
+        <div class="wholesale-entry">
+          <h3 class="wholesale-heading"><span class="step-badge">2</span>商品を選んで、数量を入力</h3>
+          <p class="hint wholesale-step-hint">商品を選んで数量を入力し、下の「注文に追加」を押すと「注文内容」に入ります。</p>
+          <div class="field">
+            <label for="${id}-product">商品を選ぶ</label>
+            <select id="${id}-product"></select>
           </div>
-          <div class="wholesale-cart">
-            <h3 class="wholesale-heading"><span class="step-badge">3</span>注文内容</h3>
-            <p class="hint wholesale-step-hint">注文内容を確認して、下の「この内容で発注する」を押すと発注されます。</p>
-            <table class="wholesale-cart-table">
-              <thead><tr><th>商品</th><th>数量</th><th></th></tr></thead>
-              <tbody id="${id}-cart"></tbody>
-            </table>
-            <p class="hint" id="${id}-cart-empty">まだ商品がありません。②で商品を選んで「注文に追加」を押してください。</p>
+          <div class="field">
+            <label for="${id}-qty">数量を入力</label>
+            <div class="wholesale-qty-row">
+              <input type="number" id="${id}-qty" min="0" inputmode="decimal" placeholder="数量">
+              <span class="wholesale-unit" id="${id}-unit"></span>
+            </div>
+            <p class="wholesale-kg" id="${id}-kg"></p>
           </div>
+          <button type="button" id="${id}-addItem" class="wholesale-add-btn">注文に追加 →</button>
+          <p id="${id}-entry-msg" class="msg"></p>
         </div>
-        <div class="field">
+        <div class="field wholesale-note">
           <label for="${id}-note">備考(任意)</label>
           <textarea id="${id}-note" rows="2"></textarea>
         </div>
-        <details class="wholesale-usual-settings">
-          <summary>いつもの商品を設定する</summary>
-          <p class="hint">チェックした商品が、商品のプルダウンの先頭に「いつもの商品」として出ます。チェックを外すと「その他の商品」に戻ります(次回以降も同じ)。</p>
-          <div class="wholesale-usual-groups">
-            ${groups
-              .map(
-                (g) =>
-                  `<div><p class="wholesale-group">${escapeHtml(g)}</p>${WHOLESALE_PRODUCTS.filter((p) => p.group === g)
-                    .map(
-                      (p) => `
-                      <label class="checkbox-label">
-                        <input type="checkbox" class="js-usual-toggle" id="${id}-usual-${p.code}" data-code="${p.code}">
-                        ${escapeHtml(p.name)}${
-                          p.suspended || p.code === 'frozen_mixed'
-                            ? `<span class="wholesale-suspended js-suspended-badge" data-code="${p.code}">取り扱い休止中</span>`
-                            : ''
-                        }
-                      </label>`
-                    )
-                    .join('')}</div>`
-              )
-              .join('')}
-          </div>
-          <p id="${id}-usual-msg" class="msg"></p>
-        </details>`;
-    },
+        <div class="wholesale-cart" id="${id}-cartBox">
+          <h3 class="wholesale-heading"><span class="step-badge">3</span>注文内容</h3>
+          <p class="hint wholesale-step-hint">注文内容を確認して、下の「この内容で発注する」を押すと発注されます。</p>
+          <table class="wholesale-cart-table">
+            <thead><tr><th>商品</th><th>数量</th><th></th></tr></thead>
+            <tbody id="${id}-cart"></tbody>
+          </table>
+          <p class="hint" id="${id}-cart-empty">まだ商品がありません。②で商品を選んで「注文に追加」を押してください。</p>
+        </div>`,
     bindFields: (id, store) => {
+      // 左列(配送希望日・入力欄・備考)と右列(注文内容・発注ボタン)に組み直す。
+      // 発注ボタン類は右列の注文内容の下に移す(締切後のロックは要素を直接参照しているので移動しても効く)。
+      const fieldsEl = document.getElementById(`${id}-fields`);
+      const dateField = document.getElementById(`${id}-date`).closest('.field');
+      const layout = document.createElement('div');
+      layout.className = 'wholesale-layout';
+      layout.innerHTML = '<div class="wholesale-left"></div><div class="wholesale-right"></div>';
+      dateField.before(layout);
+      const [left, right] = layout.children;
+      left.append(dateField, document.getElementById(`${id}-deadline-msg`), fieldsEl);
+      right.append(
+        document.getElementById(`${id}-cartBox`),
+        document.getElementById(`${id}-submitBtn`),
+        document.getElementById(`${id}-cancelBtn`),
+        document.getElementById(`${id}-msg`)
+      );
+
       const productEl = document.getElementById(`${id}-product`);
       const qtyEl = document.getElementById(`${id}-qty`);
-      const usualMsgEl = document.getElementById(`${id}-usual-msg`);
-      wsSetUsual(id, (store && store.usualItems) || []);
+      wsSetUsual(id, (store && store.usualItems) || [], 'いつもの商品');
       wsRefreshProductOptions(id);
       productEl.addEventListener('change', () => {
         wsRefreshEntryInfo(id);
@@ -454,32 +440,18 @@ const PRODUCT_DEFS = {
         btn.closest('tr').remove();
         wsRefreshCartEmpty(id);
       });
-      document.querySelectorAll(`#${id}-fields .js-usual-toggle`).forEach((cb) => {
-        cb.addEventListener('change', async () => {
-          const checked = new Set(
-            [...document.querySelectorAll(`#${id}-fields .js-usual-toggle:checked`)].map((el) => el.dataset.code)
+      // 前回までの注文(新しい順)に出てきた商品を、プルダウンの先頭に出す。
+      // 注文履歴が無い取引先は、STORESのusualItemsを「いつもの商品」として先頭に出す。
+      fetchWholesaleOrdersByStore(store.slug, 10)
+        .then((rows) => {
+          const codes = [];
+          rows.forEach((r) =>
+            (r.items || []).forEach((it) => {
+              if (!codes.includes(it.code)) codes.push(it.code);
+            })
           );
-          const codes = WHOLESALE_PRODUCTS.map((p) => p.code).filter((c) => checked.has(c));
-          wsSetUsual(id, codes);
-          wsRefreshProductOptions(id);
-          usualMsgEl.textContent = '保存中…';
-          usualMsgEl.className = 'msg';
-          try {
-            await saveWholesaleUsualItems(store.slug, codes);
-            usualMsgEl.textContent = '✓ いつもの商品を更新しました。';
-            usualMsgEl.className = 'msg msg-success';
-          } catch (e) {
-            console.error(e);
-            usualMsgEl.textContent = 'いつもの商品の保存に失敗しました。通信状況を確認してください。';
-            usualMsgEl.className = 'msg msg-error';
-          }
-        });
-      });
-      // 保存済みの「いつもの商品」があれば、初期値(STORESのusualItems)から差し替える。
-      fetchWholesaleUsualItems(store.slug)
-        .then((saved) => {
-          if (!saved) return;
-          wsSetUsual(id, saved);
+          if (!codes.length) return;
+          wsSetUsual(id, codes, '前回注文した商品');
           wsRefreshProductOptions(id);
         })
         .catch((e) => console.error(e));
@@ -531,13 +503,6 @@ const PRODUCT_DEFS = {
     applyExtraFieldState: (id) => {
       // applyLockStateが入力欄を無効化した後に呼ばれるので、備考欄の状態でロック中かどうかを判断する。
       const locked = document.getElementById(`${id}-note`).disabled;
-      document.querySelectorAll(`#${id}-fields .js-suspended-badge`).forEach((el) => {
-        el.style.display = wsIsSuspended(id, el.dataset.code) ? '' : 'none';
-      });
-      // 「いつもの商品の設定」は発注の締切とは関係なく、いつでも変えられるようにする。
-      document.querySelectorAll(`#${id}-fields .js-usual-toggle`).forEach((cb) => {
-        cb.disabled = wsIsSuspended(id, cb.dataset.code);
-      });
       document.getElementById(`${id}-addItem`).disabled = locked;
       document.querySelectorAll(`#${id}-cart .js-cart-remove`).forEach((btn) => {
         btn.disabled = locked;
@@ -561,19 +526,17 @@ const PRODUCT_DEFS = {
 };
 
 // ---- 卸先の発注画面(商品プルダウン+数量の入力欄と、右側の注文内容の表)の操作 ----
-// 「いつもの商品」のcode一覧は、注文内容の表(#${id}-cart)のdata-usualに持たせる。
+// プルダウンの先頭に出す商品のcode一覧と見出しは、注文内容の表(#${id}-cart)のdata属性に持たせる。
 
 function wsGetUsual(id) {
   const raw = document.getElementById(`${id}-cart`).dataset.usual || '';
   return raw ? raw.split(',') : [];
 }
 
-function wsSetUsual(id, codes) {
-  const valid = codes.filter((c) => WHOLESALE_PRODUCTS.some((p) => p.code === c));
-  document.getElementById(`${id}-cart`).dataset.usual = valid.join(',');
-  document.querySelectorAll(`#${id}-fields .js-usual-toggle`).forEach((cb) => {
-    cb.checked = valid.includes(cb.dataset.code);
-  });
+function wsSetUsual(id, codes, label) {
+  const cart = document.getElementById(`${id}-cart`);
+  cart.dataset.usual = codes.filter((c) => WHOLESALE_PRODUCTS.some((p) => p.code === c)).join(',');
+  cart.dataset.usualLabel = label;
 }
 
 function wsIsSuspended(id, code) {
@@ -583,7 +546,7 @@ function wsIsSuspended(id, code) {
   return code === 'frozen_mixed' && !!dateVal && dateVal >= MIXED_SUSPENDED_FROM;
 }
 
-// 商品プルダウン: 「いつもの商品」を先頭に、その他の商品を後ろに(休止中の商品は出さない)。
+// 商品プルダウン: 前回注文した商品(またはいつもの商品)を先頭に、その他の商品を後ろに(休止中の商品は出さない)。
 function wsRefreshProductOptions(id) {
   const sel = document.getElementById(`${id}-product`);
   const current = sel.value;
@@ -594,7 +557,11 @@ function wsRefreshProductOptions(id) {
   const others = available.filter((p) => !usual.includes(p.code));
   const opt = (p) => `<option value="${p.code}">${escapeHtml(p.name)}</option>`;
   sel.innerHTML = `<option value="">商品を選んでください</option>${
-    usualProducts.length ? `<optgroup label="いつもの商品">${usualProducts.map(opt).join('')}</optgroup>` : ''
+    usualProducts.length
+      ? `<optgroup label="${escapeHtml(document.getElementById(`${id}-cart`).dataset.usualLabel)}">${usualProducts
+          .map(opt)
+          .join('')}</optgroup>`
+      : ''
   }${others.length ? `<optgroup label="その他の商品">${others.map(opt).join('')}</optgroup>` : ''}`;
   sel.value = available.some((p) => p.code === current) ? current : '';
   sel.disabled = disabled;
@@ -801,7 +768,7 @@ async function renderOrderPage(slug) {
 
   app.innerHTML = `
     <div class="page${store.categories.includes('wholesale') ? ' wide' : ''}">
-      <h1>${escapeHtml(store.name)}</h1>
+      <h1>${escapeHtml(store.name)}${store.categories.includes('wholesale') ? ' 様' : ''}</h1>
       <p class="hint">発注</p>
     </div>`;
 

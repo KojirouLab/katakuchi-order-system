@@ -278,22 +278,6 @@ async function fetchWholesaleOrdersRange(from, to) {
   return data || [];
 }
 
-// 卸先ごとの「いつもの商品」(codeの配列)。未登録ならnullを返す(呼び出し側で初期値を使う)。
-async function fetchWholesaleUsualItems(storeSlug) {
-  assertClient();
-  const { data, error } = await sb.from('wholesale_usual_items').select('items').eq('store_slug', storeSlug).maybeSingle();
-  if (error) throw error;
-  return data ? data.items : null;
-}
-
-async function saveWholesaleUsualItems(storeSlug, items) {
-  assertClient();
-  const { error } = await sb
-    .from('wholesale_usual_items')
-    .upsert({ store_slug: storeSlug, items, updated_at: new Date().toISOString() }, { onConflict: 'store_slug' });
-  if (error) throw error;
-}
-
 // ---- 牡蠣在庫(入庫) ----
 
 async function fetchStockInAll() {
