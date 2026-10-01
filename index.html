@@ -691,8 +691,6 @@
     font-weight: 700;
   }
   .date-callout {
-    width: fit-content;
-    max-width: 100%;
     padding: 14px 18px;
     border: 2px solid var(--primary);
     border-radius: 12px;
@@ -718,9 +716,21 @@
   .date-callout .hint {
     margin: 8px 0 0;
   }
+  /* 卸先の発注カード: カードの幅で1列/2列を切り替え、配送希望日の枠を左列(注文に追加ボタン)と同じ幅にする */
+  .card-wholesale {
+    container-type: inline-size;
+  }
+  @container (min-width: 640px) {
+    .card-wholesale .wholesale-grid {
+      grid-template-columns: 1fr 1fr;
+    }
+    .card-wholesale .date-callout {
+      width: calc((100% - 20px) / 2);
+    }
+  }
   .wholesale-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    grid-template-columns: 1fr;
     gap: 20px;
     margin-bottom: 16px;
     align-items: start;
@@ -985,7 +995,7 @@
 </head>
 <body>
 <div id="app"></div>
-<script src="storage.js?v=202610012200"></script>
-<script src="app.js?v=202610012200"></script>
+<script src="storage.js?v=202610012230"></script>
+<script src="app.js?v=202610012230"></script>
 </body>
 </html>

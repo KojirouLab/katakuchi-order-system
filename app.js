@@ -848,7 +848,7 @@ function mountProductSection(container, store, category, options = {}) {
   container.insertAdjacentHTML(
     'beforeend',
     `
-    <div class="card">
+    <div class="card card-${category}">
       <h2>${def.label}の発注</h2>
       <p class="hint">締切: ${def.deadlineLabel}</p>
       <div class="field${def.prominentDate ? ' date-callout' : ''}">
