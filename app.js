@@ -365,29 +365,51 @@ const PRODUCT_DEFS = {
     skipNonBusinessDays: true,
     deadlineLabel: '2営業日前(土日祝を除く) 12:00',
     prominentDate: true,
-    // 左: いつもの商品をプルダウンで選んで数量を入力する行。右: 全商品のチェックボックスで、
-    // チェックしたものが「いつもの商品」(左のプルダウンの選択肢)になる。チェック状態は
-    // wholesale_usual_itemsに保存し、次回以降もその取引先の「いつもの商品」として使う。
+    // 左: 商品をプルダウンで選んで数量を入れ「注文に追加」を押す入力欄。右: 追加した商品の表(注文内容)。
+    // プルダウンは「いつもの商品」を先頭に、その他の商品を後ろに並べる。いつもの商品は下の
+    // 折りたたみ欄のチェックで変えられ、wholesale_usual_itemsに保存して次回以降も使う。
     fieldsHtml: (id) => {
       const groups = [...new Set(WHOLESALE_PRODUCTS.map((p) => p.group))];
       return `
         <div class="wholesale-grid">
-          <div class="wholesale-col">
-            <h3 class="wholesale-heading"><span class="step-badge">2</span>いつもの商品から選んで、数量を入力</h3>
-            <div id="${id}-lines" class="wholesale-lines"></div>
-            <button type="button" id="${id}-addLine" class="btn-plain">＋ 商品の行を追加</button>
-            <div class="field" style="margin-top:14px;">
-              <label for="${id}-note">備考(任意)</label>
-              <textarea id="${id}-note" rows="2"></textarea>
+          <div class="wholesale-entry">
+            <h3 class="wholesale-heading"><span class="step-badge">2</span>商品を選んで、数量を入力</h3>
+            <div class="field">
+              <label for="${id}-product">商品</label>
+              <select id="${id}-product"></select>
             </div>
+            <div class="field">
+              <label for="${id}-qty">数量</label>
+              <div class="wholesale-qty-row">
+                <input type="number" id="${id}-qty" min="0" inputmode="decimal" placeholder="数量">
+                <span class="wholesale-unit" id="${id}-unit"></span>
+              </div>
+              <p class="wholesale-kg" id="${id}-kg"></p>
+            </div>
+            <button type="button" id="${id}-addItem" class="wholesale-add-btn">注文に追加 →</button>
+            <p id="${id}-entry-msg" class="msg"></p>
           </div>
-          <div class="wholesale-col wholesale-col-side">
-            <h3 class="wholesale-heading">いつもの商品の設定</h3>
-            <p class="hint">チェックした商品が、②のプルダウンに「いつもの商品」として出ます。チェックを外すと出なくなります(次回以降も同じ)。</p>
+          <div class="wholesale-cart">
+            <h3 class="wholesale-heading"><span class="step-badge">3</span>注文内容</h3>
+            <table class="wholesale-cart-table">
+              <thead><tr><th>商品</th><th>数量</th><th></th></tr></thead>
+              <tbody id="${id}-cart"></tbody>
+            </table>
+            <p class="hint" id="${id}-cart-empty">まだ商品がありません。左で商品を選んで「注文に追加」を押してください。</p>
+          </div>
+        </div>
+        <div class="field">
+          <label for="${id}-note">備考(任意)</label>
+          <textarea id="${id}-note" rows="2"></textarea>
+        </div>
+        <details class="wholesale-usual-settings">
+          <summary>いつもの商品を設定する</summary>
+          <p class="hint">チェックした商品が、商品のプルダウンの先頭に「いつもの商品」として出ます。チェックを外すと「その他の商品」に戻ります(次回以降も同じ)。</p>
+          <div class="wholesale-usual-groups">
             ${groups
               .map(
                 (g) =>
-                  `<p class="wholesale-group">${escapeHtml(g)}</p>${WHOLESALE_PRODUCTS.filter((p) => p.group === g)
+                  `<div><p class="wholesale-group">${escapeHtml(g)}</p>${WHOLESALE_PRODUCTS.filter((p) => p.group === g)
                     .map(
                       (p) => `
                       <label class="checkbox-label">
@@ -399,27 +421,37 @@ const PRODUCT_DEFS = {
                         }
                       </label>`
                     )
-                    .join('')}`
+                    .join('')}</div>`
               )
               .join('')}
-            <p id="${id}-usual-msg" class="msg"></p>
           </div>
-        </div>`;
+          <p id="${id}-usual-msg" class="msg"></p>
+        </details>`;
     },
     bindFields: (id, store) => {
-      const linesEl = document.getElementById(`${id}-lines`);
-      const msgEl = document.getElementById(`${id}-usual-msg`);
+      const productEl = document.getElementById(`${id}-product`);
+      const qtyEl = document.getElementById(`${id}-qty`);
+      const usualMsgEl = document.getElementById(`${id}-usual-msg`);
       wsSetUsual(id, (store && store.usualItems) || []);
-      wsResetLines(id);
-      linesEl.addEventListener('change', () => wsRefreshLineInfo(id));
-      linesEl.addEventListener('input', () => wsRefreshLineInfo(id));
-      linesEl.addEventListener('click', (e) => {
-        const btn = e.target.closest('.js-line-remove');
-        if (!btn) return;
-        btn.closest('.wholesale-line').remove();
-        if (!linesEl.children.length) wsAddLine(id);
+      wsRefreshProductOptions(id);
+      productEl.addEventListener('change', () => {
+        wsRefreshEntryInfo(id);
+        if (productEl.value) qtyEl.focus();
       });
-      document.getElementById(`${id}-addLine`).addEventListener('click', () => wsAddLine(id));
+      qtyEl.addEventListener('input', () => wsRefreshEntryInfo(id));
+      qtyEl.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          wsAddEntryToCart(id);
+        }
+      });
+      document.getElementById(`${id}-addItem`).addEventListener('click', () => wsAddEntryToCart(id));
+      document.getElementById(`${id}-cart`).addEventListener('click', (e) => {
+        const btn = e.target.closest('.js-cart-remove');
+        if (!btn || btn.disabled) return;
+        btn.closest('tr').remove();
+        wsRefreshCartEmpty(id);
+      });
       document.querySelectorAll(`#${id}-fields .js-usual-toggle`).forEach((cb) => {
         cb.addEventListener('change', async () => {
           const checked = new Set(
@@ -427,17 +459,17 @@ const PRODUCT_DEFS = {
           );
           const codes = WHOLESALE_PRODUCTS.map((p) => p.code).filter((c) => checked.has(c));
           wsSetUsual(id, codes);
-          wsRefreshOptions(id);
-          msgEl.textContent = '保存中…';
-          msgEl.className = 'msg';
+          wsRefreshProductOptions(id);
+          usualMsgEl.textContent = '保存中…';
+          usualMsgEl.className = 'msg';
           try {
             await saveWholesaleUsualItems(store.slug, codes);
-            msgEl.textContent = '✓ いつもの商品を更新しました。';
-            msgEl.className = 'msg msg-success';
+            usualMsgEl.textContent = '✓ いつもの商品を更新しました。';
+            usualMsgEl.className = 'msg msg-success';
           } catch (e) {
             console.error(e);
-            msgEl.textContent = 'いつもの商品の保存に失敗しました。通信状況を確認してください。';
-            msgEl.className = 'msg msg-error';
+            usualMsgEl.textContent = 'いつもの商品の保存に失敗しました。通信状況を確認してください。';
+            usualMsgEl.className = 'msg msg-error';
           }
         });
       });
@@ -446,35 +478,29 @@ const PRODUCT_DEFS = {
         .then((saved) => {
           if (!saved) return;
           wsSetUsual(id, saved);
-          if (wsLinesAreEmpty(id)) wsResetLines(id);
-          else wsRefreshOptions(id);
+          wsRefreshProductOptions(id);
         })
         .catch((e) => console.error(e));
     },
     readValue: (id) => {
-      const items = [];
-      const boxes = { mixed: 0, s: 0, m: 0 };
-      const seen = new Set();
       const fail = (message) => {
         const err = new Error(message);
         err.userMessage = message;
         throw err;
       };
-      document.querySelectorAll(`#${id}-lines .wholesale-line`).forEach((line) => {
-        const code = line.querySelector('.js-line-product').value;
-        const raw = line.querySelector('.js-line-qty').value.trim();
-        if (!code && !raw) return;
-        if (!code) fail('数量を入れた行の商品を選んでください。');
-        const p = WHOLESALE_PRODUCTS.find((x) => x.code === code);
-        if (seen.has(code)) fail(`「${p.name}」が2つの行で選ばれています。1つの行にまとめてください。`);
-        seen.add(code);
-        const qty = Number(raw);
-        if (!raw || !Number.isFinite(qty) || qty <= 0) fail(`「${p.name}」の数量を入力してください。`);
-        if (p.stock && !Number.isInteger(qty)) fail(`「${p.name}」はケース数を整数で入力してください。`);
-        items.push({ code, name: p.name, unit: p.unit, qty });
-        if (p.stock) boxes[p.stock] += qty;
+      // 入力欄に商品・数量を入れたまま「注文に追加」を押し忘れた場合は、そのまま注文に含める。
+      const pendingCode = document.getElementById(`${id}-product`).value;
+      const pendingQty = document.getElementById(`${id}-qty`).value.trim();
+      if (pendingCode || pendingQty) {
+        if (!wsAddEntryToCart(id)) fail('商品と数量を入れて「注文に追加」を押してから発注してください。');
+      }
+      const items = wsCartItems(id);
+      if (!items.length) fail('商品を選んで数量を入れ、「注文に追加」を押してください。');
+      const boxes = { mixed: 0, s: 0, m: 0 };
+      items.forEach((it) => {
+        const p = WHOLESALE_PRODUCTS.find((x) => x.code === it.code);
+        if (p && p.stock) boxes[p.stock] += it.qty;
       });
-      if (!items.length) fail('注文する商品を選んで、数量を入力してください。');
       const note = document.getElementById(`${id}-note`).value.trim();
       return {
         items,
@@ -486,18 +512,19 @@ const PRODUCT_DEFS = {
       };
     },
     fillValue: (id, row) => {
-      const items = (row && row.items) || [];
-      if (!items.length) {
-        PRODUCT_DEFS.wholesale.clearValue(id);
-        return;
-      }
-      document.getElementById(`${id}-lines`).innerHTML = '';
-      items.forEach((it) => wsAddLine(id, it.code, it.qty));
+      PRODUCT_DEFS.wholesale.clearValue(id);
+      ((row && row.items) || []).forEach((it) => wsAddCartRow(id, it.code, it.qty));
       document.getElementById(`${id}-note`).value = (row && row.note) || '';
+      wsRefreshCartEmpty(id);
     },
     clearValue: (id) => {
-      wsResetLines(id);
+      document.getElementById(`${id}-cart`).innerHTML = '';
+      document.getElementById(`${id}-product`).value = '';
+      document.getElementById(`${id}-qty`).value = '';
       document.getElementById(`${id}-note`).value = '';
+      document.getElementById(`${id}-entry-msg`).textContent = '';
+      wsRefreshEntryInfo(id);
+      wsRefreshCartEmpty(id);
     },
     applyExtraFieldState: (id) => {
       // applyLockStateが入力欄を無効化した後に呼ばれるので、備考欄の状態でロック中かどうかを判断する。
@@ -509,11 +536,11 @@ const PRODUCT_DEFS = {
       document.querySelectorAll(`#${id}-fields .js-usual-toggle`).forEach((cb) => {
         cb.disabled = wsIsSuspended(id, cb.dataset.code);
       });
-      document.getElementById(`${id}-addLine`).disabled = locked;
-      document.querySelectorAll(`#${id}-lines .js-line-remove`).forEach((btn) => {
+      document.getElementById(`${id}-addItem`).disabled = locked;
+      document.querySelectorAll(`#${id}-cart .js-cart-remove`).forEach((btn) => {
         btn.disabled = locked;
       });
-      wsRefreshOptions(id);
+      wsRefreshProductOptions(id);
     },
     hasValue: (row) => !!row,
     recentText: (row) => {
@@ -531,17 +558,17 @@ const PRODUCT_DEFS = {
   },
 };
 
-// ---- 卸先の発注画面(左側の「商品プルダウン+数量」の行)の操作 ----
-// 「いつもの商品」のcode一覧は、行の入れ物(#${id}-lines)のdata-usualに持たせる。
+// ---- 卸先の発注画面(商品プルダウン+数量の入力欄と、右側の注文内容の表)の操作 ----
+// 「いつもの商品」のcode一覧は、注文内容の表(#${id}-cart)のdata-usualに持たせる。
 
 function wsGetUsual(id) {
-  const raw = document.getElementById(`${id}-lines`).dataset.usual || '';
+  const raw = document.getElementById(`${id}-cart`).dataset.usual || '';
   return raw ? raw.split(',') : [];
 }
 
 function wsSetUsual(id, codes) {
   const valid = codes.filter((c) => WHOLESALE_PRODUCTS.some((p) => p.code === c));
-  document.getElementById(`${id}-lines`).dataset.usual = valid.join(',');
+  document.getElementById(`${id}-cart`).dataset.usual = valid.join(',');
   document.querySelectorAll(`#${id}-fields .js-usual-toggle`).forEach((cb) => {
     cb.checked = valid.includes(cb.dataset.code);
   });
@@ -554,62 +581,93 @@ function wsIsSuspended(id, code) {
   return code === 'frozen_mixed' && !!dateVal && dateVal >= MIXED_SUSPENDED_FROM;
 }
 
-// プルダウンの選択肢は「いつもの商品」だけ。ただし既に選ばれている商品(過去の発注の読み込みや、
-// 選んだ後にいつもの商品から外した場合)は、消えないように選択肢に残す。
-function wsProductOptionsHtml(id, selectedCode) {
+// 商品プルダウン: 「いつもの商品」を先頭に、その他の商品を後ろに(休止中の商品は出さない)。
+function wsRefreshProductOptions(id) {
+  const sel = document.getElementById(`${id}-product`);
+  const current = sel.value;
+  const disabled = sel.disabled;
   const usual = wsGetUsual(id);
-  const products = WHOLESALE_PRODUCTS.filter(
-    (p) => p.code === selectedCode || (usual.includes(p.code) && !wsIsSuspended(id, p.code))
-  );
-  return `<option value="">商品を選ぶ</option>${products
-    .map((p) => `<option value="${p.code}"${p.code === selectedCode ? ' selected' : ''}>${escapeHtml(p.name)}</option>`)
-    .join('')}`;
+  const available = WHOLESALE_PRODUCTS.filter((p) => !wsIsSuspended(id, p.code));
+  const usualProducts = usual.map((c) => available.find((p) => p.code === c)).filter(Boolean);
+  const others = available.filter((p) => !usual.includes(p.code));
+  const opt = (p) => `<option value="${p.code}">${escapeHtml(p.name)}</option>`;
+  sel.innerHTML = `<option value="">商品を選んでください</option>${
+    usualProducts.length ? `<optgroup label="いつもの商品">${usualProducts.map(opt).join('')}</optgroup>` : ''
+  }${others.length ? `<optgroup label="その他の商品">${others.map(opt).join('')}</optgroup>` : ''}`;
+  sel.value = available.some((p) => p.code === current) ? current : '';
+  sel.disabled = disabled;
+  wsRefreshEntryInfo(id);
 }
 
-function wsAddLine(id, code = '', qty = '') {
-  document.getElementById(`${id}-lines`).insertAdjacentHTML(
-    'beforeend',
-    `<div class="wholesale-line">
-      <select class="js-line-product">${wsProductOptionsHtml(id, code)}</select>
-      <input type="number" class="js-line-qty" min="0" inputmode="decimal" placeholder="数量" value="${qty}">
-      <span class="wholesale-unit js-line-unit"></span>
-      <button type="button" class="js-line-remove" aria-label="この行を削除">×</button>
-      <span class="wholesale-kg js-line-kg"></span>
-    </div>`
-  );
-  wsRefreshLineInfo(id);
+// 入力欄の単位と、冷凍牡蠣ならkg換算を表示する。
+function wsRefreshEntryInfo(id) {
+  const p = WHOLESALE_PRODUCTS.find((x) => x.code === document.getElementById(`${id}-product`).value);
+  const qty = Number(document.getElementById(`${id}-qty`).value) || 0;
+  document.getElementById(`${id}-unit`).textContent = p ? p.unit : '';
+  document.getElementById(`${id}-kg`).textContent = p && p.stock ? `1ケース=15kg${qty > 0 ? `(${qty * 15}kg)` : ''}` : '';
 }
 
-// 空の行を「いつもの商品」(休止中を除く)の数だけ(最低1行)用意し直す。
-function wsResetLines(id) {
-  document.getElementById(`${id}-lines`).innerHTML = '';
-  const count = Math.max(1, wsGetUsual(id).filter((c) => !wsIsSuspended(id, c)).length);
-  for (let i = 0; i < count; i++) wsAddLine(id);
-}
-
-function wsLinesAreEmpty(id) {
-  return [...document.querySelectorAll(`#${id}-lines .wholesale-line`)].every(
-    (line) => !line.querySelector('.js-line-product').value && !line.querySelector('.js-line-qty').value.trim()
-  );
-}
-
-function wsRefreshOptions(id) {
-  document.querySelectorAll(`#${id}-lines .js-line-product`).forEach((sel) => {
-    const disabled = sel.disabled;
-    sel.innerHTML = wsProductOptionsHtml(id, sel.value);
-    sel.disabled = disabled;
+function wsCartItems(id) {
+  return [...document.querySelectorAll(`#${id}-cart tr`)].map((tr) => {
+    const p = WHOLESALE_PRODUCTS.find((x) => x.code === tr.dataset.code);
+    return { code: tr.dataset.code, name: p ? p.name : tr.dataset.code, unit: p ? p.unit : '', qty: Number(tr.dataset.qty) };
   });
-  wsRefreshLineInfo(id);
 }
 
-// 各行の単位と、冷凍牡蠣ならkg換算を表示する。
-function wsRefreshLineInfo(id) {
-  document.querySelectorAll(`#${id}-lines .wholesale-line`).forEach((line) => {
-    const p = WHOLESALE_PRODUCTS.find((x) => x.code === line.querySelector('.js-line-product').value);
-    const qty = Number(line.querySelector('.js-line-qty').value) || 0;
-    line.querySelector('.js-line-unit').textContent = p ? p.unit : '';
-    line.querySelector('.js-line-kg').textContent = p && p.stock && qty > 0 ? `${qty * 15}kg(1ケース=15kg)` : '';
-  });
+// 注文内容の表に1行追加する。同じ商品が既にあれば数量を足す。
+function wsAddCartRow(id, code, qty) {
+  const p = WHOLESALE_PRODUCTS.find((x) => x.code === code);
+  if (!p) return;
+  const cart = document.getElementById(`${id}-cart`);
+  const existing = cart.querySelector(`tr[data-code="${code}"]`);
+  const total = (existing ? Number(existing.dataset.qty) : 0) + qty;
+  const html = `<tr data-code="${code}" data-qty="${total}">
+      <td>${escapeHtml(p.name)}</td>
+      <td class="wholesale-cart-qty">${total}${escapeHtml(p.unit)}${p.stock ? `<span class="hint">(${total * 15}kg)</span>` : ''}</td>
+      <td><button type="button" class="js-cart-remove" aria-label="削除">×</button></td>
+    </tr>`;
+  if (existing) existing.outerHTML = html;
+  else cart.insertAdjacentHTML('beforeend', html);
+}
+
+function wsRefreshCartEmpty(id) {
+  const hasRows = !!document.querySelector(`#${id}-cart tr`);
+  document.getElementById(`${id}-cart-empty`).style.display = hasRows ? 'none' : '';
+}
+
+// 入力欄の商品・数量を注文内容に追加し、次の商品を選べるよう入力欄を空にする。成功したらtrue。
+function wsAddEntryToCart(id) {
+  const productEl = document.getElementById(`${id}-product`);
+  const qtyEl = document.getElementById(`${id}-qty`);
+  const msgEl = document.getElementById(`${id}-entry-msg`);
+  const p = WHOLESALE_PRODUCTS.find((x) => x.code === productEl.value);
+  const raw = qtyEl.value.trim();
+  const qty = Number(raw);
+  msgEl.className = 'msg msg-error';
+  if (!p) {
+    msgEl.textContent = '商品を選んでください。';
+    productEl.focus();
+    return false;
+  }
+  if (!raw || !Number.isFinite(qty) || qty <= 0) {
+    msgEl.textContent = '数量を入力してください。';
+    qtyEl.focus();
+    return false;
+  }
+  if (p.stock && !Number.isInteger(qty)) {
+    msgEl.textContent = 'ケース数は整数で入力してください。';
+    qtyEl.focus();
+    return false;
+  }
+  wsAddCartRow(id, p.code, qty);
+  wsRefreshCartEmpty(id);
+  productEl.value = '';
+  qtyEl.value = '';
+  wsRefreshEntryInfo(id);
+  msgEl.className = 'msg msg-success';
+  msgEl.textContent = `✓ ${p.name}を追加しました。続けて次の商品を選べます。`;
+  productEl.focus();
+  return true;
 }
 
 // 卸先の発注内容を、受注一覧・納品明細書に出す文字列にする(冷凍牡蠣はkgも併記)。
