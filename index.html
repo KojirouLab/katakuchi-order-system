@@ -735,9 +735,43 @@
     margin-bottom: 16px;
     align-items: start;
   }
+  .wholesale-entry {
+    padding: 14px;
+    border: 2px solid var(--primary);
+    border-radius: 12px;
+    background: #eef6f3;
+  }
+  .wholesale-entry .msg {
+    margin: 10px 0 0;
+    min-height: 0;
+  }
+  .wholesale-entry .msg:empty {
+    display: none;
+  }
+  .wholesale-entry .field > label {
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--text);
+  }
+  .wholesale-entry select,
+  .wholesale-entry input[type="number"] {
+    font-size: 18px;
+    font-weight: 600;
+    border: 2px solid var(--primary);
+    background: #fff;
+  }
   .wholesale-entry select {
     text-align: left;
     text-align-last: left;
+  }
+  .wholesale-entry select:focus,
+  .wholesale-entry input[type="number"]:focus {
+    outline: 3px solid rgba(13, 107, 88, 0.25);
+  }
+  .wholesale-entry .wholesale-unit {
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--text);
   }
   .wholesale-qty-row {
     display: flex;
@@ -753,7 +787,7 @@
     font-size: 16px;
     font-weight: 700;
     color: var(--primary);
-    background: #eef6f3;
+    background: #fff;
     border: 2px solid var(--primary);
     border-radius: 10px;
     cursor: pointer;
@@ -995,7 +1029,7 @@
 </head>
 <body>
 <div id="app"></div>
-<script src="storage.js?v=202610012230"></script>
-<script src="app.js?v=202610012230"></script>
+<script src="storage.js?v=202610012300"></script>
+<script src="app.js?v=202610012300"></script>
 </body>
 </html>

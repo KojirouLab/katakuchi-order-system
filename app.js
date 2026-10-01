@@ -376,11 +376,11 @@ const PRODUCT_DEFS = {
             <h3 class="wholesale-heading"><span class="step-badge">2</span>商品を選んで、数量を入力</h3>
             <p class="hint wholesale-step-hint">商品を選んで数量を入力し、下の「注文に追加」を押すと「注文内容」に入ります。</p>
             <div class="field">
-              <label for="${id}-product">商品</label>
+              <label for="${id}-product">商品を選ぶ</label>
               <select id="${id}-product"></select>
             </div>
             <div class="field">
-              <label for="${id}-qty">数量</label>
+              <label for="${id}-qty">数量を入力</label>
               <div class="wholesale-qty-row">
                 <input type="number" id="${id}-qty" min="0" inputmode="decimal" placeholder="数量">
                 <span class="wholesale-unit" id="${id}-unit"></span>
