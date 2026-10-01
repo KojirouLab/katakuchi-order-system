@@ -671,64 +671,111 @@
     background: #f0f0ec;
   }
   .wholesale-heading {
-    font-size: 14px;
-    margin: 4px 0 8px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 15px;
+    margin: 4px 0 10px;
+  }
+  .step-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    background: var(--primary);
+    color: #fff;
+    font-size: 13px;
+    font-weight: 700;
+  }
+  .date-callout {
+    padding: 14px;
+    border: 2px solid var(--primary);
+    border-radius: 12px;
+    background: #eef6f3;
+  }
+  .date-callout label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--text);
+    margin-bottom: 10px;
+  }
+  .date-callout input[type="date"] {
+    font-size: 20px;
+    font-weight: 700;
+    border: 2px solid var(--primary);
+    max-width: 320px;
+  }
+  .date-callout .hint {
+    margin: 8px 0 0;
+  }
+  .wholesale-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 20px;
+    margin-bottom: 16px;
+  }
+  .wholesale-col-side {
+    padding: 12px 14px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: #fafaf8;
+  }
+  .wholesale-col-side .checkbox-label {
+    margin-bottom: 8px;
   }
   .wholesale-group {
     font-size: 12px;
+    font-weight: 700;
     color: var(--hint);
-    margin: 10px 0 4px;
+    margin: 12px 0 6px;
   }
-  .wholesale-list {
-    margin-bottom: 12px;
-  }
-  .wholesale-item {
+  .wholesale-line {
     display: grid;
-    grid-template-columns: 1fr 84px 40px;
+    grid-template-columns: 1fr 84px 48px 32px;
     align-items: center;
-    gap: 4px 8px;
+    gap: 4px 6px;
     padding: 6px 0;
     border-bottom: 1px solid var(--border);
   }
-  .wholesale-item label {
-    margin: 0;
+  .wholesale-line select {
+    text-align: left;
+    text-align-last: left;
+    padding: 8px 6px;
     font-size: 14px;
-    color: var(--text);
   }
-  .wholesale-item label .hint {
-    display: block;
-    font-size: 11px;
+  @media (max-width: 480px) {
+    .wholesale-line {
+      grid-template-columns: 1fr 48px 32px;
+    }
+    .wholesale-line select {
+      grid-column: 1 / -1;
+    }
   }
-  .wholesale-item input {
+  .wholesale-line input {
     padding: 8px 6px;
   }
-  .wholesale-item[hidden] {
-    display: none;
-  }
-  .wholesale-item select {
-    padding: 8px 4px;
-  }
-  .wholesale-others {
-    margin: 4px 0 16px;
-    padding: 10px 12px;
+  .js-line-remove {
+    width: 32px;
+    height: 32px;
     border: 1px solid var(--border);
-    border-radius: 10px;
-  }
-  .wholesale-others summary {
+    border-radius: 8px;
+    background: #fff;
+    color: var(--hint);
+    font-size: 16px;
     cursor: pointer;
-    font-size: 14px;
-    font-weight: 600;
-    color: var(--primary);
-  }
-  .wholesale-others .checkbox-label {
-    margin-bottom: 8px;
   }
   .wholesale-unit {
     font-size: 13px;
     color: var(--hint);
   }
   .wholesale-kg {
-    grid-column: 2 / 4;
+    grid-column: 1 / -1;
     font-size: 12px;
     color: var(--primary);
     font-weight: 700;
@@ -880,7 +927,7 @@
 </head>
 <body>
 <div id="app"></div>
-<script src="storage.js?v=202610011500"></script>
-<script src="app.js?v=202610011500"></script>
+<script src="storage.js?v=202610011800"></script>
+<script src="app.js?v=202610011800"></script>
 </body>
 </html>
