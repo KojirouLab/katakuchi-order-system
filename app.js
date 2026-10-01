@@ -39,26 +39,27 @@ const STORES = [
   ].map(([slug, name, usualItems]) => ({ slug, name, categories: ['wholesale'], shipping: 'courier', usualItems })),
 ];
 
-// 卸先の発注画面に並べる商品。stockを持つ商品(冷凍牡蠣)は数量をケース(15kg)で受け、
+// 卸先の発注画面に並べる商品。max/stepは数量プルダウンの上限・刻み(未指定は0〜50の1刻み)。
+// stockを持つ商品(冷凍牡蠣)は数量をケース(15kg)で受け、
 // 牡蠣在庫の混合/S/Mに連動させる(oyster_ordersにも書き込む)。生牡蠣は冷凍庫の在庫とは無関係。
 const WHOLESALE_PRODUCTS = [
-  { code: 'dough130', group: '生地', name: '130g玉生地100個入 送料込み', unit: '個' },
-  { code: 'dough150', group: '生地', name: '150g玉生地100個入 送料込み', unit: '個' },
-  { code: 'dough180', group: '生地', name: '180g玉生地 80個入 送料込み', unit: '個' },
-  { code: 'dough200', group: '生地', name: '200g玉生地', unit: '個' },
-  { code: 'napoli6', group: 'ナポリ', name: '6インチナポリ100枚入り 送料込み', unit: '個' },
-  { code: 'napoli8', group: 'ナポリ', name: '8インチナポリ50枚入り 送料込み', unit: '個' },
-  { code: 'napoli10', group: 'ナポリ', name: '10インチナポリ40枚入り 送料込み', unit: '個' },
-  { code: 'napoli8plain', group: 'ナポリ', name: '8インチナポリプレーン', unit: '枚' },
-  { code: 'michinoku', group: 'ナポリ', name: 'みちのくナポリピッツァ 16枚 送料込み', unit: '個' },
-  { code: 'crispy8', group: 'クリスピー', name: '8インチクリスピー100枚 送料込み', unit: '個' },
-  { code: 'frozen_s', group: '冷凍牡蠣', name: '冷凍牡蠣 Sサイズ', unit: 'ケース', stock: 's' },
-  { code: 'frozen_m', group: '冷凍牡蠣', name: '冷凍牡蠣 Mサイズ', unit: 'ケース', stock: 'm' },
-  { code: 'frozen_mixed', group: '冷凍牡蠣', name: '冷凍牡蠣 無選別(混合)', unit: 'ケース', stock: 'mixed' },
-  { code: 'raw_mixed', group: '生牡蠣', name: '生牡蠣 無選別', unit: 'kg' },
-  { code: 'raw_s', group: '生牡蠣', name: '生牡蠣 S', unit: 'kg' },
-  { code: 'chicken', group: 'その他', name: 'チキン 1kg', unit: 'kg' },
-  { code: 'sausage', group: 'その他', name: '自家製ソーセージ 1kg', unit: 'kg' },
+  { code: 'dough130', group: '生地', name: '130g玉生地100個入 送料込み', unit: '個', max: 200 },
+  { code: 'dough150', group: '生地', name: '150g玉生地100個入 送料込み', unit: '個', max: 200 },
+  { code: 'dough180', group: '生地', name: '180g玉生地 80個入 送料込み', unit: '個', max: 200 },
+  { code: 'dough200', group: '生地', name: '200g玉生地', unit: '個', max: 3000, step: 10 },
+  { code: 'napoli6', group: 'ナポリ', name: '6インチナポリ100枚入り 送料込み', unit: '個', max: 100 },
+  { code: 'napoli8', group: 'ナポリ', name: '8インチナポリ50枚入り 送料込み', unit: '個', max: 100 },
+  { code: 'napoli10', group: 'ナポリ', name: '10インチナポリ40枚入り 送料込み', unit: '個', max: 100 },
+  { code: 'napoli8plain', group: 'ナポリ', name: '8インチナポリプレーン', unit: '枚', max: 500, step: 10 },
+  { code: 'michinoku', group: 'ナポリ', name: 'みちのくナポリピッツァ 16枚 送料込み', unit: '個', max: 20 },
+  { code: 'crispy8', group: 'クリスピー', name: '8インチクリスピー100枚 送料込み', unit: '個', max: 100 },
+  { code: 'frozen_s', group: '冷凍牡蠣', name: '冷凍牡蠣 Sサイズ', unit: 'ケース', stock: 's', max: 30 },
+  { code: 'frozen_m', group: '冷凍牡蠣', name: '冷凍牡蠣 Mサイズ', unit: 'ケース', stock: 'm', max: 30 },
+  { code: 'frozen_mixed', group: '冷凍牡蠣', name: '冷凍牡蠣 無選別(混合)', unit: 'ケース', stock: 'mixed', max: 30 },
+  { code: 'raw_mixed', group: '生牡蠣', name: '生牡蠣 無選別', unit: 'kg', max: 300, step: 5 },
+  { code: 'raw_s', group: '生牡蠣', name: '生牡蠣 S', unit: 'kg', max: 300, step: 5 },
+  { code: 'chicken', group: 'その他', name: 'チキン 1kg', unit: 'kg', max: 100 },
+  { code: 'sausage', group: 'その他', name: '自家製ソーセージ 1kg', unit: 'kg', max: 100 },
   { code: 'nori', group: 'その他', name: '生海苔', unit: 'kg' },
   { code: 'gorgonzola', group: 'その他', name: 'ゴルゴンゾーラクラッシュ 1kg', unit: '個' },
 ];
@@ -362,17 +363,18 @@ const PRODUCT_DEFS = {
     deadlineDaysBefore: 2,
     skipNonBusinessDays: true,
     deadlineLabel: '2営業日前(土日祝を除く) 12:00',
-    // いつもの商品を先に、残りの全商品をその下に出す(他の商品も知ってもらうため)。
+    // いつもの商品は数量のプルダウンで並べる。ほかの商品は折りたたみ内のチェックボックスで選び、
+    // チェックすると「いつもの商品」の欄に数量のプルダウンつきで追加される(他の商品も知ってもらうため)。
     fieldsHtml: (id, store) => {
       const usual = (store && store.usualItems) || [];
+      const suspendedBadge = (p) =>
+        p.code === 'frozen_mixed' ? '<span class="wholesale-suspended js-mixed-suspended">取り扱い休止中</span>' : '';
       const itemRow = (p) => `
-        <div class="wholesale-item">
-          <label for="${id}-item-${p.code}">${escapeHtml(p.name)}${
-            p.code === 'frozen_mixed' ? `<span class="wholesale-suspended" id="${id}-mixed-suspended-msg">取り扱い休止中</span>` : ''
-          }${p.stock ? '<span class="hint">1ケース=15kg</span>' : ''}</label>
-          <input type="number" id="${id}-item-${p.code}" min="0" step="${p.stock ? 1 : 'any'}" inputmode="${
-            p.stock ? 'numeric' : 'decimal'
-          }" placeholder="0">
+        <div class="wholesale-item" id="${id}-row-${p.code}"${usual.includes(p.code) ? '' : ' hidden'}>
+          <label for="${id}-item-${p.code}">${escapeHtml(p.name)}${suspendedBadge(p)}${
+            p.stock ? '<span class="hint">1ケース=15kg</span>' : ''
+          }</label>
+          <select id="${id}-item-${p.code}">${wholesaleQtyOptionsHtml(p)}</select>
           <span class="wholesale-unit">${escapeHtml(p.unit)}</span>
           ${p.stock ? `<span class="wholesale-kg" id="${id}-item-${p.code}-kg"></span>` : ''}
         </div>`;
@@ -380,47 +382,56 @@ const PRODUCT_DEFS = {
       const others = WHOLESALE_PRODUCTS.filter((p) => !usual.includes(p.code));
       const groups = [...new Set(others.map((p) => p.group))];
       return `
-        ${
-          usualProducts.length
-            ? `<h3 class="wholesale-heading">いつもの商品</h3><div class="wholesale-list">${usualProducts.map(itemRow).join('')}</div>`
-            : ''
-        }
-        <h3 class="wholesale-heading">${usualProducts.length ? 'ほかの商品(こちらもご注文いただけます)' : '商品'}</h3>
-        ${groups
-          .map(
-            (g) =>
-              `<p class="wholesale-group">${escapeHtml(g)}</p><div class="wholesale-list">${others
-                .filter((p) => p.group === g)
-                .map(itemRow)
-                .join('')}</div>`
-          )
-          .join('')}
+        <h3 class="wholesale-heading">いつもの商品</h3>
+        <div class="wholesale-list">${[...usualProducts, ...others].map(itemRow).join('')}</div>
+        <details class="wholesale-others">
+          <summary>ほかの商品を追加する(${others.length}品)</summary>
+          <p class="hint">チェックすると、上の「いつもの商品」の欄に追加されます。</p>
+          ${groups
+            .map(
+              (g) =>
+                `<p class="wholesale-group">${escapeHtml(g)}</p>${others
+                  .filter((p) => p.group === g)
+                  .map(
+                    (p) => `
+                    <label class="checkbox-label">
+                      <input type="checkbox" class="js-wholesale-add" id="${id}-add-${p.code}" data-code="${p.code}">
+                      ${escapeHtml(p.name)}${suspendedBadge(p)}
+                    </label>`
+                  )
+                  .join('')}`
+            )
+            .join('')}
+        </details>
         <div class="field">
           <label for="${id}-note">備考(任意)</label>
           <textarea id="${id}-note" rows="2"></textarea>
         </div>`;
+    },
+    bindFields: (id) => {
+      document.querySelectorAll(`#${id}-fields .js-wholesale-add`).forEach((cb) => {
+        cb.addEventListener('change', () => {
+          const code = cb.dataset.code;
+          document.getElementById(`${id}-row-${code}`).hidden = !cb.checked;
+          if (!cb.checked) document.getElementById(`${id}-item-${code}`).value = '0';
+          PRODUCT_DEFS.wholesale.applyExtraFieldState(id);
+        });
+      });
     },
     readValue: (id) => {
       const items = [];
       const boxes = { mixed: 0, s: 0, m: 0 };
       WHOLESALE_PRODUCTS.forEach((p) => {
         const el = document.getElementById(`${id}-item-${p.code}`);
-        if (el.disabled && p.code === 'frozen_mixed') return;
-        const raw = el.value.trim();
-        if (!raw) return;
-        const qty = Number(raw);
-        if (!Number.isFinite(qty) || qty < 0 || (p.stock && !Number.isInteger(qty))) {
-          const err = new Error('invalid qty');
-          err.userMessage = `「${p.name}」の数量が正しくありません${p.stock ? '(ケースは整数で入力してください)' : ''}。`;
-          throw err;
-        }
-        if (qty === 0) return;
+        if (el.disabled || document.getElementById(`${id}-row-${p.code}`).hidden) return;
+        const qty = Number(el.value) || 0;
+        if (qty <= 0) return;
         items.push({ code: p.code, name: p.name, unit: p.unit, qty });
         if (p.stock) boxes[p.stock] += qty;
       });
       if (!items.length) {
         const err = new Error('no items');
-        err.userMessage = '注文する商品の数量を入力してください。';
+        err.userMessage = '注文する商品の数量を選んでください。';
         throw err;
       }
       const note = document.getElementById(`${id}-note`).value.trim();
@@ -434,29 +445,48 @@ const PRODUCT_DEFS = {
       };
     },
     fillValue: (id, row) => {
-      const qtyByCode = {};
+      PRODUCT_DEFS.wholesale.clearValue(id);
       ((row && row.items) || []).forEach((it) => {
-        qtyByCode[it.code] = it.qty;
-      });
-      WHOLESALE_PRODUCTS.forEach((p) => {
-        document.getElementById(`${id}-item-${p.code}`).value = qtyByCode[p.code] ?? '';
+        const el = document.getElementById(`${id}-item-${it.code}`);
+        if (!el) return;
+        // プルダウンの刻みに無い数量(以前の入力など)でも表示できるよう、選択肢を足す。
+        if (![...el.options].some((o) => Number(o.value) === Number(it.qty))) {
+          el.insertAdjacentHTML('beforeend', `<option value="${it.qty}">${it.qty}</option>`);
+        }
+        el.value = String(it.qty);
+        const cb = document.getElementById(`${id}-add-${it.code}`);
+        if (cb) cb.checked = true;
+        document.getElementById(`${id}-row-${it.code}`).hidden = false;
       });
       document.getElementById(`${id}-note`).value = (row && row.note) || '';
     },
     clearValue: (id) => {
       WHOLESALE_PRODUCTS.forEach((p) => {
-        document.getElementById(`${id}-item-${p.code}`).value = '';
+        document.getElementById(`${id}-item-${p.code}`).value = '0';
+        const cb = document.getElementById(`${id}-add-${p.code}`);
+        if (cb) {
+          cb.checked = false;
+          document.getElementById(`${id}-row-${p.code}`).hidden = true;
+        }
       });
       document.getElementById(`${id}-note`).value = '';
     },
     applyExtraFieldState: (id) => {
       const dateVal = document.getElementById(`${id}-date`).value;
       const mixedSuspended = !!dateVal && dateVal >= MIXED_SUSPENDED_FROM;
-      const mixedEl = document.getElementById(`${id}-item-frozen_mixed`);
-      document.getElementById(`${id}-mixed-suspended-msg`).style.display = mixedSuspended ? '' : 'none';
+      document.querySelectorAll(`#${id}-fields .js-mixed-suspended`).forEach((el) => {
+        el.style.display = mixedSuspended ? '' : 'none';
+      });
       if (mixedSuspended) {
+        const mixedEl = document.getElementById(`${id}-item-frozen_mixed`);
         mixedEl.disabled = true;
-        mixedEl.value = '';
+        mixedEl.value = '0';
+        const cb = document.getElementById(`${id}-add-frozen_mixed`);
+        if (cb) {
+          cb.disabled = true;
+          cb.checked = false;
+          document.getElementById(`${id}-row-frozen_mixed`).hidden = true;
+        }
       }
       WHOLESALE_PRODUCTS.filter((p) => p.stock).forEach((p) => {
         const qty = Number(document.getElementById(`${id}-item-${p.code}`).value) || 0;
@@ -478,6 +508,15 @@ const PRODUCT_DEFS = {
     del: deleteWholesaleOrder,
   },
 };
+
+// 卸先の数量プルダウンの選択肢。商品ごとにmax/stepを変えられる(未指定は0〜50の1刻み)。
+function wholesaleQtyOptionsHtml(p) {
+  const max = p.max || 50;
+  const step = p.step || 1;
+  let html = '';
+  for (let q = 0; q <= max; q += step) html += `<option value="${q}">${q}</option>`;
+  return html;
+}
 
 // 卸先の発注内容を、受注一覧・納品明細書に出す文字列にする(冷凍牡蠣はkgも併記)。
 function wholesaleContentText(items, note) {
@@ -690,6 +729,7 @@ function mountProductSection(container, store, category, options = {}) {
     </div>`
   );
 
+  if (def.bindFields) def.bindFields(id);
   const dateInput = document.getElementById(`${id}-date`);
   const msgEl = document.getElementById(`${id}-msg`);
   const deadlineMsgEl = document.getElementById(`${id}-deadline-msg`);
