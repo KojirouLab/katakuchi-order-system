@@ -871,6 +871,71 @@
     border: 1px solid #e3b4b4;
     border-radius: 6px;
   }
+  .wm-group {
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--hint);
+    margin: 14px 0 4px;
+  }
+  .wm-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+  .wm-item {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .wm-item-suspended .wm-item-name {
+    color: var(--hint);
+  }
+  .wm-item-main {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+  }
+  .wm-item-name {
+    font-size: 15px;
+    font-weight: 600;
+  }
+  .wm-item-meta {
+    font-size: 12px;
+    color: var(--hint);
+  }
+  .wm-tag-stock {
+    display: inline-block;
+    margin-left: 4px;
+    padding: 1px 6px;
+    border: 1px solid #b7d6cc;
+    border-radius: 6px;
+    color: var(--primary);
+  }
+  .wm-item-actions {
+    display: flex;
+    gap: 6px;
+  }
+  .wm-btn {
+    padding: 6px 10px;
+    font-size: 13px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: #fff;
+    color: var(--text);
+    cursor: pointer;
+  }
+  .wm-btn:disabled {
+    opacity: 0.4;
+    cursor: default;
+  }
+  .wm-btn-danger {
+    color: var(--danger);
+  }
   .courier-tag {
     display: inline-block;
     font-size: 11px;
@@ -1006,7 +1071,7 @@
 </head>
 <body>
 <div id="app"></div>
-<script src="storage.js?v=202610020100"></script>
-<script src="app.js?v=202610020100"></script>
+<script src="storage.js?v=202610020200"></script>
+<script src="app.js?v=202610020200"></script>
 </body>
 </html>

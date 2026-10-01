@@ -278,6 +278,39 @@ async function fetchWholesaleOrdersRange(from, to) {
   return data || [];
 }
 
+// ---- 卸の商品マスタ ----
+
+async function fetchWholesaleProducts() {
+  assertClient();
+  const { data, error } = await sb.from('wholesale_products').select('*').order('sort_order').order('code');
+  if (error) throw error;
+  return data || [];
+}
+
+async function insertWholesaleProduct(row) {
+  assertClient();
+  const { error } = await sb.from('wholesale_products').insert({ ...row, updated_at: new Date().toISOString() });
+  if (error) throw error;
+}
+
+async function updateWholesaleProduct(code, fields) {
+  assertClient();
+  const { data, error } = await sb
+    .from('wholesale_products')
+    .update({ ...fields, updated_at: new Date().toISOString() })
+    .eq('code', code)
+    .select();
+  if (error) throw error;
+  if (!data || data.length === 0) throw new Error('更新できませんでした(権限設定が反映されていない可能性があります)');
+}
+
+async function deleteWholesaleProduct(code) {
+  assertClient();
+  const { data, error } = await sb.from('wholesale_products').delete().eq('code', code).select();
+  if (error) throw error;
+  if (!data || data.length === 0) throw new Error('削除できませんでした(権限設定が反映されていない可能性があります)');
+}
+
 // ---- 牡蠣在庫(入庫) ----
 
 async function fetchStockInAll() {

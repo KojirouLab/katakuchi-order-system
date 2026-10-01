@@ -39,31 +39,25 @@ const STORES = [
   ].map(([slug, name, usualItems]) => ({ slug, name, categories: ['wholesale'], shipping: 'courier', usualItems })),
 ];
 
-// 卸先の発注画面に並べる商品。stockを持つ商品(冷凍牡蠣)は数量をケース(15kg)で受け、
-// 牡蠣在庫の混合/S/Mに連動させる(oyster_ordersにも書き込む)。生牡蠣は冷凍庫の在庫とは無関係。
-// suspended: true の商品は取り扱い休止中(プルダウンに出さない)。冷凍牡蠣の無選別(混合)は
-// 牡蠣発注と同じくMIXED_SUSPENDED_FROM以降の日付で休止扱いにする(wsIsSuspended参照)。再開時はフラグを消すこと。
-const WHOLESALE_PRODUCTS = [
-  { code: 'dough130', group: '生地', name: '130g玉生地100個入 送料込み', unit: '個' },
-  { code: 'dough150', group: '生地', name: '150g玉生地100個入 送料込み', unit: '個' },
-  { code: 'dough180', group: '生地', name: '180g玉生地 80個入 送料込み', unit: '個' },
-  { code: 'dough200', group: '生地', name: '200g玉生地', unit: '個' },
-  { code: 'napoli6', group: 'ナポリ', name: '6インチナポリ100枚入り 送料込み', unit: '個' },
-  { code: 'napoli8', group: 'ナポリ', name: '8インチナポリ50枚入り 送料込み', unit: '個' },
-  { code: 'napoli10', group: 'ナポリ', name: '10インチナポリ40枚入り 送料込み', unit: '個' },
-  { code: 'napoli8plain', group: 'ナポリ', name: '8インチナポリプレーン', unit: '枚' },
-  { code: 'michinoku', group: 'ナポリ', name: 'みちのくナポリピッツァ 16枚 送料込み', unit: '個' },
-  { code: 'crispy8', group: 'クリスピー', name: '8インチクリスピー100枚 送料込み', unit: '個' },
-  { code: 'frozen_s', group: '冷凍牡蠣', name: '冷凍牡蠣 Sサイズ', unit: 'ケース', stock: 's' },
-  { code: 'frozen_m', group: '冷凍牡蠣', name: '冷凍牡蠣 Mサイズ', unit: 'ケース', stock: 'm' },
-  { code: 'frozen_mixed', group: '冷凍牡蠣', name: '冷凍牡蠣 無選別(混合)', unit: 'ケース', stock: 'mixed' },
-  { code: 'raw_mixed', group: '生牡蠣', name: '生牡蠣 無選別', unit: 'kg', suspended: true },
-  { code: 'raw_s', group: '生牡蠣', name: '生牡蠣 S', unit: 'kg', suspended: true },
-  { code: 'chicken', group: 'その他', name: 'チキン 1kg', unit: 'kg' },
-  { code: 'sausage', group: 'その他', name: '自家製ソーセージ 1kg', unit: 'kg' },
-  { code: 'nori', group: 'その他', name: '生海苔', unit: 'kg' },
-  { code: 'gorgonzola', group: 'その他', name: 'ゴルゴンゾーラクラッシュ 1kg', unit: '個' },
-];
+// 卸先の発注画面に並べる商品。DBのwholesale_products(管理メニューの「卸の商品マスタ」で編集)から
+// 読み込む(loadWholesaleProducts)。stockを持つ商品(冷凍牡蠣)は数量をケース(15kg)で受け、
+// 牡蠣在庫の混合/S/Mに連動させる(oyster_ordersにも書き込む)。suspended: true の商品は取り扱い休止中
+// (プルダウンに出さない)。混合(stock: 'mixed')の商品は、牡蠣発注と同じくMIXED_SUSPENDED_FROM以降の
+// 日付で休止扱いにする(wsIsSuspended参照)。
+let WHOLESALE_PRODUCTS = [];
+
+async function loadWholesaleProducts() {
+  const rows = await fetchWholesaleProducts();
+  WHOLESALE_PRODUCTS = rows.map((r) => ({
+    code: r.code,
+    group: r.group_name,
+    name: r.name,
+    unit: r.unit,
+    stock: r.stock || undefined,
+    suspended: !!r.suspended,
+    sortOrder: r.sort_order,
+  }));
+}
 
 const PIZZA_STORES = STORES.filter((s) => s.categories.includes('pizza'));
 const OYSTER_STORES = STORES.filter((s) => s.categories.includes('oyster'));
@@ -543,7 +537,7 @@ function wsIsSuspended(id, code) {
   const p = WHOLESALE_PRODUCTS.find((x) => x.code === code);
   if (p && p.suspended) return true;
   const dateVal = document.getElementById(`${id}-date`).value;
-  return code === 'frozen_mixed' && !!dateVal && dateVal >= MIXED_SUSPENDED_FROM;
+  return !!p && p.stock === 'mixed' && !!dateVal && dateVal >= MIXED_SUSPENDED_FROM;
 }
 
 // 商品プルダウン: 前回注文した商品(またはいつもの商品)を先頭に、その他の商品を後ろに(休止中の商品は出さない)。
@@ -652,7 +646,7 @@ function wholesaleContentText(items, note) {
 
 const app = document.getElementById('app');
 
-function route() {
+async function route() {
   const params = new URLSearchParams(location.search);
   const storeSlug = params.get('store');
   const shopSlug = params.get('shop');
@@ -660,7 +654,20 @@ function route() {
   const isStock = params.get('stock') === '1';
   const isStockAudit = params.get('stock_audit') === '1';
   const isAdminMenu = params.get('admin') === '1';
+  const isWholesaleMaster = params.get('wholesale_master') === '1';
+  // 卸先の発注画面・管理者ページ・商品マスタページは、表示前に商品マスタをDBから読み込む。
+  const needsWholesaleProducts =
+    isParent || isWholesaleMaster || (!!storeSlug && !!findStore(storeSlug) && findStore(storeSlug).categories.includes('wholesale'));
+  if (needsWholesaleProducts) {
+    try {
+      await loadWholesaleProducts();
+    } catch (e) {
+      console.error(e);
+      return renderError('商品の読み込みに失敗しました。通信状況を確認して、ページを再読み込みしてください。');
+    }
+  }
   if (isAdminMenu) return renderAdminMenuPage();
+  if (isWholesaleMaster) return renderWholesaleMasterPage();
   if (isParent) return renderParentOrderPage();
   if (isStockAudit) return renderStockAuditPage();
   if (isStock) return renderStockPage();
@@ -743,6 +750,12 @@ function renderAdminMenuPage() {
         </ul>
       </div>
       <div class="card">
+        <h2>卸先</h2>
+        <ul class="home-links">
+          <li><a href="?wholesale_master=1&ref=admin">卸の商品マスタ(登録・変更・削除)</a></li>
+        </ul>
+      </div>
+      <div class="card">
         <h2>管理者ページ(締切後も変更・キャンセル可)</h2>
         <ul class="home-links">
           <li><a href="?parent=1&ref=admin">管理者ページを開く</a></li>
@@ -756,6 +769,258 @@ function renderAdminMenuPage() {
         </ul>
       </div>
     </div>`;
+}
+
+// ---- 卸の商品マスタ(管理メニューから。卸先の発注画面のプルダウンに出す商品の登録・変更・削除) ----
+
+const WHOLESALE_STOCK_LABELS = { s: '冷凍牡蠣 S', m: '冷凍牡蠣 M', mixed: '冷凍牡蠣 混合' };
+const WHOLESALE_UNIT_SUGGESTIONS = ['個', '枚', '袋', '箱', 'kg', 'ケース'];
+
+function renderWholesaleMasterPage() {
+  app.innerHTML = `
+    <div class="page">
+      <h1>卸の商品マスタ</h1>
+      ${adminBackLinkHtml()}
+      <p class="hint">卸先の発注画面のプルダウンに出す商品です。変更は、取引先が次に発注画面を開いたときから反映されます。過去の発注の表示(商品名・数量)は変わりません。</p>
+      <div class="card" id="wmFormCard">
+        <h2 id="wmFormTitle">商品を追加</h2>
+        <div class="field">
+          <label for="wmGroup">区分(プルダウンの並びの目安。例: 生地・ナポリ・冷凍牡蠣)</label>
+          <input type="text" id="wmGroup" list="wmGroupList" autocomplete="off">
+          <datalist id="wmGroupList"></datalist>
+        </div>
+        <div class="field">
+          <label for="wmName">商品名</label>
+          <input type="text" id="wmName" autocomplete="off" placeholder="例) 150g玉生地100個入 送料込み">
+        </div>
+        <div class="field">
+          <label for="wmStock">牡蠣在庫との連動</label>
+          <select id="wmStock">
+            <option value="">連動しない</option>
+            ${Object.entries(WHOLESALE_STOCK_LABELS)
+              .map(([k, label]) => `<option value="${k}">${escapeHtml(label)} として在庫から差し引く</option>`)
+              .join('')}
+          </select>
+          <p class="hint" style="margin-top:6px;">連動させると、数量はケース(1ケース=15kg)単位になり、注文が入ると牡蠣在庫(宅配発送)から自動で差し引かれます。</p>
+        </div>
+        <div class="field">
+          <label for="wmUnit">単位</label>
+          <input type="text" id="wmUnit" list="wmUnitList" autocomplete="off" placeholder="例) 個">
+          <datalist id="wmUnitList">${WHOLESALE_UNIT_SUGGESTIONS.map((u) => `<option value="${u}">`).join('')}</datalist>
+        </div>
+        <label class="checkbox-label">
+          <input type="checkbox" id="wmSuspended">
+          取り扱い休止中(発注画面のプルダウンに出さない)
+        </label>
+        <button id="wmSaveBtn" class="primary">追加する</button>
+        <button id="wmCancelBtn" class="secondary" style="display:none">編集をやめる</button>
+        <p id="wmMsg" class="msg"></p>
+      </div>
+      <div class="card">
+        <h2 id="wmListTitle">登録済みの商品</h2>
+        <p class="hint">↑↓で発注画面のプルダウンでの並び順を変えられます。</p>
+        <div id="wmList"></div>
+      </div>
+    </div>`;
+
+  const groupEl = document.getElementById('wmGroup');
+  const nameEl = document.getElementById('wmName');
+  const unitEl = document.getElementById('wmUnit');
+  const stockEl = document.getElementById('wmStock');
+  const suspendedEl = document.getElementById('wmSuspended');
+  const saveBtn = document.getElementById('wmSaveBtn');
+  const cancelBtn = document.getElementById('wmCancelBtn');
+  const msgEl = document.getElementById('wmMsg');
+  const listEl = document.getElementById('wmList');
+  let editingCode = null;
+
+  function showMsg(text, kind) {
+    msgEl.textContent = text;
+    msgEl.className = kind ? `msg msg-${kind}` : 'msg';
+  }
+
+  // 在庫連動の商品はケース単位に固定する(牡蠣在庫がケース数で管理されているため)。
+  function applyStockUnit() {
+    if (stockEl.value) {
+      unitEl.value = 'ケース';
+      unitEl.disabled = true;
+    } else {
+      unitEl.disabled = false;
+    }
+  }
+  stockEl.addEventListener('change', applyStockUnit);
+
+  function resetForm() {
+    editingCode = null;
+    groupEl.value = '';
+    nameEl.value = '';
+    unitEl.value = '';
+    stockEl.value = '';
+    suspendedEl.checked = false;
+    applyStockUnit();
+    document.getElementById('wmFormTitle').textContent = '商品を追加';
+    saveBtn.textContent = '追加する';
+    cancelBtn.style.display = 'none';
+  }
+
+  function startEdit(code) {
+    const p = WHOLESALE_PRODUCTS.find((x) => x.code === code);
+    if (!p) return;
+    editingCode = code;
+    groupEl.value = p.group;
+    nameEl.value = p.name;
+    stockEl.value = p.stock || '';
+    unitEl.value = p.unit;
+    suspendedEl.checked = p.suspended;
+    applyStockUnit();
+    document.getElementById('wmFormTitle').textContent = `商品を編集: ${p.name}`;
+    saveBtn.textContent = '変更を保存';
+    cancelBtn.style.display = '';
+    showMsg('', '');
+    document.getElementById('wmFormCard').scrollIntoView({ behavior: 'smooth' });
+  }
+
+  function renderList() {
+    const groups = [...new Set(WHOLESALE_PRODUCTS.map((p) => p.group))];
+    document.getElementById('wmGroupList').innerHTML = groups.map((g) => `<option value="${escapeHtml(g)}">`).join('');
+    document.getElementById('wmListTitle').textContent = `登録済みの商品(${WHOLESALE_PRODUCTS.length}品)`;
+    if (!WHOLESALE_PRODUCTS.length) {
+      listEl.innerHTML = '<p class="hint">まだ商品が登録されていません。</p>';
+      return;
+    }
+    listEl.innerHTML = groups
+      .map(
+        (g) => `
+        <p class="wm-group">${escapeHtml(g || '(区分なし)')}</p>
+        <ul class="wm-list">${WHOLESALE_PRODUCTS.filter((p) => p.group === g)
+          .map((p) => {
+            const index = WHOLESALE_PRODUCTS.indexOf(p);
+            const tags = [
+              `単位: ${escapeHtml(p.unit)}`,
+              p.stock ? `<span class="wm-tag wm-tag-stock">在庫連動: ${escapeHtml(WHOLESALE_STOCK_LABELS[p.stock])}</span>` : '',
+              p.suspended ? '<span class="wholesale-suspended">取り扱い休止中</span>' : '',
+            ]
+              .filter(Boolean)
+              .join(' ');
+            return `
+            <li class="wm-item${p.suspended ? ' wm-item-suspended' : ''}">
+              <div class="wm-item-main">
+                <span class="wm-item-name">${escapeHtml(p.name)}</span>
+                <span class="wm-item-meta">${tags}</span>
+              </div>
+              <div class="wm-item-actions">
+                <button type="button" class="wm-btn" data-action="up" data-code="${p.code}"${index === 0 ? ' disabled' : ''} aria-label="上へ">↑</button>
+                <button type="button" class="wm-btn" data-action="down" data-code="${p.code}"${
+                  index === WHOLESALE_PRODUCTS.length - 1 ? ' disabled' : ''
+                } aria-label="下へ">↓</button>
+                <button type="button" class="wm-btn" data-action="edit" data-code="${p.code}">編集</button>
+                <button type="button" class="wm-btn wm-btn-danger" data-action="delete" data-code="${p.code}">削除</button>
+              </div>
+            </li>`;
+          })
+          .join('')}</ul>`
+      )
+      .join('');
+  }
+
+  async function reload() {
+    await loadWholesaleProducts();
+    renderList();
+  }
+
+  // 並び順を入れ替え、全商品のsort_orderを10刻みで振り直す(同じ値が混ざっていても確実に並ぶように)。
+  async function move(code, delta) {
+    const order = WHOLESALE_PRODUCTS.map((p) => p.code);
+    const i = order.indexOf(code);
+    const j = i + delta;
+    if (i < 0 || j < 0 || j >= order.length) return;
+    [order[i], order[j]] = [order[j], order[i]];
+    const updates = order
+      .map((c, k) => ({ code: c, sortOrder: (k + 1) * 10 }))
+      .filter(({ code: c, sortOrder }) => WHOLESALE_PRODUCTS.find((p) => p.code === c).sortOrder !== sortOrder);
+    for (const u of updates) await updateWholesaleProduct(u.code, { sort_order: u.sortOrder });
+    await reload();
+  }
+
+  listEl.addEventListener('click', async (e) => {
+    const btn = e.target.closest('.wm-btn');
+    if (!btn) return;
+    const code = btn.dataset.code;
+    const p = WHOLESALE_PRODUCTS.find((x) => x.code === code);
+    if (!p) return;
+    if (btn.dataset.action === 'edit') return startEdit(code);
+    try {
+      listEl.querySelectorAll('.wm-btn').forEach((b) => (b.disabled = true));
+      if (btn.dataset.action === 'up') await move(code, -1);
+      if (btn.dataset.action === 'down') await move(code, 1);
+      if (btn.dataset.action === 'delete') {
+        if (!confirm(`「${p.name}」を削除します。よろしいですか？\n(過去の発注の表示は残ります。一時的に止めたいだけなら「取り扱い休止中」にしてください)`)) {
+          renderList();
+          return;
+        }
+        await deleteWholesaleProduct(code);
+        if (editingCode === code) resetForm();
+        await reload();
+        showMsg(`「${p.name}」を削除しました。`, 'success');
+      }
+    } catch (err) {
+      console.error(err);
+      showMsg('更新に失敗しました。通信状況を確認してもう一度お試しください。', 'error');
+      renderList();
+    }
+  });
+
+  saveBtn.addEventListener('click', async () => {
+    const fields = {
+      group_name: groupEl.value.trim(),
+      name: nameEl.value.trim(),
+      unit: stockEl.value ? 'ケース' : unitEl.value.trim(),
+      stock: stockEl.value || null,
+      suspended: suspendedEl.checked,
+    };
+    if (!fields.name) return showMsg('商品名を入力してください。', 'error');
+    if (!fields.unit) return showMsg('単位を入力してください。', 'error');
+    const duplicate = WHOLESALE_PRODUCTS.find((p) => p.name === fields.name && p.code !== editingCode);
+    if (duplicate) return showMsg(`「${fields.name}」はすでに登録されています。`, 'error');
+    saveBtn.disabled = true;
+    showMsg('保存中…', '');
+    try {
+      if (editingCode) {
+        await updateWholesaleProduct(editingCode, fields);
+        showMsg(`✓ 「${fields.name}」の変更を保存しました。`, 'success');
+      } else {
+        const maxOrder = WHOLESALE_PRODUCTS.reduce((m, p) => Math.max(m, p.sortOrder || 0), 0);
+        // 同じ区分の最後に並ぶようにする(区分が新しければ一番最後)。
+        const sameGroup = WHOLESALE_PRODUCTS.filter((p) => p.group === fields.group_name);
+        const after = sameGroup.length ? sameGroup[sameGroup.length - 1].sortOrder : maxOrder;
+        const code = `p${Date.now().toString(36)}`;
+        await insertWholesaleProduct({ code, ...fields, sort_order: after + 1 });
+        showMsg(`✓ 「${fields.name}」を追加しました。`, 'success');
+      }
+      resetForm();
+      await reload();
+      // 追加した商品が既存のsort_orderと詰まっていても並びが崩れないよう、10刻みに振り直す。
+      if (WHOLESALE_PRODUCTS.some((p, k) => p.sortOrder !== (k + 1) * 10)) {
+        for (const [k, p] of WHOLESALE_PRODUCTS.entries()) {
+          if (p.sortOrder !== (k + 1) * 10) await updateWholesaleProduct(p.code, { sort_order: (k + 1) * 10 });
+        }
+        await reload();
+      }
+    } catch (err) {
+      console.error(err);
+      showMsg('保存に失敗しました。通信状況を確認してもう一度お試しください。', 'error');
+    } finally {
+      saveBtn.disabled = false;
+    }
+  });
+
+  cancelBtn.addEventListener('click', () => {
+    resetForm();
+    showMsg('', '');
+  });
+
+  resetForm();
+  renderList();
 }
 
 function renderError(msg) {
