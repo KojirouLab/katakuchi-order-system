@@ -982,10 +982,10 @@ function mountProductSection(container, store, category, options = {}) {
         values.shipTo = document.getElementById(`${id}-shipto`).value;
       }
       await def.save({ storeSlug: store.slug, storeName: store.name, date }, values);
-      if (category === 'oyster' && !values.noOrder) {
+      if ((category === 'oyster' && !values.noOrder) || category === 'wholesale') {
         // 発注が入ったことをDiscordに通知(対象店舗未登録ならEdge Function側で何もしない)。
         // 発注保存自体は成功しているので、通知は待たずに投げっぱなしにする。
-        notifyOrderPlaced({ storeSlug: store.slug, date });
+        notifyOrderPlaced({ storeSlug: store.slug, date, category });
       }
       msgEl.textContent = `✓ ${formatDateJp(date)}の発注を保存しました。`;
       msgEl.className = 'msg msg-success';
