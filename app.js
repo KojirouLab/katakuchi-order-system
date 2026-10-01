@@ -41,6 +41,8 @@ const STORES = [
 
 // 卸先の発注画面に並べる商品。stockを持つ商品(冷凍牡蠣)は数量をケース(15kg)で受け、
 // 牡蠣在庫の混合/S/Mに連動させる(oyster_ordersにも書き込む)。生牡蠣は冷凍庫の在庫とは無関係。
+// suspended: true の商品は取り扱い休止中(プルダウンに出さない)。冷凍牡蠣の無選別(混合)は
+// 牡蠣発注と同じくMIXED_SUSPENDED_FROM以降の日付で休止扱いにする(wsIsSuspended参照)。再開時はフラグを消すこと。
 const WHOLESALE_PRODUCTS = [
   { code: 'dough130', group: '生地', name: '130g玉生地100個入 送料込み', unit: '個' },
   { code: 'dough150', group: '生地', name: '150g玉生地100個入 送料込み', unit: '個' },
@@ -55,8 +57,8 @@ const WHOLESALE_PRODUCTS = [
   { code: 'frozen_s', group: '冷凍牡蠣', name: '冷凍牡蠣 Sサイズ', unit: 'ケース', stock: 's' },
   { code: 'frozen_m', group: '冷凍牡蠣', name: '冷凍牡蠣 Mサイズ', unit: 'ケース', stock: 'm' },
   { code: 'frozen_mixed', group: '冷凍牡蠣', name: '冷凍牡蠣 無選別(混合)', unit: 'ケース', stock: 'mixed' },
-  { code: 'raw_mixed', group: '生牡蠣', name: '生牡蠣 無選別', unit: 'kg' },
-  { code: 'raw_s', group: '生牡蠣', name: '生牡蠣 S', unit: 'kg' },
+  { code: 'raw_mixed', group: '生牡蠣', name: '生牡蠣 無選別', unit: 'kg', suspended: true },
+  { code: 'raw_s', group: '生牡蠣', name: '生牡蠣 S', unit: 'kg', suspended: true },
   { code: 'chicken', group: 'その他', name: 'チキン 1kg', unit: 'kg' },
   { code: 'sausage', group: 'その他', name: '自家製ソーセージ 1kg', unit: 'kg' },
   { code: 'nori', group: 'その他', name: '生海苔', unit: 'kg' },
@@ -391,7 +393,9 @@ const PRODUCT_DEFS = {
                       <label class="checkbox-label">
                         <input type="checkbox" class="js-usual-toggle" id="${id}-usual-${p.code}" data-code="${p.code}">
                         ${escapeHtml(p.name)}${
-                          p.code === 'frozen_mixed' ? '<span class="wholesale-suspended js-mixed-suspended">取り扱い休止中</span>' : ''
+                          p.suspended || p.code === 'frozen_mixed'
+                            ? `<span class="wholesale-suspended js-suspended-badge" data-code="${p.code}">取り扱い休止中</span>`
+                            : ''
                         }
                       </label>`
                     )
@@ -496,16 +500,14 @@ const PRODUCT_DEFS = {
       document.getElementById(`${id}-note`).value = '';
     },
     applyExtraFieldState: (id) => {
-      const dateVal = document.getElementById(`${id}-date`).value;
-      const mixedSuspended = !!dateVal && dateVal >= MIXED_SUSPENDED_FROM;
       // applyLockStateが入力欄を無効化した後に呼ばれるので、備考欄の状態でロック中かどうかを判断する。
       const locked = document.getElementById(`${id}-note`).disabled;
-      document.querySelectorAll(`#${id}-fields .js-mixed-suspended`).forEach((el) => {
-        el.style.display = mixedSuspended ? '' : 'none';
+      document.querySelectorAll(`#${id}-fields .js-suspended-badge`).forEach((el) => {
+        el.style.display = wsIsSuspended(id, el.dataset.code) ? '' : 'none';
       });
       // 「いつもの商品の設定」は発注の締切とは関係なく、いつでも変えられるようにする。
       document.querySelectorAll(`#${id}-fields .js-usual-toggle`).forEach((cb) => {
-        cb.disabled = mixedSuspended && cb.dataset.code === 'frozen_mixed';
+        cb.disabled = wsIsSuspended(id, cb.dataset.code);
       });
       document.getElementById(`${id}-addLine`).disabled = locked;
       document.querySelectorAll(`#${id}-lines .js-line-remove`).forEach((btn) => {
@@ -545,18 +547,19 @@ function wsSetUsual(id, codes) {
   });
 }
 
-function wsMixedSuspended(id) {
+function wsIsSuspended(id, code) {
+  const p = WHOLESALE_PRODUCTS.find((x) => x.code === code);
+  if (p && p.suspended) return true;
   const dateVal = document.getElementById(`${id}-date`).value;
-  return !!dateVal && dateVal >= MIXED_SUSPENDED_FROM;
+  return code === 'frozen_mixed' && !!dateVal && dateVal >= MIXED_SUSPENDED_FROM;
 }
 
 // プルダウンの選択肢は「いつもの商品」だけ。ただし既に選ばれている商品(過去の発注の読み込みや、
 // 選んだ後にいつもの商品から外した場合)は、消えないように選択肢に残す。
 function wsProductOptionsHtml(id, selectedCode) {
   const usual = wsGetUsual(id);
-  const suspended = wsMixedSuspended(id);
   const products = WHOLESALE_PRODUCTS.filter(
-    (p) => p.code === selectedCode || (usual.includes(p.code) && !(suspended && p.code === 'frozen_mixed'))
+    (p) => p.code === selectedCode || (usual.includes(p.code) && !wsIsSuspended(id, p.code))
   );
   return `<option value="">商品を選ぶ</option>${products
     .map((p) => `<option value="${p.code}"${p.code === selectedCode ? ' selected' : ''}>${escapeHtml(p.name)}</option>`)
@@ -577,10 +580,10 @@ function wsAddLine(id, code = '', qty = '') {
   wsRefreshLineInfo(id);
 }
 
-// 空の行を「いつもの商品」の数だけ(最低1行)用意し直す。
+// 空の行を「いつもの商品」(休止中を除く)の数だけ(最低1行)用意し直す。
 function wsResetLines(id) {
   document.getElementById(`${id}-lines`).innerHTML = '';
-  const count = Math.max(1, wsGetUsual(id).length);
+  const count = Math.max(1, wsGetUsual(id).filter((c) => !wsIsSuspended(id, c)).length);
   for (let i = 0; i < count; i++) wsAddLine(id);
 }
 
