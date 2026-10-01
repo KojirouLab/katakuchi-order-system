@@ -670,6 +670,60 @@
     color: var(--hint);
     background: #f0f0ec;
   }
+  .wholesale-heading {
+    font-size: 14px;
+    margin: 4px 0 8px;
+  }
+  .wholesale-group {
+    font-size: 12px;
+    color: var(--hint);
+    margin: 10px 0 4px;
+  }
+  .wholesale-list {
+    margin-bottom: 12px;
+  }
+  .wholesale-item {
+    display: grid;
+    grid-template-columns: 1fr 84px 40px;
+    align-items: center;
+    gap: 4px 8px;
+    padding: 6px 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .wholesale-item label {
+    margin: 0;
+    font-size: 14px;
+    color: var(--text);
+  }
+  .wholesale-item label .hint {
+    display: block;
+    font-size: 11px;
+  }
+  .wholesale-item input {
+    padding: 8px 6px;
+  }
+  .wholesale-unit {
+    font-size: 13px;
+    color: var(--hint);
+  }
+  .wholesale-kg {
+    grid-column: 2 / 4;
+    font-size: 12px;
+    color: var(--primary);
+    font-weight: 700;
+  }
+  .wholesale-kg:empty {
+    display: none;
+  }
+  .wholesale-suspended {
+    display: inline-block;
+    margin-left: 6px;
+    padding: 1px 6px;
+    font-size: 11px;
+    color: #a33;
+    border: 1px solid #e3b4b4;
+    border-radius: 6px;
+  }
   .courier-tag {
     display: inline-block;
     font-size: 11px;
@@ -805,7 +859,7 @@
 </head>
 <body>
 <div id="app"></div>
-<script src="storage.js?v=202609281330"></script>
-<script src="app.js?v=202609281330"></script>
+<script src="storage.js?v=202610011200"></script>
+<script src="app.js?v=202610011200"></script>
 </body>
 </html>

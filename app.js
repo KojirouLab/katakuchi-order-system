@@ -10,11 +10,63 @@ const STORES = [
   // 牡蠣受注の集計ではトラック積み込み用の「配送分」とは別に「宅配発送分」として扱う。
   { slug: 'choinomi-takahashi', name: 'ちょい飲みたかはし', categories: ['oyster'], shipping: 'courier' },
   { slug: 'bijinwana', name: '美人罠', categories: ['oyster'], shipping: 'courier' },
+  // 卸先(牡蠣・ピザ生地などの取引先)。発注は美人罠・ちょい飲みたかはしと同じく
+  // カタクチ商店のピザ集計ページにだけ表示する。usualItemsはその取引先がいつも注文する
+  // 商品(WHOLESALE_PRODUCTSのcode)で、発注画面では先頭に出し、残りの商品も下に並べる。
+  ...[
+    ['w-houryou', '有限会社 ほうりょう', ['raw_mixed', 'raw_s', 'frozen_mixed', 'frozen_s']],
+    ['w-eda-hiroki', '江田浩樹', ['dough200', 'chicken', 'sausage', 'frozen_m']],
+    ['w-kainuma', '開沼 拓', ['crispy8', 'dough130', 'dough150', 'napoli10']],
+    ['w-ashimoka', '株式会社ashimoka', ['dough180', 'dough130']],
+    ['w-eda-kitasendai', '江田宏樹 北仙台', ['dough200', 'chicken', 'sausage', 'nori']],
+    ['w-tasso', 'TASSO 開沼', ['dough150']],
+    ['w-inthesoup', 'in the Soup.', ['napoli10', 'napoli8']],
+    ['w-izukogen', '伊豆高原ビール(株)レストラン', ['napoli6']],
+    ['w-osteria32', 'osteria32', ['dough180', 'gorgonzola']],
+    ['w-soma', 'SOMA', ['napoli10', 'napoli8']],
+    ['w-shunrakuzen', '株式会社旬楽膳', ['napoli8']],
+    ['w-yourgurt', '株式会社YOURGURT', ['crispy8']],
+    ['w-tsurumai', '株式会社鶴舞商店', ['frozen_s', 'frozen_mixed']],
+    ['w-acecafe', 'Acecafe', ['napoli10']],
+    ['w-okano', '日本酒トワイン岡野', ['napoli6']],
+    ['w-tokai', '株式会社東海', ['napoli8plain']],
+    ['w-ito', '伊藤正枝', ['michinoku']],
+    ['w-kanesue', '株式会社 カネスエ', ['napoli8']],
+    ['w-nicolo', 'BISTRO ITALIAN NICOLO', ['dough150']],
+    ['w-romero', 'イタリアンサカバ ロメロ', ['dough150']],
+    ['w-patata', 'カフェ＆パーティ パタータ', ['napoli10']],
+    ['w-pierrot', 'ビストロピエロ', ['dough130', 'dough150', 'crispy8']],
+  ].map(([slug, name, usualItems]) => ({ slug, name, categories: ['wholesale'], shipping: 'courier', usualItems })),
+];
+
+// 卸先の発注画面に並べる商品。stockを持つ商品(冷凍牡蠣)は数量をケース(15kg)で受け、
+// 牡蠣在庫の混合/S/Mに連動させる(oyster_ordersにも書き込む)。生牡蠣は冷凍庫の在庫とは無関係。
+const WHOLESALE_PRODUCTS = [
+  { code: 'dough130', group: '生地', name: '130g玉生地100個入 送料込み', unit: '個' },
+  { code: 'dough150', group: '生地', name: '150g玉生地100個入 送料込み', unit: '個' },
+  { code: 'dough180', group: '生地', name: '180g玉生地 80個入 送料込み', unit: '個' },
+  { code: 'dough200', group: '生地', name: '200g玉生地', unit: '個' },
+  { code: 'napoli6', group: 'ナポリ', name: '6インチナポリ100枚入り 送料込み', unit: '個' },
+  { code: 'napoli8', group: 'ナポリ', name: '8インチナポリ50枚入り 送料込み', unit: '個' },
+  { code: 'napoli10', group: 'ナポリ', name: '10インチナポリ40枚入り 送料込み', unit: '個' },
+  { code: 'napoli8plain', group: 'ナポリ', name: '8インチナポリプレーン', unit: '枚' },
+  { code: 'michinoku', group: 'ナポリ', name: 'みちのくナポリピッツァ 16枚 送料込み', unit: '個' },
+  { code: 'crispy8', group: 'クリスピー', name: '8インチクリスピー100枚 送料込み', unit: '個' },
+  { code: 'frozen_s', group: '冷凍牡蠣', name: '冷凍牡蠣 Sサイズ', unit: 'ケース', stock: 's' },
+  { code: 'frozen_m', group: '冷凍牡蠣', name: '冷凍牡蠣 Mサイズ', unit: 'ケース', stock: 'm' },
+  { code: 'frozen_mixed', group: '冷凍牡蠣', name: '冷凍牡蠣 無選別(混合)', unit: 'ケース', stock: 'mixed' },
+  { code: 'raw_mixed', group: '生牡蠣', name: '生牡蠣 無選別', unit: 'kg' },
+  { code: 'raw_s', group: '生牡蠣', name: '生牡蠣 S', unit: 'kg' },
+  { code: 'chicken', group: 'その他', name: 'チキン 1kg', unit: 'kg' },
+  { code: 'sausage', group: 'その他', name: '自家製ソーセージ 1kg', unit: 'kg' },
+  { code: 'nori', group: 'その他', name: '生海苔', unit: 'kg' },
+  { code: 'gorgonzola', group: 'その他', name: 'ゴルゴンゾーラクラッシュ 1kg', unit: '個' },
 ];
 
 const PIZZA_STORES = STORES.filter((s) => s.categories.includes('pizza'));
 const OYSTER_STORES = STORES.filter((s) => s.categories.includes('oyster'));
-const STORES_BY_CATEGORY = { pizza: PIZZA_STORES, oyster: OYSTER_STORES };
+const WHOLESALE_STORES = STORES.filter((s) => s.categories.includes('wholesale'));
+const STORES_BY_CATEGORY = { pizza: PIZZA_STORES, oyster: OYSTER_STORES, wholesale: WHOLESALE_STORES };
 // 宅配便発送(トラック配送に載らない)店舗のslug一覧。牡蠣在庫管理・受注集計のどちらでも、
 // 「配送」扱いの集計から除いて「宅配発送」として別枠にするために使う。
 const COURIER_STORE_SLUGS = new Set(STORES.filter((s) => s.shipping === 'courier').map((s) => s.slug));
@@ -304,7 +356,139 @@ const PRODUCT_DEFS = {
     fetchRange: fetchOysterOrdersRange,
     del: deleteOysterOrder,
   },
+  wholesale: {
+    label: '商品',
+    deadlineHour: 12,
+    deadlineDaysBefore: 2,
+    skipNonBusinessDays: true,
+    deadlineLabel: '2営業日前(土日祝を除く) 12:00',
+    // いつもの商品を先に、残りの全商品をその下に出す(他の商品も知ってもらうため)。
+    fieldsHtml: (id, store) => {
+      const usual = (store && store.usualItems) || [];
+      const itemRow = (p) => `
+        <div class="wholesale-item">
+          <label for="${id}-item-${p.code}">${escapeHtml(p.name)}${
+            p.code === 'frozen_mixed' ? `<span class="wholesale-suspended" id="${id}-mixed-suspended-msg">取り扱い休止中</span>` : ''
+          }${p.stock ? '<span class="hint">1ケース=15kg</span>' : ''}</label>
+          <input type="number" id="${id}-item-${p.code}" min="0" step="${p.stock ? 1 : 'any'}" inputmode="${
+            p.stock ? 'numeric' : 'decimal'
+          }" placeholder="0">
+          <span class="wholesale-unit">${escapeHtml(p.unit)}</span>
+          ${p.stock ? `<span class="wholesale-kg" id="${id}-item-${p.code}-kg"></span>` : ''}
+        </div>`;
+      const usualProducts = usual.map((code) => WHOLESALE_PRODUCTS.find((p) => p.code === code)).filter(Boolean);
+      const others = WHOLESALE_PRODUCTS.filter((p) => !usual.includes(p.code));
+      const groups = [...new Set(others.map((p) => p.group))];
+      return `
+        ${
+          usualProducts.length
+            ? `<h3 class="wholesale-heading">いつもの商品</h3><div class="wholesale-list">${usualProducts.map(itemRow).join('')}</div>`
+            : ''
+        }
+        <h3 class="wholesale-heading">${usualProducts.length ? 'ほかの商品(こちらもご注文いただけます)' : '商品'}</h3>
+        ${groups
+          .map(
+            (g) =>
+              `<p class="wholesale-group">${escapeHtml(g)}</p><div class="wholesale-list">${others
+                .filter((p) => p.group === g)
+                .map(itemRow)
+                .join('')}</div>`
+          )
+          .join('')}
+        <div class="field">
+          <label for="${id}-note">備考(任意)</label>
+          <textarea id="${id}-note" rows="2"></textarea>
+        </div>`;
+    },
+    readValue: (id) => {
+      const items = [];
+      const boxes = { mixed: 0, s: 0, m: 0 };
+      WHOLESALE_PRODUCTS.forEach((p) => {
+        const el = document.getElementById(`${id}-item-${p.code}`);
+        if (el.disabled && p.code === 'frozen_mixed') return;
+        const raw = el.value.trim();
+        if (!raw) return;
+        const qty = Number(raw);
+        if (!Number.isFinite(qty) || qty < 0 || (p.stock && !Number.isInteger(qty))) {
+          const err = new Error('invalid qty');
+          err.userMessage = `「${p.name}」の数量が正しくありません${p.stock ? '(ケースは整数で入力してください)' : ''}。`;
+          throw err;
+        }
+        if (qty === 0) return;
+        items.push({ code: p.code, name: p.name, unit: p.unit, qty });
+        if (p.stock) boxes[p.stock] += qty;
+      });
+      if (!items.length) {
+        const err = new Error('no items');
+        err.userMessage = '注文する商品の数量を入力してください。';
+        throw err;
+      }
+      const note = document.getElementById(`${id}-note`).value.trim();
+      return {
+        items,
+        note,
+        content: wholesaleContentText(items, note),
+        mixedBoxes: boxes.mixed,
+        sBoxes: boxes.s,
+        mBoxes: boxes.m,
+      };
+    },
+    fillValue: (id, row) => {
+      const qtyByCode = {};
+      ((row && row.items) || []).forEach((it) => {
+        qtyByCode[it.code] = it.qty;
+      });
+      WHOLESALE_PRODUCTS.forEach((p) => {
+        document.getElementById(`${id}-item-${p.code}`).value = qtyByCode[p.code] ?? '';
+      });
+      document.getElementById(`${id}-note`).value = (row && row.note) || '';
+    },
+    clearValue: (id) => {
+      WHOLESALE_PRODUCTS.forEach((p) => {
+        document.getElementById(`${id}-item-${p.code}`).value = '';
+      });
+      document.getElementById(`${id}-note`).value = '';
+    },
+    applyExtraFieldState: (id) => {
+      const dateVal = document.getElementById(`${id}-date`).value;
+      const mixedSuspended = !!dateVal && dateVal >= MIXED_SUSPENDED_FROM;
+      const mixedEl = document.getElementById(`${id}-item-frozen_mixed`);
+      document.getElementById(`${id}-mixed-suspended-msg`).style.display = mixedSuspended ? '' : 'none';
+      if (mixedSuspended) {
+        mixedEl.disabled = true;
+        mixedEl.value = '';
+      }
+      WHOLESALE_PRODUCTS.filter((p) => p.stock).forEach((p) => {
+        const qty = Number(document.getElementById(`${id}-item-${p.code}`).value) || 0;
+        document.getElementById(`${id}-item-${p.code}-kg`).textContent = qty > 0 ? `${qty * 15}kg` : '';
+      });
+    },
+    hasValue: (row) => !!row,
+    recentText: (row) => {
+      const content = escapeHtml(row.content).replace(/\n/g, '<br>');
+      const status = row.confirmed_at
+        ? `<span class="confirm-badge confirmed">✓ カタクチ商店 確認済み(${formatDateTimeJp(row.confirmed_at)})</span>`
+        : `<span class="confirm-badge pending">未確認</span>`;
+      return `${status}<br>${content}`;
+    },
+    fetchOne: fetchWholesaleOrder,
+    save: (base, values) => saveWholesaleOrder({ ...base, ...values }),
+    fetchRecent: fetchWholesaleOrdersByStore,
+    fetchRange: fetchWholesaleOrdersRange,
+    del: deleteWholesaleOrder,
+  },
 };
+
+// 卸先の発注内容を、受注一覧・納品明細書に出す文字列にする(冷凍牡蠣はkgも併記)。
+function wholesaleContentText(items, note) {
+  const lines = items.map((it) => {
+    const product = WHOLESALE_PRODUCTS.find((p) => p.code === it.code);
+    const kg = product && product.stock ? `(${it.qty * 15}kg)` : '';
+    return `${it.name} ${it.qty}${it.unit}${kg}`;
+  });
+  if (note) lines.push(`備考: ${note}`);
+  return lines.join('\n');
+}
 
 const app = document.getElementById('app');
 
@@ -327,10 +511,13 @@ function route() {
 }
 
 function renderHome() {
-  const storeLinks = STORES.map(
-    (s) =>
-      `<li><a href="?store=${s.slug}">${escapeHtml(s.name)}(${s.categories.map((c) => PRODUCT_DEFS[c].label).join('・')})</a></li>`
-  ).join('');
+  const storeLinks = STORES.filter((s) => !s.categories.includes('wholesale'))
+    .map(
+      (s) =>
+        `<li><a href="?store=${s.slug}">${escapeHtml(s.name)}(${s.categories.map((c) => PRODUCT_DEFS[c].label).join('・')})</a></li>`
+    )
+    .join('');
+  const wholesaleLinks = WHOLESALE_STORES.map((s) => `<li><a href="?store=${s.slug}">${escapeHtml(s.name)}</a></li>`).join('');
   app.innerHTML = `
     <div class="page">
       <h1>カタクチ商店 受発注システム</h1>
@@ -339,6 +526,11 @@ function renderHome() {
       <div class="card">
         <h2>各店舗の発注</h2>
         <ul class="home-links">${storeLinks}</ul>
+      </div>
+      <div class="card">
+        <h2>卸先の発注</h2>
+        <p class="hint">受注はカタクチ商店(ピザ集計)ページにだけ表示されます。</p>
+        <ul class="home-links">${wholesaleLinks}</ul>
       </div>
       <div class="card">
         <h2>受注集計</h2>
@@ -488,7 +680,7 @@ function mountProductSection(container, store, category, options = {}) {
               </div>`
             : ''
         }
-        ${def.fieldsHtml(id)}
+        ${def.fieldsHtml(id, store)}
         <button id="${id}-submitBtn" class="primary">この内容で発注する</button>
         <button id="${id}-cancelBtn" class="secondary" style="display:none">この日の発注をキャンセルする</button>
       </div>
@@ -641,7 +833,7 @@ function mountProductSection(container, store, category, options = {}) {
       loadRecent();
     } catch (e) {
       console.error(e);
-      msgEl.textContent = '保存に失敗しました。通信状況を確認してもう一度お試しください。';
+      msgEl.textContent = e.userMessage || '保存に失敗しました。通信状況を確認してもう一度お試しください。';
       msgEl.className = 'msg msg-error';
     } finally {
       submitBtn.disabled = locked;
@@ -815,6 +1007,7 @@ async function renderAdminPage(slug) {
     try {
       const pizzaRowsByKey = {};
       const oysterRowsByKey = {};
+      const wholesaleRowsByKey = {};
       let oysterRowsCache = null;
       const fetchOysterRowsOnce = async () => {
         if (!oysterRowsCache) oysterRowsCache = await fetchOysterOrdersRange(from, to);
@@ -843,6 +1036,17 @@ async function renderAdminPage(slug) {
         })
       );
 
+      let wholesaleSection = '';
+      if (slug === 'katakuchi' && WHOLESALE_STORES.length > 0) {
+        const rows = await fetchWholesaleOrdersRange(from, to);
+        rows.forEach((r) => {
+          wholesaleRowsByKey[`${r.order_date}__${r.store_slug}`] = r;
+        });
+        wholesaleSection =
+          '<h2 class="section-title">卸先の受注</h2>' +
+          renderTextOrderSummary(rows, WHOLESALE_STORES, { showActions: true, confirmClassSuffix: '-wholesale' });
+      }
+
       let courierSection = '';
       if (slug === 'katakuchi' && courierOysterStores.length > 0) {
         const rows = await fetchOysterRowsOnce();
@@ -854,7 +1058,7 @@ async function renderAdminPage(slug) {
           renderOysterSummary(rows, courierOysterStores, { showPrint: true });
       }
 
-      summaryEl.innerHTML = sections.join('') + courierSection;
+      summaryEl.innerHTML = sections.join('') + courierSection + wholesaleSection;
       const bindConfirmToggle = (selector, action, resetLabel) => {
         summaryEl.querySelectorAll(selector).forEach((btn) => {
           btn.addEventListener('click', async () => {
@@ -876,9 +1080,17 @@ async function renderAdminPage(slug) {
       bindConfirmToggle('.unconfirm-btn', unconfirmPizzaOrder, '未確認に戻す');
       bindConfirmToggle('.confirm-btn-oyster', confirmOysterOrder, '確認済みにする');
       bindConfirmToggle('.unconfirm-btn-oyster', unconfirmOysterOrder, '未確認に戻す');
+      bindConfirmToggle('.confirm-btn-wholesale', confirmWholesaleOrder, '確認済みにする');
+      bindConfirmToggle('.unconfirm-btn-wholesale', unconfirmWholesaleOrder, '未確認に戻す');
       summaryEl.querySelectorAll('.print-btn').forEach((btn) => {
         btn.addEventListener('click', () => {
           const key = `${btn.dataset.date}__${btn.dataset.store}`;
+          // 卸先は冷凍牡蠣分がoyster_ordersにも同じキーで入っているため、先に卸先の受注を見る。
+          const wholesaleRow = wholesaleRowsByKey[key];
+          if (wholesaleRow) {
+            printDeliverySlip(btn.dataset.storename, btn.dataset.date, wholesaleRow.content);
+            return;
+          }
           const pizzaRow = pizzaRowsByKey[key];
           if (pizzaRow) {
             printDeliverySlip(btn.dataset.storename, btn.dataset.date, pizzaRow.content);
@@ -3326,6 +3538,8 @@ async function renderStockAuditPage() {
 
 function renderTextOrderSummary(rows, stores, options = {}) {
   const showActions = options.showActions !== false;
+  // 確認ボタンのclass名の接尾辞(卸先の受注は '-wholesale' にして、ピザとは別のテーブルを更新する)。
+  const sfx = options.confirmClassSuffix || '';
   const dates = [...new Set(rows.map((r) => r.order_date))].sort();
   if (!dates.length) return '<div class="card"><p class="hint">この期間の発注はありません。</p></div>';
   const byKey = {};
@@ -3341,8 +3555,8 @@ function renderTextOrderSummary(rows, stores, options = {}) {
           if (!r || !r.content || !r.content.trim()) return '';
           const status = showActions
             ? r.confirmed_at
-              ? `<span class="confirm-badge confirmed">✓ 確認済み(${formatDateTimeJp(r.confirmed_at)})</span> <button class="unconfirm-btn" data-store="${s.slug}" data-date="${date}">未確認に戻す</button>`
-              : `<button class="confirm-btn" data-store="${s.slug}" data-date="${date}">確認済みにする</button>`
+              ? `<span class="confirm-badge confirmed">✓ 確認済み(${formatDateTimeJp(r.confirmed_at)})</span> <button class="unconfirm-btn${sfx}" data-store="${s.slug}" data-date="${date}">未確認に戻す</button>`
+              : `<button class="confirm-btn${sfx}" data-store="${s.slug}" data-date="${date}">確認済みにする</button>`
             : '';
           const printBtn = showActions
             ? `<button class="print-btn" data-store="${s.slug}" data-date="${date}" data-storename="${escapeHtml(

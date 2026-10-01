@@ -190,6 +190,94 @@ async function fetchOysterOrdersRange(from, to) {
   return data || [];
 }
 
+// ---- 卸先受注 ----
+// 冷凍牡蠣の数量(mixedBoxes/sBoxes/mBoxes)は牡蠣在庫に連動させるため、同じ店舗・日付で
+// oyster_ordersにも書き込む(冷凍牡蠣が0ならoyster_orders側の行は消す)。
+
+async function fetchWholesaleOrder(storeSlug, date) {
+  assertClient();
+  const { data, error } = await sb
+    .from('wholesale_orders')
+    .select('*')
+    .eq('store_slug', storeSlug)
+    .eq('order_date', date)
+    .maybeSingle();
+  if (error) throw error;
+  return data;
+}
+
+async function saveWholesaleOrder({ storeSlug, storeName, date, items, content, note, mixedBoxes, sBoxes, mBoxes }) {
+  assertClient();
+  const { error } = await sb.from('wholesale_orders').upsert(
+    {
+      store_slug: storeSlug,
+      store_name: storeName,
+      order_date: date,
+      items,
+      content,
+      note: note || '',
+      confirmed_at: null,
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: 'store_slug,order_date' }
+  );
+  if (error) throw error;
+  if (mixedBoxes + sBoxes + mBoxes > 0) {
+    await saveOysterOrder({ storeSlug, storeName, date, mixedBoxes, sBoxes, mBoxes, noOrder: false });
+  } else {
+    const { error: delError } = await sb.from('oyster_orders').delete().eq('store_slug', storeSlug).eq('order_date', date);
+    if (delError) throw delError;
+  }
+}
+
+async function setWholesaleConfirmed(storeSlug, date, confirmed) {
+  assertClient();
+  const { data, error } = await sb
+    .from('wholesale_orders')
+    .update({ confirmed_at: confirmed ? new Date().toISOString() : null })
+    .eq('store_slug', storeSlug)
+    .eq('order_date', date)
+    .select();
+  if (error) throw error;
+  if (!data || data.length === 0) throw new Error('更新できませんでした(権限設定が反映されていない可能性があります)');
+}
+
+const confirmWholesaleOrder = (storeSlug, date) => setWholesaleConfirmed(storeSlug, date, true);
+const unconfirmWholesaleOrder = (storeSlug, date) => setWholesaleConfirmed(storeSlug, date, false);
+
+async function deleteWholesaleOrder(storeSlug, date) {
+  assertClient();
+  const { data, error } = await sb.from('wholesale_orders').delete().eq('store_slug', storeSlug).eq('order_date', date).select();
+  if (error) throw error;
+  if (!data || data.length === 0) throw new Error('削除できませんでした(権限設定が反映されていない可能性があります)');
+  const { error: delError } = await sb.from('oyster_orders').delete().eq('store_slug', storeSlug).eq('order_date', date);
+  if (delError) throw delError;
+}
+
+async function fetchWholesaleOrdersByStore(storeSlug, limit) {
+  assertClient();
+  const { data, error } = await sb
+    .from('wholesale_orders')
+    .select('*')
+    .eq('store_slug', storeSlug)
+    .order('order_date', { ascending: false })
+    .limit(limit);
+  if (error) throw error;
+  return data || [];
+}
+
+async function fetchWholesaleOrdersRange(from, to) {
+  assertClient();
+  const { data, error } = await sb
+    .from('wholesale_orders')
+    .select('*')
+    .gte('order_date', from)
+    .lte('order_date', to)
+    .order('order_date', { ascending: false });
+  if (error) throw error;
+  return data || [];
+}
+
 // ---- 牡蠣在庫(入庫) ----
 
 async function fetchStockInAll() {
