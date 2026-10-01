@@ -2,7 +2,7 @@
 // 締切リマインダー(check-deadlines)とは別物で、こちらは「発注が入った」ことを知らせる通知。
 // 対象は2種類:
 //   - 牡蠣の発注(category='oyster'、既定): discord_notification_targetsにcategory='oyster_placed'で
-//     登録された店舗だけ(今のところちょい飲みたかはし)。
+//     登録された店舗だけ(今のところちょい飲みたかはし・美人罠)。
 //   - 卸先の発注(category='wholesale'): category='wholesale_placed'で登録された取引先だけ。
 // 未登録の店舗・取引先は何もしない。
 //
@@ -20,7 +20,12 @@ const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
 const STORE_NAMES: Record<string, string> = {
   "choinomi-takahashi": "ちょい飲みたかはし",
+  bijinwana: "美人罠",
 };
+
+// order_dateを「着希望日」として受け付ける店舗(app.jsのDESIRED_ARRIVAL_STORE_SLUGSと合わせる)。
+// それ以外の店舗のorder_dateは発注画面の表記どおり「発注日」として通知する。
+const DESIRED_ARRIVAL_STORE_SLUGS = new Set(["choinomi-takahashi"]);
 
 const TIME_SLOT_SUFFIX = (slot: string | null) => (slot ? `(${slot})` : "");
 
@@ -97,7 +102,9 @@ Deno.serve(async (req) => {
   const mention = target.mention_role_id ? `<@&${target.mention_role_id}> ` : "";
   const shipToLine = order.ship_to ? `\n送付先: ${order.ship_to}` : "";
   const text =
-    `${mention}**${storeName}**から発注が入りました(着希望日 ${dateLabel}${TIME_SLOT_SUFFIX(order.desired_time_slot)})${shipToLine}\n` +
+    `${mention}**${storeName}**から発注が入りました(${
+      DESIRED_ARRIVAL_STORE_SLUGS.has(storeSlug) ? "着希望日" : "発注日"
+    } ${dateLabel}${TIME_SLOT_SUFFIX(order.desired_time_slot)})${shipToLine}\n` +
     `混合:${order.mixed_boxes} / S:${order.s_boxes} / M:${order.m_boxes}`;
 
   const res = await fetch(target.webhook_url, {
