@@ -514,7 +514,7 @@ const PRODUCT_DEFS = {
       const content = escapeHtml(row.content).replace(/\n/g, '<br>');
       const status = row.confirmed_at
         ? `<span class="confirm-badge confirmed">✓ カタクチ商店 確認済み(${formatDateTimeJp(row.confirmed_at)})</span>`
-        : `<span class="confirm-badge pending">未確認</span>`;
+        : `<span class="confirm-badge pending">受付確認中</span>`;
       return `${status}<br>${content}`;
     },
     fetchOne: fetchWholesaleOrder,
