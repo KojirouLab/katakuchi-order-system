@@ -26,6 +26,7 @@ const STORES: { slug: string; name: string; categories: Category[] }[] = [
   { slug: "kaki-mouikko", name: "牡蠣小屋もういっこ", categories: ["oyster"] },
   { slug: "kaki-higashiichi", name: "牡蠣小屋東一店", categories: ["oyster"] },
   { slug: "kai-hakko", name: "貝小屋はっこ", categories: ["oyster"] },
+  { slug: "kaki-rokko-honmachi", name: "牡蠣小屋ろっこ本町店", categories: ["oyster"] },
   { slug: "choinomi-takahashi", name: "ちょい飲みたかはし", categories: ["oyster"] },
 ];
 
