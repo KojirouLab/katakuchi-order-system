@@ -215,6 +215,51 @@ function earliestOrderableDate(category) {
   return d;
 }
 
+// ---- 牡蠣在庫による受付上限 ----
+// 冷凍庫の在庫が残りわずかなサイズは、まだ出荷していない受注分まで差し引いた残り(=これから受けられる数)を
+// 上限にして、それ以上は発注画面で選べないようにする。対象サイズはSTOCK_LIMITED_SIZESに入れる。
+// 残りは在庫確認ページと同じ計算(computeKakiStockBalance)で、asOfDateを遠い将来にして求める。
+// 管理者ページ(締切後の代理入力)では上限をかけない。
+const STOCK_LIMITED_SIZES = ['s'];
+const STOCK_SIZE_LABELS = { mixed: '混合', s: 'Sサイズ', m: 'Mサイズ' };
+let KAKI_AVAILABLE = null; // { mixed, s, m } まだ読み込めていなければnull(上限なし扱い)
+
+async function refreshKakiAvailable() {
+  try {
+    KAKI_AVAILABLE = (await computeKakiStockBalance('2099-12-31')).balance;
+  } catch (e) {
+    console.error(e);
+  }
+  return KAKI_AVAILABLE;
+}
+
+// その発注欄で、このサイズをあと何ケースまで受け付けられるか(上限なしならnull)。
+// 表示中の日付にすでに保存済みの発注がある場合、その分は残りから引かれているので足し戻す。
+function stockOrderLimit(id, size) {
+  if (!STOCK_LIMITED_SIZES.includes(size) || !KAKI_AVAILABLE) return null;
+  const fieldsEl = document.getElementById(`${id}-fields`);
+  if (fieldsEl.dataset.bypass === '1') return null;
+  const existing = JSON.parse(fieldsEl.dataset.stockExisting || '{}')[size] || 0;
+  return Math.max(0, (Number(KAKI_AVAILABLE[size]) || 0) + existing);
+}
+
+// 上限を超えた数量を入れられた場合だけ出すメッセージ(残りの数は画面に出さない)。
+function stockLimitMessage(label, limit) {
+  return limit <= 0 ? `${label}は受付を終了しました。` : `${label}は在庫の都合で、この数量ではお受けできません。`;
+}
+
+// 上限を超えていたら、利用者向けのメッセージ付きのエラーにする(保存直前の最終チェック)。
+function assertWithinStockLimit(id, boxes) {
+  STOCK_LIMITED_SIZES.forEach((size) => {
+    const limit = stockOrderLimit(id, size);
+    if (limit !== null && (boxes[size] || 0) > limit) {
+      const err = new Error('stock limit');
+      err.userMessage = stockLimitMessage(STOCK_SIZE_LABELS[size], limit);
+      throw err;
+    }
+  });
+}
+
 // 商品カテゴリごとの入力欄・保存/取得ロジックの定義。pizzaは自由記述のcontent、oysterはケース数の3項目。
 const PRODUCT_DEFS = {
   pizza: {
@@ -307,6 +352,7 @@ const PRODUCT_DEFS = {
       const sBoxes = noOrder ? 0 : Number(document.getElementById(`${id}-s`).value) || 0;
       const mBoxes = noOrder ? 0 : Number(document.getElementById(`${id}-m`).value) || 0;
       if (!noOrder && mixedBoxes === 0 && sBoxes === 0 && mBoxes === 0) noOrder = true;
+      assertWithinStockLimit(id, { mixed: mixedBoxes, s: sBoxes, m: mBoxes });
       return { mixedBoxes, sBoxes, mBoxes, noOrder };
     },
     fillValue: (id, row) => {
@@ -332,10 +378,20 @@ const PRODUCT_DEFS = {
           el.disabled = true;
           el.value = 0;
         }
+        // 在庫が残りわずかなサイズは、受け付けられる数より多い選択肢を選べなくする。
+        const limit = stockOrderLimit(id, k);
+        [...el.options].forEach((o) => {
+          o.disabled = limit !== null && Number(o.value) > limit;
+        });
+        if (limit !== null && Number(el.value) > limit) el.value = limit;
         const kgEl = document.getElementById(`${id}-${k}-kg`);
         kgEl.textContent = `${(Number(el.value) || 0) * 15}kg`;
       });
     },
+    stockBoxesOfRow: (row) =>
+      row && !row.no_order
+        ? { mixed: Number(row.mixed_boxes) || 0, s: Number(row.s_boxes) || 0, m: Number(row.m_boxes) || 0 }
+        : {},
     hasValue: (row) => !!row,
     recentText: (row) =>
       row.no_order
@@ -434,6 +490,7 @@ const PRODUCT_DEFS = {
         if (!btn || btn.disabled) return;
         btn.closest('tr').remove();
         wsRefreshCartEmpty(id);
+        wsRefreshProductOptions(id);
       });
       // 前回までの注文(新しい順)に出てきた商品を、プルダウンの先頭に出す。
       // 注文履歴が無い取引先は、STORESのusualItemsを「いつもの商品」として先頭に出す。
@@ -470,6 +527,7 @@ const PRODUCT_DEFS = {
         const p = WHOLESALE_PRODUCTS.find((x) => x.code === it.code);
         if (p && p.stock) boxes[p.stock] += it.qty;
       });
+      assertWithinStockLimit(id, boxes);
       const note = document.getElementById(`${id}-note`).value.trim();
       return {
         items,
@@ -504,6 +562,14 @@ const PRODUCT_DEFS = {
       });
       wsRefreshProductOptions(id);
     },
+    stockBoxesOfRow: (row) => {
+      const boxes = {};
+      ((row && row.items) || []).forEach((it) => {
+        const p = WHOLESALE_PRODUCTS.find((x) => x.code === it.code);
+        if (p && p.stock) boxes[p.stock] = (boxes[p.stock] || 0) + Number(it.qty);
+      });
+      return boxes;
+    },
     hasValue: (row) => !!row,
     recentText: (row) => {
       const content = escapeHtml(row.content).replace(/\n/g, '<br>');
@@ -534,9 +600,24 @@ function wsSetUsual(id, codes, label) {
   cart.dataset.usualLabel = label;
 }
 
+// 在庫連動の商品で、注文内容に入れた分を引くとあと何ケース追加できるか(上限なしならnull)。
+function wsStockRemaining(id, size) {
+  const limit = stockOrderLimit(id, size);
+  if (limit === null) return null;
+  return Math.max(0, limit - wsCartStockTotal(id, size));
+}
+
+function wsCartStockTotal(id, size) {
+  return wsCartItems(id).reduce((sum, it) => {
+    const p = WHOLESALE_PRODUCTS.find((x) => x.code === it.code);
+    return p && p.stock === size ? sum + it.qty : sum;
+  }, 0);
+}
+
 function wsIsSuspended(id, code) {
   const p = WHOLESALE_PRODUCTS.find((x) => x.code === code);
   if (p && p.suspended) return true;
+  if (p && p.stock && wsStockRemaining(id, p.stock) === 0) return true;
   const dateVal = document.getElementById(`${id}-date`).value;
   return !!p && p.stock === 'mixed' && !!dateVal && dateVal >= MIXED_SUSPENDED_FROM;
 }
@@ -623,11 +704,18 @@ function wsAddEntryToCart(id) {
     qtyEl.focus();
     return false;
   }
+  const remaining = p.stock ? wsStockRemaining(id, p.stock) : null;
+  if (remaining !== null && qty > remaining) {
+    msgEl.textContent = stockLimitMessage(p.name, remaining);
+    qtyEl.focus();
+    return false;
+  }
   wsAddCartRow(id, p.code, qty);
   wsRefreshCartEmpty(id);
   productEl.value = '';
   qtyEl.value = '';
   wsRefreshEntryInfo(id);
+  wsRefreshProductOptions(id);
   msgEl.className = 'msg msg-success';
   msgEl.textContent = `✓ ${p.name}を追加しました。続けて次の商品を選べます。`;
   productEl.focus();
@@ -1134,6 +1222,18 @@ function mountProductSection(container, store, category, options = {}) {
   let hasExisting = false;
   let locked = false;
   let lockReason = null; // 'deadline' | 'confirmed' | null
+  // 在庫による受付上限(stockOrderLimit)用: 管理者ページかどうかと、表示中の日付の保存済み発注の数量。
+  fieldsEl.dataset.bypass = bypassLock ? '1' : '';
+  fieldsEl.dataset.stockExisting = '{}';
+  function setStockExisting(boxes) {
+    if (!def.stockBoxesOfRow) return;
+    fieldsEl.dataset.stockExisting = JSON.stringify(boxes || {});
+  }
+  // 在庫の残りを読み込み直して、選べる数量を更新する(読み込み前は上限なし扱い)。
+  function refreshStockLimit() {
+    if (!def.stockBoxesOfRow) return;
+    refreshKakiAvailable().then(() => applyLockState());
+  }
 
   function applyLockState() {
     fieldsEl.querySelectorAll('input, textarea, select').forEach((el) => {
@@ -1178,6 +1278,7 @@ function mountProductSection(container, store, category, options = {}) {
         document.getElementById(`${id}-shipto`).value = (row && row.ship_to) || DEFAULT_SHIP_TO;
       }
       hasExisting = def.hasValue(row);
+      if (def.stockBoxesOfRow) setStockExisting(def.stockBoxesOfRow(row));
       const isConfirmed = !!(row && row.confirmed_at);
       const deadlinePassed = isPastDeadline(date, category);
       locked = !bypassLock && (deadlinePassed || isConfirmed);
@@ -1256,6 +1357,7 @@ function mountProductSection(container, store, category, options = {}) {
       msgEl.textContent = `✓ ${formatDateJp(date)}の発注を保存しました。`;
       msgEl.className = 'msg msg-success';
       hasExisting = true;
+      setStockExisting({ mixed: values.mixedBoxes || 0, s: values.sBoxes || 0, m: values.mBoxes || 0 });
       if (def.clearAfterSubmit) {
         def.clearValue(id);
         if (isDesiredArrival) {
@@ -1264,6 +1366,7 @@ function mountProductSection(container, store, category, options = {}) {
         }
       }
       applyLockState();
+      refreshStockLimit();
       loadRecent();
     } catch (e) {
       console.error(e);
@@ -1285,9 +1388,11 @@ function mountProductSection(container, store, category, options = {}) {
       await def.del(store.slug, date);
       def.clearValue(id);
       hasExisting = false;
+      setStockExisting({});
       msgEl.textContent = `${formatDateJp(date)}の発注をキャンセルしました。`;
       msgEl.className = 'msg msg-success';
       applyLockState();
+      refreshStockLimit();
       loadRecent();
     } catch (e) {
       console.error(e);
@@ -1300,6 +1405,7 @@ function mountProductSection(container, store, category, options = {}) {
 
   loadForDate();
   loadRecent();
+  refreshStockLimit();
 }
 
 async function renderAdminPage(slug) {
@@ -2208,6 +2314,89 @@ function renderStockMenuPage() {
     </div>`;
 }
 
+// 牡蠣在庫(冷凍庫)の合計残高を計算する。asOfDateまでに確定した入庫・発注(出荷)・自社使用から求める。
+// 在庫確認ページの表示と、発注画面の「Sサイズの受付上限」(asOfDateを遠い将来にして、まだ出荷していない
+// 受注分まで差し引いた残り)の両方で使う。
+async function computeKakiStockBalance(asOfDate) {
+  // 宅配受付店舗(着希望日で受け付ける店舗)は着希望日の前日に発送するため、asOfDateの
+  // 翌日分の発注も1日多く取得しておく(asOfDate時点ですでに発送済みとして計上するため)。
+  const [allStockInRows, shippedRows, internalOutRows] = await Promise.all([
+    fetchStockInAll(),
+    fetchOysterOrdersRange(KAKI_STOCK_TRACKING_START_DATE, addDaysStr(asOfDate, 1)),
+    fetchStockOutInternalAll(),
+  ]);
+  const stockInRowsUpToDate = allStockInRows.filter((r) => r.in_date <= asOfDate);
+  const internalOutRowsUpToDate = internalOutRows.filter(
+    (r) => r.out_date <= asOfDate && r.out_date >= KAKI_STOCK_TRACKING_START_DATE
+  );
+
+  const inTotal = { mixed: 0, s: 0, m: 0 };
+  stockInRowsUpToDate.forEach((r) => {
+    inTotal.mixed += Number(r.mixed_boxes) || 0;
+    inTotal.s += Number(r.s_boxes) || 0;
+    inTotal.m += Number(r.m_boxes) || 0;
+  });
+  // 発注データそのまま(仕入れ先の記録とは無関係な生の出荷合計)。仕入れ先ごとの残りの
+  // 按分計算(実発注を上限にする処理)には、この生の合計を使う。
+  const shippedByDateRaw = {};
+  shippedRows.forEach((r) => {
+    const key = oysterShipDate(r);
+    if (key > asOfDate) return; // 翌日分取得で混入した、まだ発送していない分は対象外
+    if (!shippedByDateRaw[key]) shippedByDateRaw[key] = { mixed: 0, s: 0, m: 0 };
+    shippedByDateRaw[key].mixed += Number(r.mixed_boxes) || 0;
+    shippedByDateRaw[key].s += Number(r.s_boxes) || 0;
+    shippedByDateRaw[key].m += Number(r.m_boxes) || 0;
+  });
+  // 出庫元が「在庫管理対象外の仕入れ先」(拓人指ヶ浜など、別拠点で自前に在庫を持つところ)と
+  // 明示的に記録されている店舗配達分は、この冷凍庫の在庫からは出ていないため、全体在庫の
+  // 計算からは除外する(その日の実発注を上限にクランプし、記録ミスで過大に引かれないようにする)。
+  const outOnlyStoreByDate = {};
+  internalOutRowsUpToDate
+    .filter((r) => r.purpose === 'store' && STOCK_OUT_ONLY_SUPPLIERS.includes(r.supplier))
+    .forEach((r) => {
+      const key = r.out_date;
+      if (!outOnlyStoreByDate[key]) outOnlyStoreByDate[key] = { mixed: 0, s: 0, m: 0 };
+      outOnlyStoreByDate[key].mixed += Number(r.mixed_boxes) || 0;
+      outOnlyStoreByDate[key].s += Number(r.s_boxes) || 0;
+      outOnlyStoreByDate[key].m += Number(r.m_boxes) || 0;
+    });
+  // shippedByDate: 全体在庫の計算に使う「この冷凍庫から実際に出た分」。
+  const shippedByDate = {};
+  Object.keys(shippedByDateRaw).forEach((key) => {
+    const raw = shippedByDateRaw[key];
+    const outOnly = outOnlyStoreByDate[key] || { mixed: 0, s: 0, m: 0 };
+    shippedByDate[key] = {
+      mixed: raw.mixed - Math.min(outOnly.mixed, raw.mixed),
+      s: raw.s - Math.min(outOnly.s, raw.s),
+      m: raw.m - Math.min(outOnly.m, raw.m),
+    };
+  });
+  // 用途が「自社使用など」の分だけ全体在庫からも差し引く。「店舗配達分の記録」は
+  // 発注データ側(shippedRows)ですでに全体在庫から引かれているため、ここでは
+  // 仕入れ先ごとの残り計算にのみ使う(二重に引かない)。
+  internalOutRowsUpToDate
+    .filter((r) => r.purpose !== 'store')
+    .forEach((r) => {
+      const key = r.out_date;
+      if (!shippedByDate[key]) shippedByDate[key] = { mixed: 0, s: 0, m: 0 };
+      shippedByDate[key].mixed += Number(r.mixed_boxes) || 0;
+      shippedByDate[key].s += Number(r.s_boxes) || 0;
+      shippedByDate[key].m += Number(r.m_boxes) || 0;
+    });
+  const outTotal = { mixed: 0, s: 0, m: 0 };
+  Object.values(shippedByDate).forEach((t) => {
+    outTotal.mixed += t.mixed;
+    outTotal.s += t.s;
+    outTotal.m += t.m;
+  });
+  const balance = {
+    mixed: inTotal.mixed - outTotal.mixed,
+    s: inTotal.s - outTotal.s,
+    m: inTotal.m - outTotal.m,
+  };
+  return { stockInRowsUpToDate, internalOutRowsUpToDate, shippedByDateRaw, shippedByDate, inTotal, outTotal, balance };
+}
+
 async function renderStockBalancePage() {
   app.innerHTML = `
     <div class="page wide">
@@ -2779,82 +2968,8 @@ async function renderStockBalancePage() {
     const asOfDate = document.getElementById('asOfDate').value || todayStr();
     balanceEl.innerHTML = '<p class="hint">読み込み中…</p>';
     try {
-      // 宅配受付店舗(着希望日で受け付ける店舗)は着希望日の前日に発送するため、asOfDateの
-      // 翌日分の発注も1日多く取得しておく(asOfDate時点ですでに発送済みとして計上するため)。
-      const [allStockInRows, shippedRows, internalOutRows] = await Promise.all([
-        fetchStockInAll(),
-        fetchOysterOrdersRange(KAKI_STOCK_TRACKING_START_DATE, addDaysStr(asOfDate, 1)),
-        fetchStockOutInternalAll(),
-      ]);
-      const stockInRowsUpToDate = allStockInRows.filter((r) => r.in_date <= asOfDate);
-      const internalOutRowsUpToDate = internalOutRows.filter(
-        (r) => r.out_date <= asOfDate && r.out_date >= KAKI_STOCK_TRACKING_START_DATE
-      );
-
-      const inTotal = { mixed: 0, s: 0, m: 0 };
-      stockInRowsUpToDate.forEach((r) => {
-        inTotal.mixed += Number(r.mixed_boxes) || 0;
-        inTotal.s += Number(r.s_boxes) || 0;
-        inTotal.m += Number(r.m_boxes) || 0;
-      });
-      // 発注データそのまま(仕入れ先の記録とは無関係な生の出荷合計)。仕入れ先ごとの残りの
-      // 按分計算(実発注を上限にする処理)には、この生の合計を使う。
-      const shippedByDateRaw = {};
-      shippedRows.forEach((r) => {
-        const key = oysterShipDate(r);
-        if (key > asOfDate) return; // 翌日分取得で混入した、まだ発送していない分は対象外
-        if (!shippedByDateRaw[key]) shippedByDateRaw[key] = { mixed: 0, s: 0, m: 0 };
-        shippedByDateRaw[key].mixed += Number(r.mixed_boxes) || 0;
-        shippedByDateRaw[key].s += Number(r.s_boxes) || 0;
-        shippedByDateRaw[key].m += Number(r.m_boxes) || 0;
-      });
-      // 出庫元が「在庫管理対象外の仕入れ先」(拓人指ヶ浜など、別拠点で自前に在庫を持つところ)と
-      // 明示的に記録されている店舗配達分は、この冷凍庫の在庫からは出ていないため、全体在庫の
-      // 計算からは除外する(その日の実発注を上限にクランプし、記録ミスで過大に引かれないようにする)。
-      const outOnlyStoreByDate = {};
-      internalOutRowsUpToDate
-        .filter((r) => r.purpose === 'store' && STOCK_OUT_ONLY_SUPPLIERS.includes(r.supplier))
-        .forEach((r) => {
-          const key = r.out_date;
-          if (!outOnlyStoreByDate[key]) outOnlyStoreByDate[key] = { mixed: 0, s: 0, m: 0 };
-          outOnlyStoreByDate[key].mixed += Number(r.mixed_boxes) || 0;
-          outOnlyStoreByDate[key].s += Number(r.s_boxes) || 0;
-          outOnlyStoreByDate[key].m += Number(r.m_boxes) || 0;
-        });
-      // shippedByDate: 全体在庫の計算に使う「この冷凍庫から実際に出た分」。
-      const shippedByDate = {};
-      Object.keys(shippedByDateRaw).forEach((key) => {
-        const raw = shippedByDateRaw[key];
-        const outOnly = outOnlyStoreByDate[key] || { mixed: 0, s: 0, m: 0 };
-        shippedByDate[key] = {
-          mixed: raw.mixed - Math.min(outOnly.mixed, raw.mixed),
-          s: raw.s - Math.min(outOnly.s, raw.s),
-          m: raw.m - Math.min(outOnly.m, raw.m),
-        };
-      });
-      // 用途が「自社使用など」の分だけ全体在庫からも差し引く。「店舗配達分の記録」は
-      // 発注データ側(shippedRows)ですでに全体在庫から引かれているため、ここでは
-      // 仕入れ先ごとの残り計算にのみ使う(二重に引かない)。
-      internalOutRowsUpToDate
-        .filter((r) => r.purpose !== 'store')
-        .forEach((r) => {
-          const key = r.out_date;
-          if (!shippedByDate[key]) shippedByDate[key] = { mixed: 0, s: 0, m: 0 };
-          shippedByDate[key].mixed += Number(r.mixed_boxes) || 0;
-          shippedByDate[key].s += Number(r.s_boxes) || 0;
-          shippedByDate[key].m += Number(r.m_boxes) || 0;
-        });
-      const outTotal = { mixed: 0, s: 0, m: 0 };
-      Object.values(shippedByDate).forEach((t) => {
-        outTotal.mixed += t.mixed;
-        outTotal.s += t.s;
-        outTotal.m += t.m;
-      });
-      const balance = {
-        mixed: inTotal.mixed - outTotal.mixed,
-        s: inTotal.s - outTotal.s,
-        m: inTotal.m - outTotal.m,
-      };
+      const { stockInRowsUpToDate, internalOutRowsUpToDate, shippedByDateRaw, shippedByDate, balance } =
+        await computeKakiStockBalance(asOfDate);
       const totalCases = balance.mixed + balance.s + balance.m;
       const forecastMsg = buildStockoutForecast(balance, shippedByDate, asOfDate);
       const balanceHeading = asOfDate === todayStr() ? '現在庫(残り)' : `在庫(${formatDateJp(asOfDate)}時点)`;
