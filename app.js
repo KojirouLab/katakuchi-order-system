@@ -1356,6 +1356,9 @@ function mountProductSection(container, store, category, options = {}) {
     msgEl.textContent = '送信中…';
     msgEl.className = 'msg';
     try {
+      // 在庫による受付上限は、画面を開いた後の入庫・他店の発注も反映するよう、送信の直前に読み直して確かめる。
+      // (選択肢の更新=上限への自動切り詰めは、ここでは行わない。超えていたら保存せずにエラーにする)
+      if (def.stockBoxesOfRow) await refreshKakiAvailable();
       const values = def.readValue(id);
       if (isDesiredArrival) {
         values.desiredTimeSlot = document.getElementById(`${id}-timeslot`).value;
@@ -1385,6 +1388,8 @@ function mountProductSection(container, store, category, options = {}) {
       console.error(e);
       msgEl.textContent = e.userMessage || '保存に失敗しました。通信状況を確認してもう一度お試しください。';
       msgEl.className = 'msg msg-error';
+      // 上限で断られた場合に、選べる数量を最新の在庫に合わせて表示し直す。
+      if (def.stockBoxesOfRow) applyLockState();
     } finally {
       submitBtn.disabled = locked;
     }
