@@ -222,12 +222,24 @@ function earliestOrderableDate(category) {
 // 管理者ページ(締切後の代理入力)では上限をかけない。
 // Sサイズは2026-10-13入荷分(18ケース)で仕入れが終わるため、在庫の残りまでしか受け付けない。
 const STOCK_LIMITED_SIZES = ['s'];
+// サイズごとに、上限をかけ始める条件: この日付以降の入庫記録(そのサイズが1ケース以上)が登録されてから。
+// 入荷前に上限をかけると、入荷予定の分まで受け付けられなくなるため。
+const STOCK_LIMIT_START_IN_DATE = { s: '2026-10-13' };
+let KAKI_LIMIT_ACTIVE = {}; // { s: true } のように、上限をかけ始めてよいサイズ
 const STOCK_SIZE_LABELS = { mixed: '混合', s: 'Sサイズ', m: 'Mサイズ' };
 let KAKI_AVAILABLE = null; // { mixed, s, m } まだ読み込めていなければnull(上限なし扱い)
 
 async function refreshKakiAvailable() {
   try {
-    KAKI_AVAILABLE = (await computeKakiStockBalance('2099-12-31')).balance;
+    const result = await computeKakiStockBalance('2099-12-31');
+    KAKI_AVAILABLE = result.balance;
+    KAKI_LIMIT_ACTIVE = {};
+    STOCK_LIMITED_SIZES.forEach((size) => {
+      const startDate = STOCK_LIMIT_START_IN_DATE[size];
+      const key = { mixed: 'mixed_boxes', s: 's_boxes', m: 'm_boxes' }[size];
+      KAKI_LIMIT_ACTIVE[size] =
+        !startDate || result.stockInRowsUpToDate.some((r) => r.in_date >= startDate && Number(r[key]) > 0);
+    });
   } catch (e) {
     console.error(e);
   }
@@ -237,7 +249,7 @@ async function refreshKakiAvailable() {
 // その発注欄で、このサイズをあと何ケースまで受け付けられるか(上限なしならnull)。
 // 表示中の日付にすでに保存済みの発注がある場合、その分は残りから引かれているので足し戻す。
 function stockOrderLimit(id, size) {
-  if (!STOCK_LIMITED_SIZES.includes(size) || !KAKI_AVAILABLE) return null;
+  if (!STOCK_LIMITED_SIZES.includes(size) || !KAKI_AVAILABLE || !KAKI_LIMIT_ACTIVE[size]) return null;
   const fieldsEl = document.getElementById(`${id}-fields`);
   if (fieldsEl.dataset.bypass === '1') return null;
   const existing = JSON.parse(fieldsEl.dataset.stockExisting || '{}')[size] || 0;
