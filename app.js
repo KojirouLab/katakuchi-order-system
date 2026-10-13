@@ -220,8 +220,9 @@ function earliestOrderableDate(category) {
 // 上限にして、それ以上は発注画面で選べないようにする。対象サイズはSTOCK_LIMITED_SIZESに入れる。
 // 残りは在庫確認ページと同じ計算(computeKakiStockBalance)で、asOfDateを遠い将来にして求める。
 // 管理者ページ(締切後の代理入力)では上限をかけない。
-// Sサイズは2026-10-13入荷分(18ケース)で仕入れが終わるため、在庫の残りまでしか受け付けない。
-const STOCK_LIMITED_SIZES = ['s'];
+// 今は上限をかけていない。かけるときは ['s'] のようにサイズを入れる
+// (STOCK_LIMIT_START_IN_DATEに日付を入れると、その日以降の入庫が記録されてから上限がかかる)。
+const STOCK_LIMITED_SIZES = [];
 // サイズごとに、上限をかけ始める条件: この日付以降の入庫記録(そのサイズが1ケース以上)が登録されてから。
 // 入荷前に上限をかけると、入荷予定の分まで受け付けられなくなるため。
 const STOCK_LIMIT_START_IN_DATE = { s: '2026-10-13' };
