@@ -172,8 +172,25 @@ function formatDateTimeJp(isoString) {
   return `${d.getMonth() + 1}/${d.getDate()}(${w}) ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 }
 
-function orderDeadline(dateStr, category) {
-  const def = PRODUCT_DEFS[category];
+// 自社配送(トラック配送)の店舗の牡蠣は、配送日の前々日23:59締切(例: 23日配送分は21日23:59)。
+// 宅配の店舗(ちょい飲みたかはし・美人罠)の牡蠣はPRODUCT_DEFS.oysterのまま(前日6:00)。
+// 締切リマインダー(supabase/functions/check-deadlines)にも同じ決まりがあるので、変える時は両方直すこと。
+const TRUCK_OYSTER_DEADLINE_RULE = {
+  deadlineDaysBefore: 2,
+  deadlineHour: 23,
+  deadlineMinute: 59,
+  skipNonBusinessDays: false,
+  deadlineLabel: '前々日 23:59',
+};
+
+// 店舗+カテゴリの締切の決まり(何日前・何時何分・土日祝を飛ばすか・表示用ラベル)。
+function deadlineRule(category, storeSlug) {
+  if (category === 'oyster' && storeSlug && !COURIER_STORE_SLUGS.has(storeSlug)) return TRUCK_OYSTER_DEADLINE_RULE;
+  return PRODUCT_DEFS[category];
+}
+
+function orderDeadline(dateStr, category, storeSlug) {
+  const def = deadlineRule(category, storeSlug);
   const d = new Date(dateStr + 'T00:00:00');
   let remaining = def.deadlineDaysBefore || 1;
   while (remaining > 0) {
@@ -182,18 +199,18 @@ function orderDeadline(dateStr, category) {
       remaining--;
     }
   }
-  d.setHours(def.deadlineHour, 0, 0, 0);
+  d.setHours(def.deadlineHour, def.deadlineMinute || 0, 0, 0);
   return d;
 }
 
-function isPastDeadline(dateStr, category) {
-  return new Date() >= orderDeadline(dateStr, category);
+function isPastDeadline(dateStr, category, storeSlug) {
+  return new Date() >= orderDeadline(dateStr, category, storeSlug);
 }
 
-function formatDeadlineJp(dateStr, category) {
-  const d = orderDeadline(dateStr, category);
+function formatDeadlineJp(dateStr, category, storeSlug) {
+  const d = orderDeadline(dateStr, category, storeSlug);
   const w = ['日', '月', '火', '水', '木', '金', '土'][d.getDay()];
-  return `${d.getMonth() + 1}/${d.getDate()}(${w}) ${String(d.getHours()).padStart(2, '0')}:00`;
+  return `${d.getMonth() + 1}/${d.getDate()}(${w}) ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 }
 
 function qtyOptionsHtml(max = 10) {
@@ -212,9 +229,9 @@ function nextDateStr(dateStr) {
 }
 
 // 締切をまだ過ぎていない最短の発注可能日を返す(今日が締切済みなら翌日以降を探す)。
-function earliestOrderableDate(category) {
+function earliestOrderableDate(category, storeSlug) {
   let d = todayStr();
-  for (let i = 0; i < 30 && isPastDeadline(d, category); i++) {
+  for (let i = 0; i < 30 && isPastDeadline(d, category, storeSlug); i++) {
     d = nextDateStr(d);
   }
   return d;
@@ -1435,7 +1452,7 @@ function mountProductSection(container, store, category, options = {}) {
     `
     <div class="card card-${category}">
       <h2>${def.label}の発注</h2>
-      <p class="hint">締切: ${def.deadlineLabel}</p>
+      <p class="hint">締切: ${deadlineRule(category, store.slug).deadlineLabel}</p>
       <div class="field${def.prominentDate ? ' date-callout' : ''}">
         <label for="${id}-date">${
           def.prominentDate
@@ -1444,7 +1461,7 @@ function mountProductSection(container, store, category, options = {}) {
             ? '着希望日'
             : '発注日'
         }</label>
-        <input type="date" id="${id}-date" value="${bypassLock ? todayStr() : earliestOrderableDate(category)}">
+        <input type="date" id="${id}-date" value="${bypassLock ? todayStr() : earliestOrderableDate(category, store.slug)}">
         ${def.prominentDate ? '<p class="hint">日付の欄をタップ(クリック)するとカレンダーが開きます。</p>' : ''}
       </div>
       <p id="${id}-deadline-msg" class="deadline-msg" style="display:none"></p>
@@ -1510,7 +1527,7 @@ function mountProductSection(container, store, category, options = {}) {
       deadlineMsgEl.textContent = 'カタクチ商店が確認済みのため、この日の発注は変更できません。修正が必要な場合はカタクチ商店にご連絡ください。';
       deadlineMsgEl.style.display = '';
     } else if (locked) {
-      deadlineMsgEl.textContent = `締切(${formatDeadlineJp(dateInput.value, category)})を過ぎているため、この日の発注は変更できません。`;
+      deadlineMsgEl.textContent = `締切(${formatDeadlineJp(dateInput.value, category, store.slug)})を過ぎているため、この日の発注は変更できません。`;
       deadlineMsgEl.style.display = '';
     } else {
       deadlineMsgEl.style.display = 'none';
@@ -1544,7 +1561,7 @@ function mountProductSection(container, store, category, options = {}) {
       hasExisting = def.hasValue(row);
       if (def.stockBoxesOfRow) setStockExisting(def.stockBoxesOfRow(row));
       const isConfirmed = !!(row && row.confirmed_at);
-      const deadlinePassed = isPastDeadline(date, category);
+      const deadlinePassed = isPastDeadline(date, category, store.slug);
       locked = !bypassLock && (deadlinePassed || isConfirmed);
       lockReason = !bypassLock && isConfirmed ? 'confirmed' : 'deadline';
       applyLockState();
@@ -1598,7 +1615,7 @@ function mountProductSection(container, store, category, options = {}) {
       msgEl.textContent =
         lockReason === 'confirmed'
           ? 'カタクチ商店が確認済みのため発注できません。修正が必要な場合はカタクチ商店にご連絡ください。'
-          : `締切(${formatDeadlineJp(date, category)})を過ぎているため発注できません。`;
+          : `締切(${formatDeadlineJp(date, category, store.slug)})を過ぎているため発注できません。`;
       msgEl.className = 'msg msg-error';
       return;
     }

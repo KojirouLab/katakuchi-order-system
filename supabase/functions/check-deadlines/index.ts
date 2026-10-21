@@ -60,9 +60,15 @@ function addDaysStr(dateStr: string, delta: number): string {
   return d.toISOString().slice(0, 10);
 }
 
-// 発注日(JST calendar date)+カテゴリから、締切の実時刻(UTC instant)を返す
-function orderDeadline(orderDateStr: string, category: Category): Date {
-  const def = PRODUCT_DEFS[category];
+// 自社配送(トラック配送)の店舗の牡蠣は、配送日の前々日23:59締切。宅配の店舗はPRODUCT_DEFS.oysterのまま(前日6:00)。
+// app.jsのTRUCK_OYSTER_DEADLINE_RULE・COURIER_STORE_SLUGSと合わせること。
+const COURIER_STORE_SLUGS = new Set(["choinomi-takahashi", "bijinwana"]);
+const TRUCK_OYSTER_DEADLINE = { deadlineHour: 23, deadlineMinute: 59, deadlineDaysBefore: 2, skipNonBusinessDays: false };
+
+// 発注日(JST calendar date)+カテゴリ(+店舗)から、締切の実時刻(UTC instant)を返す
+function orderDeadline(orderDateStr: string, category: Category, storeSlug?: string): Date {
+  const def: { deadlineHour: number; deadlineMinute?: number; deadlineDaysBefore: number; skipNonBusinessDays: boolean } =
+    category === "oyster" && storeSlug && !COURIER_STORE_SLUGS.has(storeSlug) ? TRUCK_OYSTER_DEADLINE : PRODUCT_DEFS[category];
   let cur = orderDateStr;
   let remaining = def.deadlineDaysBefore;
   while (remaining > 0) {
@@ -70,7 +76,8 @@ function orderDeadline(orderDateStr: string, category: Category): Date {
     if (!def.skipNonBusinessDays || isBusinessDay(cur)) remaining--;
   }
   const hh = String(def.deadlineHour).padStart(2, "0");
-  return new Date(`${cur}T${hh}:00:00+09:00`);
+  const mm = String(def.deadlineMinute ?? 0).padStart(2, "0");
+  return new Date(`${cur}T${hh}:${mm}:00+09:00`);
 }
 
 function todayJstStr(): string {
@@ -152,7 +159,7 @@ Deno.serve(async (req) => {
 
       for (let offset = 0; offset <= LOOKAHEAD_DAYS; offset++) {
         const orderDate = addDaysStr(today, offset);
-        const deadline = orderDeadline(orderDate, category);
+        const deadline = orderDeadline(orderDate, category, store.slug);
         const diff = deadline.getTime() - now.getTime();
         if (diff <= 0 || diff > REMINDER_WINDOW_MS) continue;
 
