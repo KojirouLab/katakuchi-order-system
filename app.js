@@ -1864,7 +1864,12 @@ async function renderAdminPage(slug) {
         });
         courierSection =
           '<h2 class="section-title">牡蠣の発注(宅配発送)</h2>' +
-          renderOysterSummary(rows, courierOysterStores, { showPrint: true });
+          // 宅配発送の店舗の発注だけを渡す(トラック配送の店舗の発注日まで「0ケース」の日として出ないように)。
+          renderOysterSummary(
+            rows.filter((r) => courierOysterStores.some((st) => st.slug === r.store_slug)),
+            courierOysterStores,
+            { showPrint: true }
+          );
       }
 
       summaryEl.innerHTML = sections.join('') + courierSection + wholesaleSection;
