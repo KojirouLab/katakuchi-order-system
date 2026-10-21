@@ -6,7 +6,8 @@ const STORES = [
   { slug: 'kaki-mouikko', name: '牡蠣小屋もういっこ', categories: ['oyster'] },
   { slug: 'kaki-higashiichi', name: '牡蠣小屋東一店', categories: ['oyster'] },
   { slug: 'kai-hakko', name: '貝小屋はっこ', categories: ['oyster'] },
-  { slug: 'kaki-rokko-honmachi', name: '牡蠣小屋ろっこ本町店', categories: ['oyster'] },
+  // 'wholesale'は卸先と同じ「商品の発注」欄(商品プルダウン+数量)。卸先ではないので、冷凍牡蠣は牡蠣の発注欄で受ける。
+  { slug: 'kaki-rokko-honmachi', name: '牡蠣小屋ろっこ本町店', categories: ['oyster', 'wholesale'] },
   // shipping: 'courier' の店舗は配送トラックには載らず宅配便で発送するため、
   // 牡蠣受注の集計ではトラック積み込み用の「配送分」とは別に「宅配発送分」として扱う。
   { slug: 'choinomi-takahashi', name: 'ちょい飲みたかはし', categories: ['oyster'], shipping: 'courier' },
@@ -37,8 +38,12 @@ async function loadWholesaleProducts() {
 
 const PIZZA_STORES = STORES.filter((s) => s.categories.includes('pizza'));
 const OYSTER_STORES = STORES.filter((s) => s.categories.includes('oyster'));
-const WHOLESALE_STORES = STORES.filter((s) => s.categories.includes('wholesale'));
+// 卸先(取引先)の一覧。customer: true はDBのwholesale_customersから読み込んだ卸先(loadWholesaleCustomers)。
+// 卸先以外にも「商品の発注」欄('wholesale')を持つ店舗(牡蠣小屋ろっこ本町店)があるので、商品の受注の集計には
+// productOrderStores()を使う。
+const WHOLESALE_STORES = STORES.filter((s) => s.customer);
 const STORES_BY_CATEGORY = { pizza: PIZZA_STORES, oyster: OYSTER_STORES, wholesale: WHOLESALE_STORES };
+const productOrderStores = () => STORES.filter((s) => s.categories.includes('wholesale'));
 // 宅配便発送(トラック配送に載らない)店舗のslug一覧。牡蠣在庫管理・受注集計のどちらでも、
 // 「配送」扱いの集計から除いて「宅配発送」として別枠にするために使う。
 const COURIER_STORE_SLUGS = new Set(STORES.filter((s) => s.shipping === 'courier').map((s) => s.slug));
@@ -49,7 +54,7 @@ const COURIER_STORE_SLUGS = new Set(STORES.filter((s) => s.shipping === 'courier
 async function loadWholesaleCustomers() {
   const rows = await fetchWholesaleCustomers();
   for (let i = STORES.length - 1; i >= 0; i--) {
-    if (STORES[i].categories.includes('wholesale')) STORES.splice(i, 1);
+    if (STORES[i].customer) STORES.splice(i, 1);
   }
   WHOLESALE_STORES.length = 0;
   rows.forEach((r) => {
@@ -58,6 +63,7 @@ async function loadWholesaleCustomers() {
       name: r.name,
       categories: ['wholesale'],
       shipping: 'courier',
+      customer: true,
       usualItems: r.usual_items || [],
       active: r.active !== false,
     };
@@ -484,6 +490,8 @@ const PRODUCT_DEFS = {
 
       const productEl = document.getElementById(`${id}-product`);
       const qtyEl = document.getElementById(`${id}-qty`);
+      // 冷凍牡蠣(在庫連動の商品)は卸先だけ。卸先以外の店舗は牡蠣の発注欄で注文する。
+      document.getElementById(`${id}-cart`).dataset.allowStock = store && store.customer ? '1' : '';
       wsSetUsual(id, (store && store.usualItems) || [], 'いつもの商品');
       wsRefreshProductOptions(id);
       productEl.addEventListener('change', () => {
@@ -592,10 +600,13 @@ const PRODUCT_DEFS = {
       return `${status}<br>${content}`;
     },
     fetchOne: fetchWholesaleOrder,
-    save: (base, values) => saveWholesaleOrder({ ...base, ...values }),
+    // 卸先は冷凍牡蠣の数量をoyster_ordersにも書き込んで牡蠣在庫に連動させる。卸先以外の店舗(本町店)は
+    // 牡蠣を牡蠣の発注欄で受けるため、oyster_ordersには触らない(同じ日の牡蠣の発注を上書き・削除しないように)。
+    save: (base, values) =>
+      saveWholesaleOrder({ ...base, ...values, syncOyster: !!(findStore(base.storeSlug) || {}).customer }),
     fetchRecent: fetchWholesaleOrdersByStore,
     fetchRange: fetchWholesaleOrdersRange,
-    del: deleteWholesaleOrder,
+    del: (storeSlug, date) => deleteWholesaleOrder(storeSlug, date, !!(findStore(storeSlug) || {}).customer),
   },
 };
 
@@ -630,6 +641,7 @@ function wsCartStockTotal(id, size) {
 function wsIsSuspended(id, code) {
   const p = WHOLESALE_PRODUCTS.find((x) => x.code === code);
   if (p && p.suspended) return true;
+  if (p && p.stock && document.getElementById(`${id}-cart`).dataset.allowStock !== '1') return true;
   if (p && p.stock && wsStockRemaining(id, p.stock) === 0) return true;
   const dateVal = document.getElementById(`${id}-date`).value;
   return !!p && p.stock === 'mixed' && !!dateVal && dateVal >= MIXED_SUSPENDED_FROM;
@@ -786,7 +798,7 @@ async function route() {
 }
 
 function renderHome() {
-  const storeLinks = STORES.filter((s) => !s.categories.includes('wholesale'))
+  const storeLinks = STORES.filter((s) => !s.customer)
     .map(
       (s) =>
         `<li><a href="?store=${s.slug}">${escapeHtml(s.name)}(${s.categories.map((c) => PRODUCT_DEFS[c].label).join('・')})</a></li>`
@@ -1372,7 +1384,7 @@ async function renderOrderPage(slug) {
 
   app.innerHTML = `
     <div class="page${store.categories.includes('wholesale') ? ' wide' : ''}">
-      <h1>${escapeHtml(store.name)}${store.categories.includes('wholesale') ? ' 様' : ''}</h1>
+      <h1>${escapeHtml(store.name)}${store.customer ? ' 様' : ''}</h1>
       <p class="hint">発注</p>
     </div>`;
 
@@ -1834,14 +1846,14 @@ async function renderAdminPage(slug) {
       );
 
       let wholesaleSection = '';
-      if (slug === 'katakuchi' && WHOLESALE_STORES.length > 0) {
+      if (slug === 'katakuchi' && productOrderStores().length > 0) {
         const rows = await fetchWholesaleOrdersRange(from, to);
         rows.forEach((r) => {
           wholesaleRowsByKey[`${r.order_date}__${r.store_slug}`] = r;
         });
         wholesaleSection =
-          '<h2 class="section-title">卸先の受注</h2>' +
-          renderTextOrderSummary(rows, WHOLESALE_STORES, { showActions: true, confirmClassSuffix: '-wholesale' });
+          '<h2 class="section-title">商品の受注(卸先・牡蠣小屋ろっこ本町店)</h2>' +
+          renderTextOrderSummary(rows, productOrderStores(), { showActions: true, confirmClassSuffix: '-wholesale' });
       }
 
       let courierSection = '';

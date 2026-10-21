@@ -192,7 +192,8 @@ async function fetchOysterOrdersRange(from, to) {
 
 // ---- 卸先受注 ----
 // 冷凍牡蠣の数量(mixedBoxes/sBoxes/mBoxes)は牡蠣在庫に連動させるため、同じ店舗・日付で
-// oyster_ordersにも書き込む(冷凍牡蠣が0ならoyster_orders側の行は消す)。
+// oyster_ordersにも書き込む(冷凍牡蠣が0ならoyster_orders側の行は消す)。syncOyster=falseの店舗
+// (卸先以外で商品の発注欄を持つ店舗)は、自分の牡蠣の発注欄があるのでoyster_ordersには触らない。
 
 async function fetchWholesaleOrder(storeSlug, date) {
   assertClient();
@@ -206,7 +207,7 @@ async function fetchWholesaleOrder(storeSlug, date) {
   return data;
 }
 
-async function saveWholesaleOrder({ storeSlug, storeName, date, items, content, note, mixedBoxes, sBoxes, mBoxes }) {
+async function saveWholesaleOrder({ storeSlug, storeName, date, items, content, note, mixedBoxes, sBoxes, mBoxes, syncOyster = true }) {
   assertClient();
   const { error } = await sb.from('wholesale_orders').upsert(
     {
@@ -222,6 +223,7 @@ async function saveWholesaleOrder({ storeSlug, storeName, date, items, content, 
     { onConflict: 'store_slug,order_date' }
   );
   if (error) throw error;
+  if (!syncOyster) return;
   if (mixedBoxes + sBoxes + mBoxes > 0) {
     await saveOysterOrder({ storeSlug, storeName, date, mixedBoxes, sBoxes, mBoxes, noOrder: false });
   } else {
@@ -245,11 +247,12 @@ async function setWholesaleConfirmed(storeSlug, date, confirmed) {
 const confirmWholesaleOrder = (storeSlug, date) => setWholesaleConfirmed(storeSlug, date, true);
 const unconfirmWholesaleOrder = (storeSlug, date) => setWholesaleConfirmed(storeSlug, date, false);
 
-async function deleteWholesaleOrder(storeSlug, date) {
+async function deleteWholesaleOrder(storeSlug, date, syncOyster = true) {
   assertClient();
   const { data, error } = await sb.from('wholesale_orders').delete().eq('store_slug', storeSlug).eq('order_date', date).select();
   if (error) throw error;
   if (!data || data.length === 0) throw new Error('削除できませんでした(権限設定が反映されていない可能性があります)');
+  if (!syncOyster) return;
   const { error: delError } = await sb.from('oyster_orders').delete().eq('store_slug', storeSlug).eq('order_date', date);
   if (delError) throw delError;
 }

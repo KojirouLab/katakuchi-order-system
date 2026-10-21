@@ -148,9 +148,16 @@ async function notifyWholesale(
     });
   }
 
+  // 卸先(wholesale_customers)なら「○○ 様(卸先)」、卸先以外で商品の発注欄を持つ店舗(本町店など)は店舗名のまま。
+  const { data: customer } = await supabase
+    .from("wholesale_customers")
+    .select("slug")
+    .eq("slug", storeSlug)
+    .maybeSingle();
+  const who = customer ? `**${order.store_name} 様**(卸先)` : `**${order.store_name}**`;
   const dateLabel = date.slice(5).replace("-", "/");
   const mention = target.mention_role_id ? `<@&${target.mention_role_id}> ` : "";
-  const text = `${mention}**${order.store_name} 様**(卸先)から発注が入りました(配送希望日 ${dateLabel})\n${order.content}`;
+  const text = `${mention}${who}から商品の発注が入りました(配送希望日 ${dateLabel})\n${order.content}`;
 
   const res = await fetch(target.webhook_url, {
     method: "POST",
