@@ -1116,7 +1116,7 @@ function renderWholesaleCustomersTab(container) {
 // ---- 卸の商品マスタ(管理メニューから。卸先の発注画面のプルダウンに出す商品の登録・変更・削除) ----
 
 const WHOLESALE_STOCK_LABELS = { s: '冷凍牡蠣 S', m: '冷凍牡蠣 M', mixed: '冷凍牡蠣 混合' };
-const WHOLESALE_UNIT_SUGGESTIONS = ['個', '枚', '袋', '箱', 'kg', 'ケース'];
+const WHOLESALE_UNIT_SUGGESTIONS = ['個', '枚', 'PC', '袋', '箱', 'kg', 'ケース'];
 
 function renderWholesaleProductsTab(container) {
   container.innerHTML = `
@@ -1144,7 +1144,7 @@ function renderWholesaleProductsTab(container) {
         </div>
         <div class="field">
           <label for="wmUnit">単位</label>
-          <input type="text" id="wmUnit" list="wmUnitList" autocomplete="off" placeholder="例) 個">
+          <input type="text" id="wmUnit" list="wmUnitList" autocomplete="off" placeholder="例) 個・PC">
           <datalist id="wmUnitList">${WHOLESALE_UNIT_SUGGESTIONS.map((u) => `<option value="${u}">`).join('')}</datalist>
         </div>
         <label class="checkbox-label">
