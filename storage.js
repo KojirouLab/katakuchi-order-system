@@ -278,6 +278,32 @@ async function fetchWholesaleOrdersRange(from, to) {
   return data || [];
 }
 
+// ---- 卸先(取引先) ----
+
+async function fetchWholesaleCustomers() {
+  assertClient();
+  const { data, error } = await sb.from('wholesale_customers').select('*').order('sort_order').order('created_at');
+  if (error) throw error;
+  return data || [];
+}
+
+async function insertWholesaleCustomer(row) {
+  assertClient();
+  const { error } = await sb.from('wholesale_customers').insert(row);
+  if (error) throw error;
+}
+
+async function updateWholesaleCustomer(slug, fields) {
+  assertClient();
+  const { data, error } = await sb
+    .from('wholesale_customers')
+    .update({ ...fields, updated_at: new Date().toISOString() })
+    .eq('slug', slug)
+    .select();
+  if (error) throw error;
+  if (!data || data.length === 0) throw new Error('更新できませんでした(権限設定が反映されていない可能性があります)');
+}
+
 // ---- 卸の商品マスタ ----
 
 async function fetchWholesaleProducts() {

@@ -3,7 +3,7 @@
 // 対象は2種類:
 //   - 牡蠣の発注(category='oyster'、既定): discord_notification_targetsにcategory='oyster_placed'で
 //     登録された店舗だけ(今のところちょい飲みたかはし・美人罠)。
-//   - 卸先の発注(category='wholesale'): category='wholesale_placed'で登録された取引先だけ。
+//   - 卸先の発注(category='wholesale'): category='wholesale_placed'の送り先(個別の登録が無ければ'_default')。
 // 未登録の店舗・取引先は何もしない。
 //
 // クライアント(app.js)から発注保存の直後に直接呼ばれる想定。Webhook URL自体は
@@ -59,12 +59,14 @@ Deno.serve(async (req) => {
   const isWholesale = body.category === "wholesale";
   const supabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
 
-  const { data: target, error: targetError } = await supabase
+  // 卸先は、個別の登録が無ければ既定の送り先(store_slug='_default')に送る
+  // (管理画面から新しく登録された卸先にも、登録作業なしで通知が届くように)。
+  const { data: targets, error: targetError } = await supabase
     .from("discord_notification_targets")
-    .select("webhook_url, mention_role_id")
-    .eq("store_slug", storeSlug)
-    .eq("category", isWholesale ? "wholesale_placed" : "oyster_placed")
-    .maybeSingle();
+    .select("store_slug, webhook_url, mention_role_id")
+    .in("store_slug", isWholesale ? [storeSlug, "_default"] : [storeSlug])
+    .eq("category", isWholesale ? "wholesale_placed" : "oyster_placed");
+  const target = (targets ?? []).find((t) => t.store_slug === storeSlug) ?? (targets ?? [])[0] ?? null;
   if (targetError) {
     console.error(targetError);
     return new Response("error", { status: 500, headers: CORS_HEADERS });

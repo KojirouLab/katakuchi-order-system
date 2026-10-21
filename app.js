@@ -11,33 +11,8 @@ const STORES = [
   // 牡蠣受注の集計ではトラック積み込み用の「配送分」とは別に「宅配発送分」として扱う。
   { slug: 'choinomi-takahashi', name: 'ちょい飲みたかはし', categories: ['oyster'], shipping: 'courier' },
   { slug: 'bijinwana', name: '美人罠', categories: ['oyster'], shipping: 'courier' },
-  // 卸先(牡蠣・ピザ生地などの取引先)。発注は美人罠・ちょい飲みたかはしと同じく
-  // カタクチ商店のピザ集計ページにだけ表示する。usualItemsはその取引先がいつも注文する
-  // 商品(WHOLESALE_PRODUCTSのcode)で、発注画面では先頭に出し、残りの商品も下に並べる。
-  ...[
-    ['w-houryou', '有限会社 ほうりょう', ['raw_mixed', 'raw_s', 'frozen_mixed', 'frozen_s']],
-    ['w-eda-hiroki', '江田浩樹', ['dough200', 'chicken', 'sausage', 'frozen_m']],
-    ['w-kainuma', '開沼 拓', ['crispy8', 'dough130', 'dough150', 'napoli10']],
-    ['w-ashimoka', '株式会社ashimoka', ['dough180', 'dough130']],
-    ['w-eda-kitasendai', '江田宏樹 北仙台', ['dough200', 'chicken', 'sausage', 'nori']],
-    ['w-tasso', 'TASSO 開沼', ['dough150']],
-    ['w-inthesoup', 'in the Soup.', ['napoli10', 'napoli8']],
-    ['w-izukogen', '伊豆高原ビール(株)レストラン', ['napoli6']],
-    ['w-osteria32', 'osteria32', ['dough180', 'gorgonzola']],
-    ['w-soma', 'SOMA', ['napoli10', 'napoli8']],
-    ['w-shunrakuzen', '株式会社旬楽膳', ['napoli8']],
-    ['w-yourgurt', '株式会社YOURGURT', ['crispy8']],
-    ['w-tsurumai', '株式会社鶴舞商店', ['frozen_s', 'frozen_mixed']],
-    ['w-acecafe', 'Acecafe', ['napoli10']],
-    ['w-okano', '日本酒トワイン岡野', ['napoli6']],
-    ['w-tokai', '株式会社東海', ['napoli8plain']],
-    ['w-ito', '伊藤正枝', ['michinoku']],
-    ['w-kanesue', '株式会社 カネスエ', ['napoli8']],
-    ['w-nicolo', 'BISTRO ITALIAN NICOLO', ['dough150']],
-    ['w-romero', 'イタリアンサカバ ロメロ', ['dough150']],
-    ['w-patata', 'カフェ＆パーティ パタータ', ['napoli10']],
-    ['w-pierrot', 'ビストロピエロ', ['dough130', 'dough150', 'crispy8']],
-  ].map(([slug, name, usualItems]) => ({ slug, name, categories: ['wholesale'], shipping: 'courier', usualItems })),
+  // 卸先(牡蠣・ピザ生地などの取引先)はDBのwholesale_customersから読み込んで、ページ表示前にここへ足す
+  // (loadWholesaleCustomers)。管理メニューの「卸先・商品の登録」ページから誰でも登録できる。
 ];
 
 // 卸先の発注画面に並べる商品。DBのwholesale_products(管理メニューの「卸の商品マスタ」で編集)から
@@ -67,6 +42,30 @@ const STORES_BY_CATEGORY = { pizza: PIZZA_STORES, oyster: OYSTER_STORES, wholesa
 // 宅配便発送(トラック配送に載らない)店舗のslug一覧。牡蠣在庫管理・受注集計のどちらでも、
 // 「配送」扱いの集計から除いて「宅配発送」として別枠にするために使う。
 const COURIER_STORE_SLUGS = new Set(STORES.filter((s) => s.shipping === 'courier').map((s) => s.slug));
+
+// 卸先をDBから読み込み、STORES・WHOLESALE_STORES・COURIER_STORE_SLUGSに入れる(読み直す場合は入れ替える)。
+// 卸先は発注の集計だけでなく牡蠣在庫の計算(宅配発送の判定)にも使うので、どのページでも表示前に読み込む。
+// usualItemsは注文履歴がまだ無い取引先の商品プルダウンの先頭に出す商品、active=falseは取引停止。
+async function loadWholesaleCustomers() {
+  const rows = await fetchWholesaleCustomers();
+  for (let i = STORES.length - 1; i >= 0; i--) {
+    if (STORES[i].categories.includes('wholesale')) STORES.splice(i, 1);
+  }
+  WHOLESALE_STORES.length = 0;
+  rows.forEach((r) => {
+    const store = {
+      slug: r.slug,
+      name: r.name,
+      categories: ['wholesale'],
+      shipping: 'courier',
+      usualItems: r.usual_items || [],
+      active: r.active !== false,
+    };
+    STORES.push(store);
+    WHOLESALE_STORES.push(store);
+    COURIER_STORE_SLUGS.add(r.slug);
+  });
+}
 
 // ちょい飲みたかはしは宅配受付のため、発注日ではなく「着希望日+希望時間帯」で受け付ける。
 // 対象店舗のslug一覧(今後、他の宅配店舗にも広げる場合はここに追記する)。
@@ -758,7 +757,13 @@ async function route() {
   const isStockAudit = params.get('stock_audit') === '1';
   const isAdminMenu = params.get('admin') === '1';
   const isWholesaleMaster = params.get('wholesale_master') === '1';
-  // 卸先の発注画面・管理者ページ・商品マスタページは、表示前に商品マスタをDBから読み込む。
+  try {
+    await loadWholesaleCustomers();
+  } catch (e) {
+    console.error(e);
+    return renderError('読み込みに失敗しました。通信状況を確認して、ページを再読み込みしてください。');
+  }
+  // 卸先の発注画面・管理者ページ・卸先と商品の登録ページは、表示前に商品マスタをDBから読み込む。
   const needsWholesaleProducts =
     isParent || isWholesaleMaster || (!!storeSlug && !!findStore(storeSlug) && findStore(storeSlug).categories.includes('wholesale'));
   if (needsWholesaleProducts) {
@@ -770,7 +775,7 @@ async function route() {
     }
   }
   if (isAdminMenu) return renderAdminMenuPage();
-  if (isWholesaleMaster) return renderWholesaleMasterPage();
+  if (isWholesaleMaster) return renderWholesaleAdminPage(params.get('tab') === 'products' ? 'products' : 'customers');
   if (isParent) return renderParentOrderPage();
   if (isStockAudit) return renderStockAuditPage();
   if (isStock) return renderStockPage();
@@ -787,7 +792,9 @@ function renderHome() {
         `<li><a href="?store=${s.slug}">${escapeHtml(s.name)}(${s.categories.map((c) => PRODUCT_DEFS[c].label).join('・')})</a></li>`
     )
     .join('');
-  const wholesaleLinks = WHOLESALE_STORES.map((s) => `<li><a href="?store=${s.slug}">${escapeHtml(s.name)}</a></li>`).join('');
+  const wholesaleLinks = WHOLESALE_STORES.filter((s) => s.active !== false)
+    .map((s) => `<li><a href="?store=${s.slug}">${escapeHtml(s.name)}</a></li>`)
+    .join('');
   app.innerHTML = `
     <div class="page">
       <h1>カタクチ商店 受発注システム</h1>
@@ -855,7 +862,7 @@ function renderAdminMenuPage() {
       <div class="card">
         <h2>卸先</h2>
         <ul class="home-links">
-          <li><a href="?wholesale_master=1&ref=admin">卸の商品マスタ(登録・変更・削除)</a></li>
+          <li><a href="?wholesale_master=1&ref=admin">卸先・商品の登録(新しい取引先・商品の追加、変更)</a></li>
         </ul>
       </div>
       <div class="card">
@@ -874,16 +881,245 @@ function renderAdminMenuPage() {
     </div>`;
 }
 
+// ---- 卸先・商品の登録(管理メニューから。誰でも新しい取引先・商品を登録できる) ----
+
+function renderWholesaleAdminPage(tab) {
+  app.innerHTML = `
+    <div class="page">
+      <h1>卸先・商品の登録</h1>
+      ${adminBackLinkHtml()}
+      <div class="view-toggle">
+        <button class="view-toggle-btn" type="button" data-tab="customers">🏢 取引先</button>
+        <button class="view-toggle-btn" type="button" data-tab="products">📦 商品</button>
+      </div>
+      <div id="waBody"></div>
+    </div>`;
+  const bodyEl = document.getElementById('waBody');
+  function show(next) {
+    app.querySelectorAll('.view-toggle-btn').forEach((b) => b.classList.toggle('active', b.dataset.tab === next));
+    const params = new URLSearchParams(location.search);
+    params.set('tab', next);
+    history.replaceState(null, '', `?${params.toString()}`);
+    if (next === 'products') renderWholesaleProductsTab(bodyEl);
+    else renderWholesaleCustomersTab(bodyEl);
+  }
+  app.querySelectorAll('.view-toggle-btn').forEach((b) => b.addEventListener('click', () => show(b.dataset.tab)));
+  show(tab);
+}
+
+function wholesaleOrderPageUrl(slug) {
+  return `${location.origin}${location.pathname}?store=${slug}`;
+}
+
+async function copyTextToClipboard(text) {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch (e) {
+    window.prompt('このURLをコピーしてください', text);
+    return false;
+  }
+}
+
+function renderWholesaleCustomersTab(container) {
+  const groups = [...new Set(WHOLESALE_PRODUCTS.map((p) => p.group))];
+  container.innerHTML = `
+      <p class="hint">新しい卸先(取引先)を登録すると、その取引先専用の発注ページのURLができます。そのURLを取引先に送ってください。発注はカタクチ商店(ピザ集計)ページの「卸先の受注」に表示され、Discordにも通知されます。</p>
+      <div class="card" id="wcFormCard">
+        <h2 id="wcFormTitle">取引先を登録</h2>
+        <div class="field">
+          <label for="wcName">取引先名</label>
+          <input type="text" id="wcName" autocomplete="off" placeholder="例) 株式会社〇〇">
+          <p class="hint" style="margin-top:6px;">発注ページには「〇〇 様」と表示されます。</p>
+        </div>
+        <div class="field">
+          <label>いつもの商品(任意)</label>
+          <p class="hint" style="margin:0 0 8px;">チェックした商品は、まだ一度も注文が無いうちは商品プルダウンの先頭に出ます(注文が入った後は、前回注文した商品が先頭に出ます)。</p>
+          <div class="wc-products">
+            ${groups
+              .map(
+                (g) => `<div><p class="wm-group">${escapeHtml(g || '(区分なし)')}</p>${WHOLESALE_PRODUCTS.filter((p) => p.group === g)
+                  .map(
+                    (p) => `
+                    <label class="checkbox-label">
+                      <input type="checkbox" class="js-wc-usual" value="${p.code}">
+                      ${escapeHtml(p.name)}${p.suspended ? '<span class="wholesale-suspended">取り扱い休止中</span>' : ''}
+                    </label>`
+                  )
+                  .join('')}</div>`
+              )
+              .join('')}
+          </div>
+        </div>
+        <button id="wcSaveBtn" class="primary">登録する</button>
+        <button id="wcCancelBtn" class="secondary" style="display:none">編集をやめる</button>
+        <p id="wcMsg" class="msg"></p>
+        <div id="wcResult"></div>
+      </div>
+      <div class="card">
+        <h2 id="wcListTitle">登録済みの取引先</h2>
+        <div id="wcList"></div>
+      </div>`;
+
+  const nameEl = document.getElementById('wcName');
+  const saveBtn = document.getElementById('wcSaveBtn');
+  const cancelBtn = document.getElementById('wcCancelBtn');
+  const msgEl = document.getElementById('wcMsg');
+  const resultEl = document.getElementById('wcResult');
+  const listEl = document.getElementById('wcList');
+  let editingSlug = null;
+
+  function showMsg(text, kind) {
+    msgEl.textContent = text;
+    msgEl.className = kind ? `msg msg-${kind}` : 'msg';
+  }
+
+  function checkedUsual() {
+    return [...container.querySelectorAll('.js-wc-usual:checked')].map((el) => el.value);
+  }
+
+  function resetForm() {
+    editingSlug = null;
+    nameEl.value = '';
+    container.querySelectorAll('.js-wc-usual').forEach((el) => (el.checked = false));
+    document.getElementById('wcFormTitle').textContent = '取引先を登録';
+    saveBtn.textContent = '登録する';
+    cancelBtn.style.display = 'none';
+  }
+
+  function startEdit(slug) {
+    const c = WHOLESALE_STORES.find((x) => x.slug === slug);
+    if (!c) return;
+    editingSlug = slug;
+    nameEl.value = c.name;
+    container.querySelectorAll('.js-wc-usual').forEach((el) => (el.checked = c.usualItems.includes(el.value)));
+    document.getElementById('wcFormTitle').textContent = `取引先を編集: ${c.name}`;
+    saveBtn.textContent = '変更を保存';
+    cancelBtn.style.display = '';
+    showMsg('', '');
+    resultEl.innerHTML = '';
+    document.getElementById('wcFormCard').scrollIntoView({ behavior: 'smooth' });
+  }
+
+  function renderList() {
+    document.getElementById('wcListTitle').textContent = `登録済みの取引先(${WHOLESALE_STORES.length}件)`;
+    if (!WHOLESALE_STORES.length) {
+      listEl.innerHTML = '<p class="hint">まだ取引先が登録されていません。</p>';
+      return;
+    }
+    listEl.innerHTML = `<ul class="wm-list">${WHOLESALE_STORES.map((c) => {
+      const url = wholesaleOrderPageUrl(c.slug);
+      return `
+        <li class="wm-item${c.active ? '' : ' wm-item-suspended'}">
+          <div class="wm-item-main">
+            <span class="wm-item-name">${escapeHtml(c.name)}${c.active ? '' : '<span class="wholesale-suspended">取引停止中</span>'}</span>
+            <a class="wm-item-meta wc-url" href="${escapeHtml(url)}" target="_blank" rel="noopener">${escapeHtml(url)}</a>
+          </div>
+          <div class="wm-item-actions">
+            <button type="button" class="wm-btn" data-action="copy" data-slug="${c.slug}">URLをコピー</button>
+            <button type="button" class="wm-btn" data-action="edit" data-slug="${c.slug}">編集</button>
+            <button type="button" class="wm-btn${c.active ? ' wm-btn-danger' : ''}" data-action="toggle" data-slug="${c.slug}">${
+              c.active ? '取引停止' : '取引再開'
+            }</button>
+          </div>
+        </li>`;
+    }).join('')}</ul>`;
+  }
+
+  async function reload() {
+    await loadWholesaleCustomers();
+    renderList();
+  }
+
+  listEl.addEventListener('click', async (e) => {
+    const btn = e.target.closest('.wm-btn');
+    if (!btn) return;
+    const c = WHOLESALE_STORES.find((x) => x.slug === btn.dataset.slug);
+    if (!c) return;
+    if (btn.dataset.action === 'edit') return startEdit(c.slug);
+    if (btn.dataset.action === 'copy') {
+      const copied = await copyTextToClipboard(wholesaleOrderPageUrl(c.slug));
+      if (copied) showMsg(`✓ ${c.name} 様の発注ページのURLをコピーしました。`, 'success');
+      return;
+    }
+    if (btn.dataset.action === 'toggle') {
+      if (
+        c.active &&
+        !confirm(`「${c.name}」を取引停止にします。発注ページは受付停止の表示になり、トップページの一覧からも消えます(過去の発注は残ります)。よろしいですか？`)
+      ) {
+        return;
+      }
+      try {
+        btn.disabled = true;
+        await updateWholesaleCustomer(c.slug, { active: !c.active });
+        await reload();
+        showMsg(c.active ? `「${c.name}」を取引停止にしました。` : `「${c.name}」の取引を再開しました。`, 'success');
+      } catch (err) {
+        console.error(err);
+        showMsg('更新に失敗しました。通信状況を確認してもう一度お試しください。', 'error');
+        renderList();
+      }
+    }
+  });
+
+  resultEl.addEventListener('click', async (e) => {
+    const btn = e.target.closest('[data-copy-url]');
+    if (!btn) return;
+    if (await copyTextToClipboard(btn.dataset.copyUrl)) btn.textContent = '✓ コピーしました';
+  });
+
+  saveBtn.addEventListener('click', async () => {
+    const name = nameEl.value.trim();
+    if (!name) return showMsg('取引先名を入力してください。', 'error');
+    const duplicate = WHOLESALE_STORES.find((c) => c.name === name && c.slug !== editingSlug);
+    if (duplicate) return showMsg(`「${name}」はすでに登録されています。`, 'error');
+    const usualItems = checkedUsual();
+    saveBtn.disabled = true;
+    showMsg('保存中…', '');
+    resultEl.innerHTML = '';
+    try {
+      if (editingSlug) {
+        await updateWholesaleCustomer(editingSlug, { name, usual_items: usualItems });
+        showMsg(`✓ 「${name}」の変更を保存しました。`, 'success');
+      } else {
+        const slug = `w-${Date.now().toString(36)}`;
+        const maxOrder = (await fetchWholesaleCustomers()).reduce((m, c) => Math.max(m, c.sort_order || 0), 0);
+        await insertWholesaleCustomer({ slug, name, usual_items: usualItems, sort_order: maxOrder + 10 });
+        const url = wholesaleOrderPageUrl(slug);
+        showMsg(`✓ 「${name}」を登録しました。`, 'success');
+        resultEl.innerHTML = `
+          <div class="wc-result">
+            <p>${escapeHtml(name)} 様の発注ページ(このURLを取引先に送ってください):</p>
+            <a href="${escapeHtml(url)}" target="_blank" rel="noopener">${escapeHtml(url)}</a>
+            <button type="button" class="wm-btn" data-copy-url="${escapeHtml(url)}">URLをコピー</button>
+          </div>`;
+      }
+      resetForm();
+      await reload();
+    } catch (err) {
+      console.error(err);
+      showMsg('保存に失敗しました。通信状況を確認してもう一度お試しください。', 'error');
+    } finally {
+      saveBtn.disabled = false;
+    }
+  });
+
+  cancelBtn.addEventListener('click', () => {
+    resetForm();
+    showMsg('', '');
+  });
+
+  resetForm();
+  renderList();
+}
+
 // ---- 卸の商品マスタ(管理メニューから。卸先の発注画面のプルダウンに出す商品の登録・変更・削除) ----
 
 const WHOLESALE_STOCK_LABELS = { s: '冷凍牡蠣 S', m: '冷凍牡蠣 M', mixed: '冷凍牡蠣 混合' };
 const WHOLESALE_UNIT_SUGGESTIONS = ['個', '枚', '袋', '箱', 'kg', 'ケース'];
 
-function renderWholesaleMasterPage() {
-  app.innerHTML = `
-    <div class="page">
-      <h1>卸の商品マスタ</h1>
-      ${adminBackLinkHtml()}
+function renderWholesaleProductsTab(container) {
+  container.innerHTML = `
       <p class="hint">卸先の発注画面のプルダウンに出す商品です。変更は、取引先が次に発注画面を開いたときから反映されます。過去の発注の表示(商品名・数量)は変わりません。</p>
       <div class="card" id="wmFormCard">
         <h2 id="wmFormTitle">商品を追加</h2>
@@ -923,8 +1159,7 @@ function renderWholesaleMasterPage() {
         <h2 id="wmListTitle">登録済みの商品</h2>
         <p class="hint">↑↓で発注画面のプルダウンでの並び順を変えられます。</p>
         <div id="wmList"></div>
-      </div>
-    </div>`;
+      </div>`;
 
   const groupEl = document.getElementById('wmGroup');
   const nameEl = document.getElementById('wmName');
@@ -1133,6 +1368,7 @@ function renderError(msg) {
 async function renderOrderPage(slug) {
   const store = findStore(slug);
   if (!store) return renderError('無効なURLです。店舗担当のURLを確認してください。');
+  if (store.active === false) return renderError('現在、この発注ページでの受付は停止しています。カタクチ商店までお問い合わせください。');
 
   app.innerHTML = `
     <div class="page${store.categories.includes('wholesale') ? ' wide' : ''}">
@@ -1155,7 +1391,9 @@ function renderParentOrderPage() {
           <label for="parent-store">店舗を選択</label>
           <select id="parent-store">
             <option value="">選んでください</option>
-            ${STORES.map((s) => `<option value="${s.slug}">${escapeHtml(s.name)}</option>`).join('')}
+            ${STORES.filter((s) => s.active !== false)
+              .map((s) => `<option value="${s.slug}">${escapeHtml(s.name)}</option>`)
+              .join('')}
           </select>
         </div>
       </div>
