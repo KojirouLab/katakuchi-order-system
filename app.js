@@ -1872,6 +1872,15 @@ async function renderAdminPage(slug) {
           '<h2 class="section-title">商品の受注(卸先・牡蠣小屋ろっこ本町店)</h2>' +
           renderTextOrderSummary(rows, productOrderStores(), { showActions: true, confirmClassSuffix: '-wholesale' });
       }
+      // 配送受注店のページには、自社配送(トラック配送)の店舗の商品の発注(本町店など)も出す
+      // (卸先は宅配便で送るので出さない)。確認済みの操作はカタクチ商店ページで行う。
+      const truckProductStores = productOrderStores().filter((st) => st.shipping !== 'courier');
+      if (slug === 'haiso-juchu' && truckProductStores.length > 0) {
+        const rows = await fetchWholesaleOrdersRange(from, to);
+        wholesaleSection =
+          `<h2 class="section-title">商品の発注(${truckProductStores.map((st) => escapeHtml(st.name)).join('・')})</h2>` +
+          renderTextOrderSummary(rows, truckProductStores, { showActions: false });
+      }
 
       let courierSection = '';
       if (slug === 'katakuchi' && courierOysterStores.length > 0) {
