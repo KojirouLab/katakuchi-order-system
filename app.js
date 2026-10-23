@@ -1843,8 +1843,20 @@ async function renderAdminPage(slug) {
         categories.map(async (category) => {
           const def = PRODUCT_DEFS[category];
           const isOyster = category === 'oyster';
-          const stores = isOyster ? STORES_BY_CATEGORY.oyster.filter((s) => s.shipping !== 'courier') : STORES_BY_CATEGORY[category];
-          const rows = isOyster ? await fetchOysterRowsOnce() : await def.fetchRange(from, to);
+          let stores = isOyster ? STORES_BY_CATEGORY.oyster.filter((s) => s.shipping !== 'courier') : STORES_BY_CATEGORY[category];
+          let rows = isOyster ? await fetchOysterRowsOnce() : await def.fetchRange(from, to);
+          // 配送受注店のピザの注文内容一覧には、自社配送(トラック配送)の店舗の商品の発注(本町店など)も
+          // 一緒に並べる(卸先は宅配便で送るので出さない)。確認済みの操作はカタクチ商店ページで行う。
+          if (slug === 'haiso-juchu' && category === 'pizza') {
+            const truckProductStores = productOrderStores().filter((st) => st.shipping !== 'courier');
+            if (truckProductStores.length) {
+              const productRows = (await fetchWholesaleOrdersRange(from, to)).filter((r) =>
+                truckProductStores.some((st) => st.slug === r.store_slug)
+              );
+              rows = rows.concat(productRows);
+              stores = [...stores, ...truckProductStores];
+            }
+          }
           if (category === 'pizza') {
             rows.forEach((r) => {
               pizzaRowsByKey[`${r.order_date}__${r.store_slug}`] = r;
@@ -1871,15 +1883,6 @@ async function renderAdminPage(slug) {
         wholesaleSection =
           '<h2 class="section-title">商品の受注(卸先・牡蠣小屋ろっこ本町店)</h2>' +
           renderTextOrderSummary(rows, productOrderStores(), { showActions: true, confirmClassSuffix: '-wholesale' });
-      }
-      // 配送受注店のページには、自社配送(トラック配送)の店舗の商品の発注(本町店など)も出す
-      // (卸先は宅配便で送るので出さない)。確認済みの操作はカタクチ商店ページで行う。
-      const truckProductStores = productOrderStores().filter((st) => st.shipping !== 'courier');
-      if (slug === 'haiso-juchu' && truckProductStores.length > 0) {
-        const rows = await fetchWholesaleOrdersRange(from, to);
-        wholesaleSection =
-          `<h2 class="section-title">商品の発注(${truckProductStores.map((st) => escapeHtml(st.name)).join('・')})</h2>` +
-          renderTextOrderSummary(rows, truckProductStores, { showActions: false });
       }
 
       let courierSection = '';
