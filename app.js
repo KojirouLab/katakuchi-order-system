@@ -1845,10 +1845,10 @@ async function renderAdminPage(slug) {
           const isOyster = category === 'oyster';
           let stores = isOyster ? STORES_BY_CATEGORY.oyster.filter((s) => s.shipping !== 'courier') : STORES_BY_CATEGORY[category];
           let rows = isOyster ? await fetchOysterRowsOnce() : await def.fetchRange(from, to);
-          // 配送受注店のピザの注文内容一覧には、自社配送(トラック配送)の店舗の商品の発注(本町店など)も
-          // 一緒に並べる(卸先は宅配便で送るので出さない)。確認済みの操作はカタクチ商店ページで行う。
-          if (slug === 'haiso-juchu' && category === 'pizza') {
-            const truckProductStores = productOrderStores().filter((st) => st.shipping !== 'courier');
+          // ピザの注文内容一覧(カタクチ商店・配送受注店)には、自社配送(トラック配送)の店舗の商品の発注
+          // (本町店など)も一緒に並べる(卸先は宅配便で送るので、カタクチ商店ページの「商品の受注(卸先)」に出す)。
+          const truckProductStores = productOrderStores().filter((st) => st.shipping !== 'courier');
+          if ((slug === 'haiso-juchu' || slug === 'katakuchi') && category === 'pizza') {
             if (truckProductStores.length) {
               const productRows = (await fetchWholesaleOrdersRange(from, to)).filter((r) =>
                 truckProductStores.some((st) => st.slug === r.store_slug)
@@ -1869,20 +1869,24 @@ async function renderAdminPage(slug) {
           const heading = categories.length > 1 ? `<h2 class="section-title">${def.label}</h2>` : '';
           const body = isOyster
             ? renderOysterSummary(rows, stores, { showPrint: showOysterToo })
-            : renderTextOrderSummary(rows, stores, { showActions: slug === 'katakuchi' });
+            : renderTextOrderSummary(rows, stores, {
+                showActions: slug === 'katakuchi',
+                // 本町店などの商品の発注はwholesale_ordersの行なので、確認済みの操作も卸先と同じ処理で行う。
+                confirmSuffixFor: (st) => (truckProductStores.some((t) => t.slug === st.slug) ? '-wholesale' : ''),
+              });
           return heading + body;
         })
       );
 
       let wholesaleSection = '';
-      if (slug === 'katakuchi' && productOrderStores().length > 0) {
+      if (slug === 'katakuchi' && WHOLESALE_STORES.length > 0) {
         const rows = await fetchWholesaleOrdersRange(from, to);
         rows.forEach((r) => {
           wholesaleRowsByKey[`${r.order_date}__${r.store_slug}`] = r;
         });
         wholesaleSection =
-          '<h2 class="section-title">商品の受注(卸先・牡蠣小屋ろっこ本町店)</h2>' +
-          renderTextOrderSummary(rows, productOrderStores(), { showActions: true, confirmClassSuffix: '-wholesale' });
+          '<h2 class="section-title">商品の受注(卸先)</h2>' +
+          renderTextOrderSummary(rows, WHOLESALE_STORES, { showActions: true, confirmClassSuffix: '-wholesale' });
       }
 
       let courierSection = '';
@@ -4392,6 +4396,8 @@ function renderTextOrderSummary(rows, stores, options = {}) {
   const showActions = options.showActions !== false;
   // 確認ボタンのclass名の接尾辞(卸先の受注は '-wholesale' にして、ピザとは別のテーブルを更新する)。
   const sfx = options.confirmClassSuffix || '';
+  // 店舗ごとに確認ボタンの接尾辞を変える場合(ピザの一覧に本町店の商品の発注を混ぜる時など)。
+  const sfxFor = (st) => (options.confirmSuffixFor ? options.confirmSuffixFor(st) : sfx);
   const dates = [...new Set(rows.map((r) => r.order_date))].sort();
   if (!dates.length) return '<div class="card"><p class="hint">この期間の発注はありません。</p></div>';
   const byKey = {};
@@ -4407,8 +4413,8 @@ function renderTextOrderSummary(rows, stores, options = {}) {
           if (!r || !r.content || !r.content.trim()) return '';
           const status = showActions
             ? r.confirmed_at
-              ? `<span class="confirm-badge confirmed">✓ 確認済み(${formatDateTimeJp(r.confirmed_at)})</span> <button class="unconfirm-btn${sfx}" data-store="${s.slug}" data-date="${date}">未確認に戻す</button>`
-              : `<button class="confirm-btn${sfx}" data-store="${s.slug}" data-date="${date}">確認済みにする</button>`
+              ? `<span class="confirm-badge confirmed">✓ 確認済み(${formatDateTimeJp(r.confirmed_at)})</span> <button class="unconfirm-btn${sfxFor(s)}" data-store="${s.slug}" data-date="${date}">未確認に戻す</button>`
+              : `<button class="confirm-btn${sfxFor(s)}" data-store="${s.slug}" data-date="${date}">確認済みにする</button>`
             : '';
           const printBtn = showActions
             ? `<button class="print-btn" data-store="${s.slug}" data-date="${date}" data-storename="${escapeHtml(
