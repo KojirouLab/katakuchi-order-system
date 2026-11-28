@@ -338,7 +338,7 @@ input[type=text]::placeholder{color:var(--muted);opacity:.8}
         if(snap.fromCache===false){loaded=true;clearTimeout(timeout)}
         if(saving||dirty)return;
         if(snap.exists){
-          var remote=norm(snap.data());
+          var remote=norm(JSON.parse(JSON.stringify(snap.data())));/* snapshot is frozen: work on a copy */
           if(JSON.stringify(remote)!==JSON.stringify(state)){state=remote;localSave();render()}
         }else if(snap.fromCache===false){
           /* first time on the server: upload what this browser already has */
