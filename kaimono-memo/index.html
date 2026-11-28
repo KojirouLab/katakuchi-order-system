@@ -107,8 +107,9 @@ input[type=text]::placeholder{color:var(--muted);opacity:.8}
   function el(tag,cls,text){var e=document.createElement(tag);if(cls)e.className=cls;if(text!=null)e.textContent=text;return e}
   /* 「牛乳と豚肉とヨーグルト」「卵、パン」「牛乳 卵」や改行を1品ずつに分ける */
   function splitItems(s){
-    var t=s.replace(/[\r\n、,，;；]+/g,'|').replace(/[\s　]+/g,'|').replace(/([^|])と(?=[^|])/g,'$1|');
-    return t.split('|').map(function(x){return x.trim()}).filter(Boolean);
+    var t=s.replace(/[\r\n、,，;；]+/g,'|').replace(/[\s　]+/g,'|').replace(/([^|])と/g,'$1|').replace(/([^|ァ-ヶー])ト(?!マト|ース|ッ|ン|ー|ウモ|ルテ)/g,'$1|');
+    /* 「と」「ト」だけが単独で残ったものは項目にしない */
+    return t.split('|').map(function(x){return x.trim()}).filter(function(x){return x&&!/^(と|ト|や)$/.test(x)});
   }
   /* 「今日から明日まで」→「11/28(土)〜11/29(日)」。追加した日の日付に変えて保存する */
   var OFFSET={'今日':0,'本日':0,'きょう':0,'明日':1,'あした':1,'あす':1,'明後日':2,'あさって':2,'明々後日':3,'しあさって':3};
