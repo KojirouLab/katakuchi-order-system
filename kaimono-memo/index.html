@@ -49,6 +49,7 @@ li.row{background:var(--card);border:1px solid var(--line);border-radius:10px;di
 input[type=text]{font:inherit;color:var(--ink);background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px 14px;min-width:0;width:100%}
 input[type=text]::placeholder{color:var(--muted);opacity:.8}
 .add input{flex:1}
+.preview{font-size:.82rem;color:var(--muted);margin:8px 2px 0;min-height:1.3em;overflow-wrap:anywhere}
 .btn{font:inherit;font-weight:700;background:var(--accent);color:var(--accent-ink);border:0;border-radius:10px;padding:12px 18px;cursor:pointer;white-space:nowrap}
 .btn.sale{background:var(--sale);color:#fff}
 .empty{text-align:center;color:var(--muted);padding:28px 8px;border:1.5px dashed var(--line);border-radius:12px;font-size:.9rem}
@@ -96,6 +97,11 @@ input[type=text]::placeholder{color:var(--muted);opacity:.8}
 
   function uid(){return Date.now().toString(36)+Math.random().toString(36).slice(2,6)}
   function el(tag,cls,text){var e=document.createElement(tag);if(cls)e.className=cls;if(text!=null)e.textContent=text;return e}
+  /* 「牛乳と豚肉とヨーグルト」「卵、パン」「牛乳 卵」や改行を1品ずつに分ける */
+  function splitItems(s){
+    var t=s.replace(/[\r\n、,，;；]+/g,'|').replace(/[\s　]+/g,'|').replace(/([^|])と(?=[^|])/g,'$1|');
+    return t.split('|').map(function(x){return x.trim()}).filter(Boolean);
+  }
   function norm(s){s=s||{};return {today:Array.isArray(s.today)?s.today:[],next:Array.isArray(s.next)?s.next:[],sale:Array.isArray(s.sale)?s.sale:[]}}
 
   var d=new Date(), wd='日月火水木金土'[d.getDay()];
@@ -171,11 +177,14 @@ input[type=text]::placeholder{color:var(--muted);opacity:.8}
       }
     }
     var form=el('form','add');
-    var inp=el('input');inp.type='text';inp.id='add-'+k;inp.autocomplete='off';inp.placeholder=k==='today'?'買うものを入力':'次回買うものを入力';inp.setAttribute('aria-label','追加する品物');
+    var inp=el('input');inp.type='text';inp.id='add-'+k;inp.autocomplete='off';inp.placeholder=k==='today'?'例：牛乳と豚肉とヨーグルト':'例：洗剤と電池';inp.setAttribute('aria-label','追加する品物');
     var btn=el('button','btn','追加');btn.type='submit';
     form.appendChild(inp);form.appendChild(btn);
-    form.onsubmit=function(e){e.preventDefault();var v=inp.value.trim();if(!v)return;state[k].push({id:uid(),t:v,done:false});persist();inp.value='';render();document.getElementById('add-'+k).focus()};
-    main.appendChild(form);
+    var pv=el('div','preview');pv.setAttribute('aria-live','polite');
+    function showPv(){var p=splitItems(inp.value);pv.textContent=p.length>1?p.length+'件に分けて追加：'+p.join(' / '):(p.length?'':'「と」「、」やスペースで区切ると、まとめて入力できます')}
+    inp.oninput=showPv;showPv();
+    form.onsubmit=function(e){e.preventDefault();var p=splitItems(inp.value);if(!p.length)return;p.forEach(function(v){state[k].push({id:uid(),t:v,done:false})});persist();inp.value='';render();document.getElementById('add-'+k).focus();if(p.length>1)flash(p.length+'件追加しました')};
+    main.appendChild(form);main.appendChild(pv);
   }
 
   function renderSale(main){
