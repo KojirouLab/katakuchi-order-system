@@ -102,6 +102,16 @@ input[type=text]::placeholder{color:var(--muted);opacity:.8}
     var t=s.replace(/[\r\n、,，;；]+/g,'|').replace(/[\s　]+/g,'|').replace(/([^|])と(?=[^|])/g,'$1|');
     return t.split('|').map(function(x){return x.trim()}).filter(Boolean);
   }
+  /* 「今日から明日まで」→「11/28(土)〜11/29(日)」。追加した日の日付に変えて保存する */
+  var OFFSET={'今日':0,'本日':0,'きょう':0,'明日':1,'あした':1,'あす':1,'明後日':2,'あさって':2,'明々後日':3,'しあさって':3};
+  function dayLabel(n){var x=new Date();x.setDate(x.getDate()+n);return (x.getMonth()+1)+'/'+x.getDate()+'('+'日月火水木金土'[x.getDay()]+')'}
+  function resolveWhen(s){
+    var hit=false;
+    var t=s.replace(/明々後日|しあさって|明後日|あさって|明日|あした|あす|今日|本日|きょう/g,function(w){hit=true;return dayLabel(OFFSET[w])});
+    if(!hit)return s;
+    /* 「AからBまで」は「A〜B」にする */
+    return t.replace(/(\d+\/\d+\([^)]+\))\s*から\s*(\d+\/\d+\([^)]+\))\s*まで/g,'$1〜$2').replace(/から/g,'〜');
+  }
   function norm(s){s=s||{};return {today:Array.isArray(s.today)?s.today:[],next:Array.isArray(s.next)?s.next:[],sale:Array.isArray(s.sale)?s.sale:[]}}
 
   var d=new Date(), wd='日月火水木金土'[d.getDay()];
@@ -227,10 +237,10 @@ input[type=text]::placeholder{color:var(--muted);opacity:.8}
     var fItem=field('s-item','品名','例：鶏もも肉',true);
     var fStore=field('s-store','お店','例：サンマート');
     var fPrice=field('s-price','値段','例：1パック198円');
-    var fWhen=field('s-when','いつ','例：11/29(土)〜12/1(月)、毎週火曜',true);
+    var fWhen=field('s-when','いつ','例：今日から明日まで、毎週火曜',true);
     var btn=el('button','btn sale','セール情報を追加');btn.type='submit';form.appendChild(btn);
     form.onsubmit=function(e){e.preventDefault();var item=fItem.value.trim();if(!item){fItem.focus();return}
-      state.sale.push({id:uid(),item:item,store:fStore.value.trim(),price:fPrice.value.trim(),when:fWhen.value.trim()});
+      state.sale.push({id:uid(),item:item,store:fStore.value.trim(),price:fPrice.value.trim(),when:resolveWhen(fWhen.value.trim())});
       persist();render();flash('セール情報を追加しました')};
     main.appendChild(form);
   }
