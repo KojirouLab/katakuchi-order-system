@@ -131,6 +131,22 @@ input[type=text]::placeholder{color:var(--muted);opacity:.8}
     return !!end&&end<today;
   }
   function ymd(x){return x.getFullYear()+'-'+(x.getMonth()+1)+'-'+x.getDate()}
+  /* 音声入力などで「鶏もも肉 ウジエスーパー 150円 今日から明日まで」を品名欄にまとめて入れたとき、項目ごとに振り分ける */
+  var DAY='(?:明々後日|明後日|あさって|明日|あした|あす|今日|本日|きょう|\\d{1,2}\\/\\d{1,2})(?:\\([^)]*\\))?';
+  var RE_WHEN=new RegExp('('+DAY+'(?:\\s*(?:から|〜|~|～)\\s*'+DAY+')?(?:\\s*(?:まで|だけ|限定))?|毎週[月火水木金土日]曜日?|毎日|週末|土日)');
+  var UNIT='(?:パック|個|本|袋|枚|匹|玉|束|切れ|kg|g|グラム|キロ|ml|リットル)';
+  var RE_PRICE=new RegExp('((?:\\d+\\s*'+UNIT+'\\s*(?:あたり|で)?\\s*)?\\d[\\d,]*\\s*円(?:\\s*(?:税込|税抜))?)');
+  var RE_STORE=/([^\s、,がはでのを]*?(?:スーパーマーケット|ドラッグストア|スーパー|ストア|マート|マーケット|ドラッグ|薬局|市場|生協|コープ|ヨーカドー|イオン|ドンキ|ホームセンター|商店|食品館|鮮魚店|肉屋))/;
+  function parseSale(raw){
+    var t=raw.normalize('NFKC').replace(/(\d{1,2})月(\d{1,2})日/g,'$1/$2'),out={item:'',store:'',price:'',when:''},m;
+    if((m=t.match(RE_WHEN))){out.when=m[1].trim();t=t.replace(m[0],' ')}
+    if((m=t.match(RE_PRICE))){out.price=m[1].replace(/\s+/g,'');t=t.replace(m[0],' ')}
+    if((m=t.match(RE_STORE))){out.store=m[1];t=t.replace(m[0]+'では',' ').replace(m[0]+'で',' ').replace(m[0]+'の',' ').replace(m[0]+'は',' ').replace(m[0],' ')}
+    t=t.replace(/(特売|セール|お買い得|安い|です)/g,' ').replace(/\s+/g,' ').trim();
+    out.item=t.replace(/^[がはをでの、,\s]+|[がはをでの、,\s]+$/g,'').trim();
+    out.hit=!!(out.when||out.price||out.store);
+    return out;
+  }
   function norm(s){s=s||{};return {today:Array.isArray(s.today)?s.today:[],next:Array.isArray(s.next)?s.next:[],sale:Array.isArray(s.sale)?s.sale:[]}}
 
   var d=new Date(), wd='日月火水木金土'[d.getDay()];
@@ -266,9 +282,16 @@ input[type=text]::placeholder{color:var(--muted);opacity:.8}
     var fStore=field('s-store','お店','例：サンマート');
     var fPrice=field('s-price','値段','例：1パック198円');
     var fWhen=field('s-when','いつ','例：今日から明日まで、毎週火曜',true);
+    var pv=el('div','preview full');pv.setAttribute('aria-live','polite');form.appendChild(pv);
+    function auto(){return !fStore.value.trim()&&!fPrice.value.trim()&&!fWhen.value.trim()?parseSale(fItem.value):null}
+    function showSale(){var p=auto();pv.textContent=p&&p.hit?'こう分けて登録します：品名「'+p.item+'」 お店「'+p.store+'」 値段「'+p.price+'」 いつ「'+resolveWhen(p.when)+'」':'品名欄に「鶏もも肉 ウジエスーパー 150円 今日から明日まで」とまとめて入れても、自動で分けます'}
+    fItem.oninput=showSale;fStore.oninput=showSale;fPrice.oninput=showSale;fWhen.oninput=showSale;showSale();
     var btn=el('button','btn sale','セール情報を追加');btn.type='submit';form.appendChild(btn);
-    form.onsubmit=function(e){e.preventDefault();var item=fItem.value.trim();if(!item){fItem.focus();return}
-      state.sale.push({id:uid(),item:item,store:fStore.value.trim(),price:fPrice.value.trim(),when:resolveWhen(fWhen.value.trim()),until:(function(e){return e?ymd(e):''})(parseEnd(resolveWhen(fWhen.value.trim()),new Date()))});
+    form.onsubmit=function(e){e.preventDefault();
+      var p=auto(),f=(p&&p.hit)?p:{item:fItem.value.trim(),store:fStore.value.trim(),price:fPrice.value.trim(),when:fWhen.value.trim()};
+      var item=f.item;if(!item){fItem.focus();return}
+      var when=resolveWhen(f.when);
+      state.sale.push({id:uid(),item:item,store:f.store,price:f.price,when:when,until:(function(e){return e?ymd(e):''})(parseEnd(when,new Date()))});
       persist();render();flash('セール情報を追加しました')};
     main.appendChild(form);
   }
