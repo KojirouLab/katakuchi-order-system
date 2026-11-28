@@ -49,6 +49,12 @@ li.row{background:var(--card);border:1px solid var(--line);border-radius:10px;di
 input[type=text]{font:inherit;color:var(--ink);background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px 14px;min-width:0;width:100%}
 input[type=text]::placeholder{color:var(--muted);opacity:.8}
 .add input{flex:1}
+.chips .lbl{font-size:.75rem;color:var(--muted);margin-bottom:4px}
+.chip-row{display:flex;flex-wrap:wrap;gap:6px}
+.chip{display:inline-flex;align-items:center;border:1px solid var(--line);border-radius:999px;background:var(--bg);overflow:hidden}
+.chip-b{font:inherit;font-size:.85rem;color:var(--ink);background:none;border:0;padding:8px 6px 8px 12px;cursor:pointer}
+.chip-x{font:inherit;font-size:.9rem;color:var(--muted);background:none;border:0;padding:8px 10px 8px 4px;cursor:pointer}
+.chip-x:hover{color:var(--sale)}
 .preview{font-size:.82rem;color:var(--muted);margin:8px 2px 0;min-height:1.3em;overflow-wrap:anywhere}
 .btn{font:inherit;font-weight:700;background:var(--accent);color:var(--accent-ink);border:0;border-radius:10px;padding:12px 18px;cursor:pointer;white-space:nowrap}
 .btn.sale{background:var(--sale);color:#fff}
@@ -92,7 +98,7 @@ input[type=text]::placeholder{color:var(--muted);opacity:.8}
 <script>
 (function(){
   var KEY='kaimono-memo-v1';
-  var state={today:[],next:[],sale:[]};
+  var state={today:[],next:[],sale:[],stores:[]};
   var tab='today';
   try{var t=localStorage.getItem('kaimono-tab');if(t)tab=t}catch(e){}
   var docRef=null, saving=false, dirty=false, timer=null, loaded=false;
@@ -137,17 +143,21 @@ input[type=text]::placeholder{color:var(--muted);opacity:.8}
   var UNIT='(?:パック|個|本|袋|枚|匹|玉|束|切れ|kg|g|グラム|キロ|ml|リットル)';
   var RE_PRICE=new RegExp('((?:\\d+\\s*'+UNIT+'\\s*(?:あたり|で)?\\s*)?\\d[\\d,]*\\s*円(?:\\s*(?:税込|税抜))?)');
   var RE_STORE=/([^\s、,がはでのを]*?(?:スーパーマーケット|ドラッグストア|スーパー|ストア|マート|マーケット|ドラッグ|薬局|市場|生協|コープ|ヨーカドー|イオン|ドンキ|ホームセンター|商店|食品館|鮮魚店|肉屋))/;
-  function parseSale(raw){
+  /* お店の名前を覚えておく（新しく使った順）。候補とパース補助に使う */
+  function knownStores(){var seen={},list=[];(state.stores||[]).concat(state.sale.map(function(s){return s.store})).forEach(function(n){if(n&&!seen[n]){seen[n]=1;list.push(n)}});return list}
+  function rememberStore(name){state.stores=[name].concat((state.stores||[]).filter(function(n){return n!==name})).slice(0,20)}
+  function parseSale(raw,known){
     var t=raw.normalize('NFKC').replace(/(\d{1,2})月(\d{1,2})日/g,'$1/$2'),out={item:'',store:'',price:'',when:''},m;
     if((m=t.match(RE_WHEN))){out.when=m[1].trim();t=t.replace(m[0],' ')}
     if((m=t.match(RE_PRICE))){out.price=m[1].replace(/\s+/g,'');t=t.replace(m[0],' ')}
-    if((m=t.match(RE_STORE))){out.store=m[1];t=t.replace(m[0]+'では',' ').replace(m[0]+'で',' ').replace(m[0]+'の',' ').replace(m[0]+'は',' ').replace(m[0],' ')}
+    var kn=null,kk='';(known||[]).forEach(function(n){var k=n.normalize('NFKC');if(k&&t.indexOf(k)>=0&&k.length>kk.length){kn=n;kk=k}});
+    if((m=kn?[kk,kn]:t.match(RE_STORE))){out.store=kn||m[1];t=t.replace(m[0]+'では',' ').replace(m[0]+'で',' ').replace(m[0]+'の',' ').replace(m[0]+'は',' ').replace(m[0],' ')}
     t=t.replace(/(特売|セール|お買い得|安い|です)/g,' ').replace(/\s+/g,' ').trim();
     out.item=t.replace(/^[がはをでの、,\s]+|[がはをでの、,\s]+$/g,'').trim();
     out.hit=!!(out.when||out.price||out.store);
     return out;
   }
-  function norm(s){s=s||{};return {today:Array.isArray(s.today)?s.today:[],next:Array.isArray(s.next)?s.next:[],sale:Array.isArray(s.sale)?s.sale:[]}}
+  function norm(s){s=s||{};return {today:Array.isArray(s.today)?s.today:[],next:Array.isArray(s.next)?s.next:[],sale:Array.isArray(s.sale)?s.sale:[],stores:Array.isArray(s.stores)?s.stores:[]}}
 
   var d=new Date(), wd='日月火水木金土'[d.getDay()];
   document.getElementById('today').textContent=(d.getMonth()+1)+'/'+d.getDate()+'('+wd+')';
@@ -282,8 +292,22 @@ input[type=text]::placeholder{color:var(--muted);opacity:.8}
     var fStore=field('s-store','お店','例：サンマート');
     var fPrice=field('s-price','値段','例：1パック198円');
     var fWhen=field('s-when','いつ','例：今日から明日まで、毎週火曜',true);
+    var chipsBox=el('div','full chips');form.appendChild(chipsBox);
+    function drawChips(){
+      chipsBox.textContent='';var ks=knownStores().slice(0,12);if(!ks.length)return;
+      chipsBox.appendChild(el('div','lbl','お店の候補（タップで入力）'));
+      var row=el('div','chip-row');
+      ks.forEach(function(n){
+        var w=el('span','chip');
+        var b=el('button','chip-b',n);b.type='button';b.onclick=function(){fStore.value=n;showSale();fStore.focus()};
+        var x=el('button','chip-x','×');x.type='button';x.setAttribute('aria-label',n+' を候補から消す');
+        x.onclick=function(){state.stores=(state.stores||[]).filter(function(y){return y!==n});persist();drawChips()};
+        w.appendChild(b);w.appendChild(x);row.appendChild(w)});
+      chipsBox.appendChild(row);
+    }
+    drawChips();
     var pv=el('div','preview full');pv.setAttribute('aria-live','polite');form.appendChild(pv);
-    function auto(){return !fStore.value.trim()&&!fPrice.value.trim()&&!fWhen.value.trim()?parseSale(fItem.value):null}
+    function auto(){return !fStore.value.trim()&&!fPrice.value.trim()&&!fWhen.value.trim()?parseSale(fItem.value,knownStores()):null}
     function showSale(){var p=auto();pv.textContent=p&&p.hit?'こう分けて登録します：品名「'+p.item+'」 お店「'+p.store+'」 値段「'+p.price+'」 いつ「'+resolveWhen(p.when)+'」':'品名欄に「鶏もも肉 ウジエスーパー 150円 今日から明日まで」とまとめて入れても、自動で分けます'}
     fItem.oninput=showSale;fStore.oninput=showSale;fPrice.oninput=showSale;fWhen.oninput=showSale;showSale();
     var btn=el('button','btn sale','セール情報を追加');btn.type='submit';form.appendChild(btn);
@@ -292,6 +316,7 @@ input[type=text]::placeholder{color:var(--muted);opacity:.8}
       var item=f.item;if(!item){fItem.focus();return}
       var when=resolveWhen(f.when);
       state.sale.push({id:uid(),item:item,store:f.store,price:f.price,when:when,until:(function(e){return e?ymd(e):''})(parseEnd(when,new Date()))});
+      if(f.store)rememberStore(f.store);
       persist();render();flash('セール情報を追加しました')};
     main.appendChild(form);
   }
