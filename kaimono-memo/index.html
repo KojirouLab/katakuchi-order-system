@@ -119,10 +119,11 @@ input[type=text]::placeholder{color:var(--muted);opacity:.8}
     var t=s.replace(/明々後日|しあさって|明後日|あさって|明日|あした|あす|今日|本日|きょう/g,function(w){hit=true;return dayLabel(OFFSET[w])});
     if(!hit)return s;
     /* 「AからBまで」は「A〜B」にする */
-    return t.replace(/(\d+\/\d+\([^)]+\))\s*から\s*(\d+\/\d+\([^)]+\))\s*まで/g,'$1〜$2').replace(/から/g,'〜');
+    return t.replace(/(\d+\/\d+\([^)]+\))\s*から\s*(\d+\/\d+\([^)]+\))\s*まで/g,'$1〜$2').replace(/から(?=\d)/g,'〜');
   }
   /* いつ欄の最後の日付を終了日とみなし、今日より前なら期限切れ。年は追加時に until として保存 */
   function parseEnd(text,base){
+    if(/から\s*$/.test(text||''))return null; /* 「今日から」は終わり未定 */
     var re=/(\d{1,2})\/(\d{1,2})/g,m,list=[];
     while((m=re.exec(text||''))){list.push([+m[1],+m[2]])}
     if(!list.length)return null;
@@ -140,21 +141,32 @@ input[type=text]::placeholder{color:var(--muted);opacity:.8}
   function ymd(x){return x.getFullYear()+'-'+(x.getMonth()+1)+'-'+x.getDate()}
   /* 音声入力などで「鶏もも肉 ウジエスーパー 150円 今日から明日まで」を品名欄にまとめて入れたとき、項目ごとに振り分ける */
   var DAY='(?:明々後日|明後日|あさって|明日|あした|あす|今日|本日|きょう|\\d{1,2}\\/\\d{1,2})(?:\\([^)]*\\))?';
-  var RE_WHEN=new RegExp('('+DAY+'(?:\\s*(?:から|〜|~|～)\\s*'+DAY+')?(?:\\s*(?:まで|だけ|限定))?|毎週[月火水木金土日]曜日?|毎日|週末|土日)');
+  var RE_WHEN=new RegExp('('+DAY+'(?:\\s*(?:から|〜|~|～)\\s*'+DAY+')?(?:\\s*(?:まで|だけ|限定|から))?|毎週[月火水木金土日]曜日?|毎日|週末|土日)');
   var UNIT='(?:パック|個|本|袋|枚|匹|玉|束|切れ|kg|g|グラム|キロ|ml|リットル)';
   var RE_PRICE=new RegExp('((?:\\d+\\s*'+UNIT+'\\s*(?:あたり|で)?\\s*)?\\d[\\d,]*\\s*円(?:\\s*(?:税込|税抜))?)');
-  var RE_STORE=/([^\s、,がはでのを]*?(?:スーパーマーケット|ドラッグストア|スーパー|ストア|マート|マーケット|ドラッグ|薬局|市場|生協|コープ|ヨーカドー|イオン|ドンキ|ホームセンター|商店|食品館|鮮魚店|肉屋))/;
+  var RE_STORE=/([^\s、,がはでのをと]*?(?:スーパーマーケット|ドラッグストア|スーパー|ストア|マート|マーケット|ドラッグ|薬局|市場|生協|コープ|ヨーカドー|イオン|ドンキ|ホームセンター|商店|食品館|鮮魚店|肉屋))/;
   /* お店の名前を覚えておく（新しく使った順）。候補とパース補助に使う */
   function knownStores(){var seen={},list=[];(state.stores||[]).concat(state.sale.map(function(s){return s.store})).forEach(function(n){if(n&&!seen[n]){seen[n]=1;list.push(n)}});return list}
   function rememberStore(name){state.stores=[name].concat((state.stores||[]).filter(function(n){return n!==name})).slice(0,20)}
+  /* 「百五十」→150。音声入力で漢数字になることがある */
+  function kanjiNum(s){
+    var D={'〇':0,'一':1,'二':2,'三':3,'四':4,'五':5,'六':6,'七':7,'八':8,'九':9},U={'十':10,'百':100,'千':1000};
+    if(!/[十百千]/.test(s))return s.split('').map(function(c){return D[c]}).join('');
+    var total=0,cur=0;
+    s.split('').forEach(function(c){if(c in D)cur=D[c];else{total+=(cur||1)*U[c];cur=0}});
+    return String(total+cur);
+  }
   function parseSale(raw,known){
-    var t=raw.normalize('NFKC').replace(/(\d{1,2})月(\d{1,2})日/g,'$1/$2'),out={item:'',store:'',price:'',when:''},m;
+    var t=raw.normalize('NFKC').replace(/(\d{1,2})月(\d{1,2})日/g,'$1/$2').replace(/[〇一二三四五六七八九十百千]+(?=円)/g,kanjiNum),out={item:'',store:'',price:'',when:''},m;
     if((m=t.match(RE_WHEN))){out.when=m[1].trim();t=t.replace(m[0],' ')}
     if((m=t.match(RE_PRICE))){out.price=m[1].replace(/\s+/g,'');t=t.replace(m[0],' ')}
     var kn=null,kk='';(known||[]).forEach(function(n){var k=n.normalize('NFKC');if(k&&t.indexOf(k)>=0&&k.length>kk.length){kn=n;kk=k}});
     if((m=kn?[kk,kn]:t.match(RE_STORE))){out.store=kn||m[1];t=t.replace(m[0]+'では',' ').replace(m[0]+'で',' ').replace(m[0]+'の',' ').replace(m[0]+'は',' ').replace(m[0],' ')}
-    t=t.replace(/(特売|セール|お買い得|安い|です)/g,' ').replace(/\s+/g,' ').trim();
-    out.item=t.replace(/^[がはをでの、,\s]+|[がはをでの、,\s]+$/g,'').trim();
+    t=t.replace(/(特売|セール|お買い得|安い|です)/g,' ');
+    /* 残った言葉を「と」やスペースで分け、言いやすい順（品名、お店）で振り分ける */
+    var pieces=splitItems(t).map(function(x){return x.replace(/^[がはをでの]+|[がはをでの]+$/g,'').trim()}).filter(Boolean);
+    out.item=pieces[0]||'';
+    if(!out.store&&pieces.length>1&&(out.price||out.when))out.store=pieces[1];
     out.hit=!!(out.when||out.price||out.store);
     return out;
   }
