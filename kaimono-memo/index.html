@@ -1,0 +1,257 @@
+<title>買い物メモ</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Zen+Maru+Gothic:wght@500;700&family=Noto+Sans+JP:wght@400;500;700&display=swap">
+<style>
+/* Layout: 1-column phone notepad. Sticky header with 3 tabs, one list per tab, add bar at the bottom of each list. */
+:root{
+  --bg:#f2f5f0; --card:#ffffff; --ink:#1c2b24; --muted:#66756d; --line:#dbe3dc;
+  --accent:#2c7a58; --accent-ink:#ffffff; --sale:#d4412f; --sale-bg:#fdeceb; --done:#9aa8a0;
+  --font-display:'Zen Maru Gothic','Noto Sans JP',sans-serif;
+  --font-body:'Noto Sans JP',system-ui,sans-serif;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#121a16; --card:#1b2621; --ink:#e6eee9; --muted:#93a39a; --line:#2c3a33;
+  --accent:#4fb887; --accent-ink:#0c1812; --sale:#ff7d6b; --sale-bg:#3a2320; --done:#62736a; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#121a16; --card:#1b2621; --ink:#e6eee9; --muted:#93a39a; --line:#2c3a33;
+  --accent:#4fb887; --accent-ink:#0c1812; --sale:#ff7d6b; --sale-bg:#3a2320; color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:var(--font-body);font-size:16px;line-height:1.5;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:0 48px}
+.wrap{max-width:560px;margin:0 auto}
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);background:var(--bg);z-index:10}
+header{position:sticky;top:env(safe-area-inset-top,0px);background:var(--bg);z-index:9;padding-top:16px}
+h1{font-family:var(--font-display);font-size:1.35rem;margin:0 0 12px;display:flex;justify-content:space-between;align-items:baseline;gap:12px}
+h1 small{font-family:var(--font-body);font-size:.75rem;font-weight:400;color:var(--muted)}
+.tabs{display:grid;grid-template-columns:repeat(3,1fr);gap:4px;border-bottom:2px solid var(--line)}
+.tab{font:inherit;font-weight:500;background:none;border:0;color:var(--muted);padding:10px 4px;cursor:pointer;
+  border-bottom:3px solid transparent;margin-bottom:-2px;display:flex;flex-direction:column;align-items:center;line-height:1.25}
+.tab span.n{font-size:.72rem;font-weight:400}
+.tab[aria-selected="true"]{color:var(--ink);border-bottom-color:var(--accent);font-weight:700}
+.tab.sale[aria-selected="true"]{border-bottom-color:var(--sale)}
+:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+main{padding-top:16px}
+.hint{color:var(--muted);font-size:.85rem;margin:0 0 12px}
+ul{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
+li.row{background:var(--card);border:1px solid var(--line);border-radius:10px;display:flex;align-items:center;gap:4px;padding:2px 4px 2px 0}
+.chk{flex:none;width:48px;height:48px;display:grid;place-items:center;background:none;border:0;cursor:pointer}
+.box{width:24px;height:24px;border:2px solid var(--muted);border-radius:6px;display:grid;place-items:center;color:transparent;font-size:15px;font-weight:700}
+.done .box{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.txt{flex:1;min-width:0;overflow-wrap:anywhere;padding:8px 0}
+.done .txt{color:var(--done);text-decoration:line-through}
+.ibtn{flex:none;font:inherit;font-size:.78rem;background:none;border:1px solid var(--line);color:var(--muted);border-radius:999px;padding:6px 10px;cursor:pointer;white-space:nowrap}
+.ibtn:hover{color:var(--ink);border-color:var(--muted)}
+.x{flex:none;width:40px;height:40px;background:none;border:0;color:var(--muted);font-size:1.3rem;cursor:pointer;border-radius:8px}
+.x:hover{color:var(--sale)}
+.add{display:flex;gap:8px;margin-top:16px}
+input[type=text]{font:inherit;color:var(--ink);background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px 14px;min-width:0;width:100%}
+input[type=text]::placeholder{color:var(--muted);opacity:.8}
+.add input{flex:1}
+.btn{font:inherit;font-weight:700;background:var(--accent);color:var(--accent-ink);border:0;border-radius:10px;padding:12px 18px;cursor:pointer;white-space:nowrap}
+.btn.sale{background:var(--sale);color:#fff}
+.empty{text-align:center;color:var(--muted);padding:28px 8px;border:1.5px dashed var(--line);border-radius:12px;font-size:.9rem}
+.clear{margin-top:16px;text-align:right}
+.link{font:inherit;font-size:.85rem;background:none;border:0;color:var(--muted);text-decoration:underline;cursor:pointer;padding:8px}
+/* sale */
+.store{margin:20px 0 8px;font-family:var(--font-display);font-weight:700;font-size:1rem;display:flex;align-items:center;gap:8px}
+.store::before{content:"";width:10px;height:10px;border-radius:3px;background:var(--sale)}
+.sale-row{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px 4px 10px 14px;display:flex;gap:8px;align-items:center}
+.sale-main{flex:1;min-width:0}
+.sale-name{font-weight:500;overflow-wrap:anywhere}
+.price{font-family:var(--font-display);font-weight:700;color:var(--sale);background:var(--sale-bg);border-radius:6px;padding:0 8px;margin-left:8px;white-space:nowrap;display:inline-block}
+.when{font-size:.82rem;color:var(--muted);margin-top:2px;overflow-wrap:anywhere}
+.when.expired{text-decoration:line-through}
+.sale-form{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:16px;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px}
+.sale-form .full{grid-column:1/-1}
+.sale-form label{font-size:.75rem;color:var(--muted);display:block;margin-bottom:2px}
+.sale-form .btn{grid-column:1/-1}
+.status{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(12px + env(safe-area-inset-bottom,0px));background:var(--ink);color:var(--bg);font-size:.8rem;padding:6px 14px;border-radius:999px;opacity:0;transition:opacity .2s;pointer-events:none}
+.status.show{opacity:.9}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+@media (max-width:380px){.sale-form{grid-template-columns:1fr}}
+</style>
+
+<div class="wrap">
+  <header>
+    <h1>買い物メモ <small id="today"></small></h1>
+    <div class="tabs" role="tablist">
+      <button class="tab" role="tab" id="tab-today" data-tab="today">今日買う<span class="n" id="n-today"></span></button>
+      <button class="tab" role="tab" id="tab-next" data-tab="next">次回買う<span class="n" id="n-next"></span></button>
+      <button class="tab sale" role="tab" id="tab-sale" data-tab="sale">セール品<span class="n" id="n-sale"></span></button>
+    </div>
+  </header>
+  <main id="main"></main>
+</div>
+<div class="status" id="status" role="status"></div>
+
+<script>
+(function(){
+  var KEY='kaimono-memo-v1';
+  var state={today:[],next:[],sale:[]};
+  var tab='today';
+  try{var t=localStorage.getItem('kaimono-tab');if(t)tab=t}catch(e){}
+  var docRef=null, saving=false, dirty=false, timer=null, loaded=false;
+
+  function uid(){return Date.now().toString(36)+Math.random().toString(36).slice(2,6)}
+  function el(tag,cls,text){var e=document.createElement(tag);if(cls)e.className=cls;if(text!=null)e.textContent=text;return e}
+  function norm(s){s=s||{};return {today:Array.isArray(s.today)?s.today:[],next:Array.isArray(s.next)?s.next:[],sale:Array.isArray(s.sale)?s.sale:[]}}
+
+  var d=new Date(), wd='日月火水木金土'[d.getDay()];
+  document.getElementById('today').textContent=(d.getMonth()+1)+'/'+d.getDate()+'('+wd+')';
+
+  var statusEl=document.getElementById('status'), st;
+  function flash(msg){statusEl.textContent=msg;statusEl.classList.add('show');clearTimeout(st);st=setTimeout(function(){statusEl.classList.remove('show')},1600)}
+
+  /* ---- storage: db when available (per-person, private), else this browser ---- */
+  function localLoad(){try{return norm(JSON.parse(localStorage.getItem(KEY)))}catch(e){return norm()}}
+  function localSave(){try{localStorage.setItem(KEY,JSON.stringify(state))}catch(e){}}
+
+  function persist(){
+    localSave();
+    if(!docRef) return;
+    dirty=true; clearTimeout(timer);
+    timer=setTimeout(flush,400);
+  }
+  function flush(){
+    if(saving){timer=setTimeout(flush,200);return}
+    if(!dirty) return;
+    saving=true; dirty=false;
+    docRef.set(JSON.parse(JSON.stringify(state))).catch(function(){flash('保存できませんでした。この端末には保存済みです')}).then(function(){saving=false;if(dirty)flush()});
+  }
+
+  /* ---- render ---- */
+  function setCounts(){
+    var open=function(a){return a.filter(function(i){return !i.done}).length};
+    document.getElementById('n-today').textContent=open(state.today)+'件';
+    document.getElementById('n-next').textContent=open(state.next)+'件';
+    document.getElementById('n-sale').textContent=state.sale.length+'件';
+  }
+  function render(){
+    setCounts();
+    ['today','next','sale'].forEach(function(k){
+      var b=document.getElementById('tab-'+k);b.setAttribute('aria-selected',String(k===tab))});
+    var main=document.getElementById('main');
+    var focusId=document.activeElement&&document.activeElement.id;
+    var val=focusId&&document.activeElement.value;
+    main.textContent='';
+    if(tab==='sale') renderSale(main); else renderList(main,tab);
+    if(focusId){var f=document.getElementById(focusId);if(f){f.focus();if(val!=null&&f.value===''&&val)f.value=val}}
+  }
+
+  function renderList(main,k){
+    var other=k==='today'?'next':'today';
+    main.appendChild(el('p','hint',k==='today'?'今日のお買い物リスト。買ったらチェック。':'次にお出かけしたときに買いたいものをためておく場所です。'));
+    var items=state[k];
+    if(!items.length){
+      main.appendChild(el('div','empty',k==='today'?'まだ何もありません。下の欄に「牛乳」「卵」のように入れてください。':'次回の買い物メモはまだありません。思いついたらここに入れておきます。'));
+    }else{
+      var ul=el('ul');
+      items.forEach(function(it){
+        var li=el('li','row'+(it.done?' done':''));
+        var c=el('button','chk');c.setAttribute('aria-label',it.t+(it.done?' を未購入に戻す':' を購入済みにする'));
+        c.appendChild(el('span','box','✓'));
+        c.onclick=function(){it.done=!it.done;persist();render()};
+        li.appendChild(c);
+        li.appendChild(el('div','txt',it.t));
+        var mv=el('button','ibtn',k==='today'?'次回へ':'今日へ');
+        mv.onclick=function(){state[k]=state[k].filter(function(x){return x!==it});it.done=false;state[other].unshift(it);persist();render();flash(k==='today'?'次回リストへ移動':'今日のリストへ移動')};
+        li.appendChild(mv);
+        var x=el('button','x','×');x.setAttribute('aria-label',it.t+' を削除');
+        x.onclick=function(){state[k]=state[k].filter(function(y){return y!==it});persist();render()};
+        li.appendChild(x);
+        ul.appendChild(li);
+      });
+      main.appendChild(ul);
+      if(items.some(function(i){return i.done})){
+        var cl=el('div','clear');var b=el('button','link','チェック済みをまとめて消す');
+        b.onclick=function(){state[k]=state[k].filter(function(i){return !i.done});persist();render()};
+        cl.appendChild(b);main.appendChild(cl);
+      }
+    }
+    var form=el('form','add');
+    var inp=el('input');inp.type='text';inp.id='add-'+k;inp.autocomplete='off';inp.placeholder=k==='today'?'買うものを入力':'次回買うものを入力';inp.setAttribute('aria-label','追加する品物');
+    var btn=el('button','btn','追加');btn.type='submit';
+    form.appendChild(inp);form.appendChild(btn);
+    form.onsubmit=function(e){e.preventDefault();var v=inp.value.trim();if(!v)return;state[k].push({id:uid(),t:v,done:false});persist();inp.value='';render();document.getElementById('add-'+k).focus()};
+    main.appendChild(form);
+  }
+
+  function renderSale(main){
+    main.appendChild(el('p','hint','チラシを見ながら、どこのお店でいつ何が安いかをメモします。'));
+    var items=state.sale;
+    if(!items.length){
+      main.appendChild(el('div','empty','セール情報はまだありません。下のフォームから入れてください。'));
+    }else{
+      var groups={};items.forEach(function(s){var n=s.store||'お店未入力';(groups[n]=groups[n]||[]).push(s)});
+      Object.keys(groups).sort().forEach(function(name){
+        main.appendChild(el('div','store',name));
+        var ul=el('ul');
+        groups[name].forEach(function(s){
+          var li=el('li','sale-row');
+          var m=el('div','sale-main');
+          var n=el('div','sale-name',s.item);
+          if(s.price)n.appendChild(el('span','price',s.price));
+          m.appendChild(n);
+          if(s.when)m.appendChild(el('div','when','🗓 '+s.when));
+          li.appendChild(m);
+          var add=el('button','ibtn','今日買う');
+          add.setAttribute('aria-label',s.item+' を今日のリストに入れる');
+          add.onclick=function(){
+            var label=s.item+(s.store?'（'+s.store+(s.price?' '+s.price:'')+'）':'');
+            state.today.push({id:uid(),t:label,done:false});persist();render();flash('今日のリストに追加しました')};
+          li.appendChild(add);
+          var x=el('button','x','×');x.setAttribute('aria-label',s.item+' を削除');
+          x.onclick=function(){state.sale=state.sale.filter(function(y){return y!==s});persist();render()};
+          li.appendChild(x);
+          ul.appendChild(li);
+        });
+        main.appendChild(ul);
+      });
+    }
+    var form=el('form','sale-form');
+    function field(id,label,ph,full){
+      var w=el('div',full?'full':'');var l=el('label',null,label);l.htmlFor=id;
+      var i=el('input');i.type='text';i.id=id;i.placeholder=ph;i.autocomplete='off';
+      w.appendChild(l);w.appendChild(i);form.appendChild(w);return i}
+    var fItem=field('s-item','品名','例：鶏もも肉',true);
+    var fStore=field('s-store','お店','例：サンマート');
+    var fPrice=field('s-price','値段','例：1パック198円');
+    var fWhen=field('s-when','いつ','例：11/29(土)〜12/1(月)、毎週火曜',true);
+    var btn=el('button','btn sale','セール情報を追加');btn.type='submit';form.appendChild(btn);
+    form.onsubmit=function(e){e.preventDefault();var item=fItem.value.trim();if(!item){fItem.focus();return}
+      state.sale.push({id:uid(),item:item,store:fStore.value.trim(),price:fPrice.value.trim(),when:fWhen.value.trim()});
+      persist();render();flash('セール情報を追加しました')};
+    main.appendChild(form);
+  }
+
+  document.querySelectorAll('.tab').forEach(function(b){
+    b.onclick=function(){tab=b.dataset.tab;try{localStorage.setItem('kaimono-tab',tab)}catch(e){}render()}});
+
+  /* first paint from this browser, then switch to the synced copy */
+  state=localLoad();render();
+
+  (async function(){
+    try{
+      var user=await claude.use('user'), db=await claude.use('db');
+      if(!user||!db)return;
+      var id=await user.id(); if(!id)return;
+      docRef=db.doc('data/users/'+id+'/memo');
+      var timeout=setTimeout(function(){if(!loaded)flash('同期できていません。この端末の内容を表示中')},10000);
+      docRef.onSnapshot(function(snap){
+        if(snap.fromCache===false){loaded=true;clearTimeout(timeout)}
+        if(saving||dirty)return;
+        if(snap.exists){
+          var remote=norm(snap.data());
+          if(JSON.stringify(remote)!==JSON.stringify(state)){state=remote;localSave();render()}
+        }else if(snap.fromCache===false){
+          /* first time on the server: upload what this browser already has */
+          var has=state.today.length||state.next.length||state.sale.length;
+          if(has){dirty=true;flush()}
+        }
+      },function(){flash('同期できませんでした。この端末に保存します')});
+    }catch(e){}
+  })();
+})();
+</script>
