@@ -63,7 +63,9 @@ input[type=text]::placeholder{color:var(--muted);opacity:.8}
 .sale-name{font-weight:500;overflow-wrap:anywhere}
 .price{font-family:var(--font-display);font-weight:700;color:var(--sale);background:var(--sale-bg);border-radius:6px;padding:0 8px;margin-left:8px;white-space:nowrap;display:inline-block}
 .when{font-size:.82rem;color:var(--muted);margin-top:2px;overflow-wrap:anywhere}
-.when.expired{text-decoration:line-through}
+.sale-row.expired{opacity:.5}
+.sale-row.expired .sale-name{text-decoration:line-through}
+.sale-row.expired .price{background:none;color:var(--muted)}
 .sale-form{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:16px;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px}
 .sale-form .full{grid-column:1/-1}
 .sale-form label{font-size:.75rem;color:var(--muted);display:block;margin-bottom:2px}
@@ -112,6 +114,23 @@ input[type=text]::placeholder{color:var(--muted);opacity:.8}
     /* 「AからBまで」は「A〜B」にする */
     return t.replace(/(\d+\/\d+\([^)]+\))\s*から\s*(\d+\/\d+\([^)]+\))\s*まで/g,'$1〜$2').replace(/から/g,'〜');
   }
+  /* いつ欄の最後の日付を終了日とみなし、今日より前なら期限切れ。年は追加時に until として保存 */
+  function parseEnd(text,base){
+    var re=/(\d{1,2})\/(\d{1,2})/g,m,list=[];
+    while((m=re.exec(text||''))){list.push([+m[1],+m[2]])}
+    if(!list.length)return null;
+    var first=list[0],last=list[list.length-1],y=base.getFullYear();
+    var endYear=(last[0]<first[0]||(last[0]===first[0]&&last[1]<first[1]))?y+1:y;
+    return new Date(endYear,last[0]-1,last[1]);
+  }
+  function isExpired(s){
+    var today=new Date();today.setHours(0,0,0,0);
+    var end=null;
+    if(s.until){var p=s.until.split('-');end=new Date(+p[0],+p[1]-1,+p[2])}
+    else end=parseEnd(s.when,today);
+    return !!end&&end<today;
+  }
+  function ymd(x){return x.getFullYear()+'-'+(x.getMonth()+1)+'-'+x.getDate()}
   function norm(s){s=s||{};return {today:Array.isArray(s.today)?s.today:[],next:Array.isArray(s.next)?s.next:[],sale:Array.isArray(s.sale)?s.sale:[]}}
 
   var d=new Date(), wd='日月火水木金土'[d.getDay()];
@@ -204,18 +223,22 @@ input[type=text]::placeholder{color:var(--muted);opacity:.8}
       main.appendChild(el('div','empty','セール情報はまだありません。下のフォームから入れてください。'));
     }else{
       var groups={};items.forEach(function(s){var n=s.store||'お店未入力';(groups[n]=groups[n]||[]).push(s)});
-      Object.keys(groups).sort().forEach(function(name){
+      var allOld=function(n){return groups[n].every(isExpired)};
+      Object.keys(groups).sort(function(a,b){return (allOld(a)-allOld(b))||(a<b?-1:a>b?1:0)}).forEach(function(name){
+        groups[name].sort(function(a,b){return isExpired(a)-isExpired(b)});
         main.appendChild(el('div','store',name));
         var ul=el('ul');
         groups[name].forEach(function(s){
-          var li=el('li','sale-row');
+          var old=isExpired(s);
+          var li=el('li','sale-row'+(old?' expired':''));
           var m=el('div','sale-main');
           var n=el('div','sale-name',s.item);
           if(s.price)n.appendChild(el('span','price',s.price));
           m.appendChild(n);
-          if(s.when)m.appendChild(el('div','when','🗓 '+s.when));
+          if(s.when||old)m.appendChild(el('div','when','🗓 '+(s.when||'')+(old?'（期限切れ）':'')));
           li.appendChild(m);
           var add=el('button','ibtn','今日買う');
+          add.hidden=old;
           add.setAttribute('aria-label',s.item+' を今日のリストに入れる');
           add.onclick=function(){
             var label=s.item+(s.store?'（'+s.store+(s.price?' '+s.price:'')+'）':'');
@@ -229,6 +252,11 @@ input[type=text]::placeholder{color:var(--muted);opacity:.8}
         main.appendChild(ul);
       });
     }
+    if(items.some(isExpired)){
+      var cl=el('div','clear');var cb=el('button','link','期限切れのセールをまとめて消す');
+      cb.onclick=function(){state.sale=state.sale.filter(function(s){return !isExpired(s)});persist();render()};
+      cl.appendChild(cb);main.appendChild(cl);
+    }
     var form=el('form','sale-form');
     function field(id,label,ph,full){
       var w=el('div',full?'full':'');var l=el('label',null,label);l.htmlFor=id;
@@ -240,7 +268,7 @@ input[type=text]::placeholder{color:var(--muted);opacity:.8}
     var fWhen=field('s-when','いつ','例：今日から明日まで、毎週火曜',true);
     var btn=el('button','btn sale','セール情報を追加');btn.type='submit';form.appendChild(btn);
     form.onsubmit=function(e){e.preventDefault();var item=fItem.value.trim();if(!item){fItem.focus();return}
-      state.sale.push({id:uid(),item:item,store:fStore.value.trim(),price:fPrice.value.trim(),when:resolveWhen(fWhen.value.trim())});
+      state.sale.push({id:uid(),item:item,store:fStore.value.trim(),price:fPrice.value.trim(),when:resolveWhen(fWhen.value.trim()),until:(function(e){return e?ymd(e):''})(parseEnd(resolveWhen(fWhen.value.trim()),new Date()))});
       persist();render();flash('セール情報を追加しました')};
     main.appendChild(form);
   }
